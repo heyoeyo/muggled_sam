@@ -1,0 +1,19 @@
+# Model weights
+*.pt
+*.pth
+*.onnx
+
+# Cache files
+*.pyc
+__pycache__
+
+# Common environment names
+venv/
+.venv/
+env/
+.env/
+
+# Catch-all for local ignorables
+ignore/
+saved_images/
+
