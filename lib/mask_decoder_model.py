@@ -78,12 +78,18 @@ class SAMMaskDecoder(nn.Module):
         encoded_image_bchw: Tensor,
         encoded_prompts_bnc: Tensor,
         grid_positional_encoding: Tensor,
-        mask_hint: Tensor | None = None,
+        mask_hint: Tensor | int | None = None,
     ) -> tuple[Tensor, Tensor]:
         """
         Generates multiple candidate segmentation masks given an image encoding and
         encoded prompts (which specific the part of the image to segment).
         Also returns estimates for the 'quality' of each segmentation mask.
+
+        The mask_hint input can be provided to help 'refine' the model output in some cases.
+        It is expected to be of the same shape as a single mask output by the model. If
+        the mask_hint argument is given as an integer, this is interpretted to mean to
+        run the model twice, once to generate onc eset of masks and then to index out
+        one of those masks to use as a hint for re-running the model.
 
         Returns:
             mask_predictions, iou_predictions
@@ -100,6 +106,14 @@ class SAMMaskDecoder(nn.Module):
         # Special case, return blank masks if no prompt is given
         if num_prompts == 0:
             return self.maskgen.make_blank_results(patch_grid_hw)
+
+        # If an integer mask hint is given, interpret it to mean to run the model once, take
+        # the predicted mask (given by the 'hint' as an index) and re-run the model using
+        # the mask as a mask hint
+        if isinstance(mask_hint, int):
+            mask_preds, iou_preds = self(encoded_image_bchw, encoded_prompts_bnc, grid_positional_encoding, None)
+            hint_idx = mask_hint % mask_preds.shape[1]
+            mask_hint = mask_preds[:, hint_idx, :, :]
 
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_iou_token, self.cls_mask_tokens], dim=0).unsqueeze(0)
@@ -124,34 +138,6 @@ class SAMMaskDecoder(nn.Module):
         iou_preds = self.iou_token_mlp(iou_token_out)
 
         return mask_preds, iou_preds
-
-    # .................................................................................................................
-
-    def rehint(
-        self,
-        encoded_image_bchw: Tensor,
-        encoded_prompts_bnc: Tensor,
-        grid_positional_encoding: Tensor,
-        mask_index: int | None = None,
-    ) -> tuple[Tensor, Tensor]:
-        """
-        Helper function which runs the decoder twice. The first run is 'normal' while the second run
-        re-uses the same input prompts, but feeds the mask prediction of the first run in as a
-        'mask hint' for the second run.
-        The mask_index selects which mask (from the first run) will be used to generate the mask
-        hint. If no index is given (e.g. mask_index = None), then the mask with the highest
-        iou prediction will be used.
-
-        Returns:
-            mask_predictions, iou_predictions
-        """
-
-        # Run model once to get masks to use as a hint. If no index is given, select the 'best' prediction
-        mask_preds, iou_preds = self(encoded_image_bchw, encoded_prompts_bnc, grid_positional_encoding, None)
-        if mask_index is None:
-            mask_index = self.get_best_mask_index(iou_preds)
-        mask_hint = mask_preds[:, mask_index, :, :]
-        return self(encoded_image_bchw, encoded_prompts_bnc, grid_positional_encoding, mask_hint)
 
     # .................................................................................................................
 
@@ -302,7 +288,7 @@ class MaskHintEncoder(nn.Module):
 
         # Encode hint and scale to target size if needed
         encoded_mask_hint = self.downscaler(mask_hint_bhw)
-        _, hint_h, hint_w = encoded_mask_hint.shape
+        _, _, hint_h, hint_w = encoded_mask_hint.shape
         if hint_h != grid_h or hint_w != grid_w:
             encoded_mask_hint = encoded_mask_hint.unsqueeze(0)
             encoded_mask_hint = nn.functional.interpolate(encoded_mask_hint, size=patch_grid_hw)
