@@ -3,6 +3,9 @@
 *.pth
 *.onnx
 
+# Selection history file
+.history
+
 # Cache files
 *.pyc
 __pycache__
