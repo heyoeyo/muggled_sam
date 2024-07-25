@@ -25,14 +25,8 @@ from lib.demo_helpers.ui.static import StaticMessageBar
 from lib.demo_helpers.ui.overlays import PointSelectOverlay, BoxSelectOverlay, HoverOverlay, DrawPolygonsOverlay
 from lib.demo_helpers.ui.helpers.images import CheckerPattern
 
-from lib.demo_helpers.contours import (
-    get_contours_from_mask,
-    get_largest_contour,
-    get_contours_containing_xy,
-    simplify_contour_px,
-    normalize_contours,
-    pixelize_contours,
-)
+from lib.demo_helpers.contours import get_contours_from_mask
+from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
@@ -218,15 +212,17 @@ for mbtn in mask_btns_list:
 
 # Set up slider controls
 thresh_slider = HSlider("Mask Threshold", 0, -8.0, 8.0, 0.1, marker_steps=10)
+rounding_slider = HSlider("Round contours", 0, -50, 50, 1, marker_steps=5)
 padding_slider = HSlider("Pad contours", 0, -50, 50, 1, marker_steps=5)
 simplify_slider = HSlider("Simplify contours", 0, 0, 10, 0.25, marker_steps=4)
 
 # Set up message bars to communicate data info & controls
 device_dtype_str = f"{model_device}/{model_dtype}"
-header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str)
+header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str, space_equally=True)
 footer_msgbar = StaticMessageBar(
-    "[arrows] Tools/Masks", "[i] Invert", "[tab] Contouring", "[spacebar] Preview", "[s] Save"
+    "[arrows] Tools/Masks", "[i] Invert", "[tab] Contouring", "[spacebar] Preview", text_scale=0.35
 )
+save_btn = ImmediateButton("Save", (60, 170, 20))
 
 # Set up display images
 colorimg_cb = ExpandingImage(full_image_bgr).set_debug_name("ColorImg")
@@ -235,9 +231,10 @@ imgoverlay_cb._rdr.pad.color = (35, 25, 30)
 
 # Set up secondary button controls
 show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn = ToggleButton.many(
-    "Preview", "Invert", "Largest Only", "Pick best", default_state=False
+    "Preview", "Invert", "Largest Only", "Pick best", default_state=False, text_scale=0.5
 )
-img_with_ctrls = VStack(imgoverlay_cb, HStack(show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn))
+secondary_ctrls = HStack(show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn)
+img_with_ctrls = VStack(imgoverlay_cb, secondary_ctrls)
 large_mask_only_btn.toggle(True)
 
 # Set up main display row, with image & mask previews, re-oriented based on tall vs. wide images
@@ -262,15 +259,17 @@ disp_layout = VStack(
     toolselect_cb,
     main_row,
     thresh_slider,
-    padding_slider,
     simplify_slider,
-    footer_msgbar,
+    rounding_slider,
+    padding_slider,
+    HStack(footer_msgbar, save_btn),
 ).set_debug_name("DisplayLayout")
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
 display_image = disp_layout.render(h=display_size_px, w=display_size_px)
 render_side = "h" if display_image.shape[1] > display_image.shape[0] else "w"
 render_limit_dict = {render_side: display_size_px}
+min_display_size_px = disp_layout._rdr.limits.min_h if render_side == "h" else disp_layout._rdr.limits.min_w
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -291,18 +290,15 @@ window.attach_keypress_callback(KEY.DOWN_ARROW, selected_mask_constraint.next)
 window.attach_keypress_callback(KEY.SPACEBAR, show_preview_btn.toggle)
 window.attach_keypress_callback(KEY.TAB, large_mask_only_btn.toggle)
 window.attach_keypress_callback("i", invert_mask_btn.toggle)
+window.attach_keypress_callback("s", save_btn.click)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
 KEY_ZOOM_OUT = ord("-")
-KEY_SAVE = ord("s")
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# %% *** Main display loop ***
 
 # Set up checker renderer for displaying masked images
 checker_pattern = CheckerPattern()
+mask_postprocessor = MaskPostProcessor()
 
 # Initialize state values
 box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
@@ -310,6 +306,7 @@ base_disp_img = full_image_bgr.copy()
 dispimg_h, dispimg_w = base_disp_img.shape[0:2]
 prev_disp_h, prev_disp_w = base_disp_img.shape[0:2]
 
+# *** Main display loop ***
 try:
     while True:
 
@@ -332,15 +329,19 @@ try:
         # Read secondary controls
         is_preview_changed, show_mask_preview = show_preview_btn.read()
         is_invert_changed, use_inverted_mask = invert_mask_btn.read()
-        is_large_changed, use_only_large_contour = large_mask_only_btn.read()
+        is_large_changed, use_largest_contour = large_mask_only_btn.read()
         is_best_changed, use_best_mask = pick_best_btn.read()
         is_secondary_ctrl_changed = any([is_preview_changed, is_invert_changed, is_large_changed, is_best_changed])
 
         # Read sliders
         is_mask_thresh_changed, mask_thresh = thresh_slider.read()
-        is_simplify_changed, simplify_value = simplify_slider.read()
-        is_padding_changed, contour_pad = padding_slider.read()
-        is_slider_changed = any((is_mask_thresh_changed, is_simplify_changed, is_padding_changed))
+        is_simplify_changed, mask_simplify = simplify_slider.read()
+        is_rounding_changed, mask_rounding = rounding_slider.read()
+        is_padding_changed, mask_padding = padding_slider.read()
+        is_slider_changed = any((is_mask_thresh_changed, is_simplify_changed, rounding_slider, is_padding_changed))
+
+        # Update post-processor based on control values
+        mask_postprocessor.update(use_largest_contour, mask_simplify, mask_rounding, mask_padding, use_inverted_mask)
 
         # Read prompt inputs
         box_prompt_changed, box_tlbr_norm_list = box_olay.read()
@@ -390,74 +391,28 @@ try:
                     mbtn.set_text(str(quality_estimate))
 
         # Update selected base mask
-        if is_prompt_changed or is_mask_changed or is_mask_thresh_changed:
+        if is_prompt_changed or is_mask_thresh_changed or is_mask_changed:
             raw_mask_select = mask_preds[:, mask_idx, :, :].unsqueeze(1)
             raw_mask_upscale = nn.functional.interpolate(raw_mask_select.float(), size=preencode_img_hw)
             mask_uint8 = ((raw_mask_upscale[0, 0] > mask_thresh) * 255).byte().cpu().numpy()
 
         # Process contour data
+        final_img, final_mask_uint8 = base_disp_img, mask_uint8
         ok_contours, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
-        if not ok_contours:
-            pgon_olay.clear()
-            colorimg = base_disp_img.copy() if not show_mask_preview else checker_pattern.draw_like(base_disp_img)
+        if ok_contours:
+            mask_contours_norm, final_mask_uint8 = mask_postprocessor(mask_uint8, mask_contours_norm)
+            if show_mask_preview:
+                final_img = checker_pattern.superimpose(base_disp_img, final_mask_uint8)
 
         else:
-            # For convenience
-            mask_shape = mask_uint8.shape
-            mask_h, mask_w = mask_shape[0:2]
-
-            # Handle 'largest only' contour setting
-            if use_only_large_contour:
-
-                # Special case, if only 1 FG point is set, make sure we try to pick the largest
-                # contour from the ones that contain the given FG point (otherwise result can look unintuitive)
-                only_one_fg_pt = len(all_fg_norm_list) == 1 and len(box_tlbr_norm_list) == 0
-                if only_one_fg_pt:
-                    pt_xy = all_fg_norm_list[0]
-                    have_filtered_result, filtered_contours_px = get_contours_containing_xy(mask_contours_norm, pt_xy)
-                    if have_filtered_result:
-                        mask_contours_norm = filtered_contours_px
-
-                # Keep only the largest contour
-                _, largest_contour_norm = get_largest_contour(mask_contours_norm, reference_shape=mask_shape)
-                mask_contours_norm = [largest_contour_norm]
-
-            # Convert contour to pixel units for further processing
-            mask_contours_px = pixelize_contours(mask_contours_norm, mask_shape)
-
-            # Simplify contour shape if needed
-            if simplify_value > 0:
-                mask_contours_px = [simplify_contour_px(contour, simplify_value) for contour in mask_contours_px]
-                mask_contours_norm = normalize_contours(mask_contours_px, mask_shape)
-
-            # Build base mask
-            final_mask = np.zeros_like(mask_uint8)
-            final_mask = cv2.fillPoly(final_mask, mask_contours_px, 255, cv2.LINE_AA)
-            if use_inverted_mask:
-                final_mask = np.bitwise_not(final_mask)
-
-            # Add padding to mask, if needed
-            need_padding = contour_pad != 0
-            if need_padding:
-                morph_type = cv2.MORPH_DILATE if contour_pad > 0 else cv2.MORPH_ERODE
-                kernel_size = (abs(contour_pad), abs(contour_pad))
-                morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, kernel_size)
-                final_mask = cv2.morphologyEx(final_mask, morph_type, morph_kernel)
-                ok_pad_contour, padded_contour_norm = get_contours_from_mask(final_mask, normalize=True)
-                if ok_pad_contour:
-                    mask_contours_norm = padded_contour_norm
-
-            # If showing the preview, mask out only the masked sections and layer on top of checker pattern
-            colorimg = base_disp_img.copy()
+            # Special case where we want the preview but there is no contour data
+            # -> Just show the 'raw' checker pattern in place of the display image
             if show_mask_preview:
-                colorimg = checker_pattern.superimpose(colorimg, final_mask)
-                pgon_olay.clear()
-            else:
-                pgon_olay.set_polygons(mask_contours_norm)
-            pass
+                final_img = checker_pattern.draw_like(base_disp_img)
 
         # Set the main image used for display
-        colorimg_cb.set_image(colorimg)
+        pgon_olay.set_polygons(mask_contours_norm if not show_mask_preview else None)
+        colorimg_cb.set_image(final_img)
 
         # Render final output
         display_image = disp_layout.render(**render_limit_dict)
@@ -470,11 +425,11 @@ try:
             display_size_px = min(display_size_px + 50, 10000)
             render_limit_dict = {render_side: display_size_px}
         if keypress == KEY_ZOOM_OUT:
-            display_size_px = max(display_size_px - 50, 250)
+            display_size_px = max(display_size_px - 50, min_display_size_px)
             render_limit_dict = {render_side: display_size_px}
 
         # Save data
-        if keypress == KEY_SAVE:
+        if save_btn.read():
             save_folder, save_idx = save_segmentation_results(image_path, mask_contours_norm, mask_uint8)
             print(f"SAVED ({save_idx}):", save_folder)
 
