@@ -185,13 +185,3 @@ def get_model_weights_paths(file_dunder, model_weights_folder_name="model_weight
     model_file_paths = [osp.join(model_weights_path, file) for file in model_files_list]
 
     return model_file_paths
-
-
-if __name__ == "__main__":
-
-    ss = ask_model_menu(
-        "/home/eo/Software/my_github/muggled_sam/requirements.txt",
-        default_path="/home/eo/Software/my_github/muggled_sam/model_weights/sam_vit_l_0b3195.pth",
-    )
-
-    print("DEBUG - SELECT:", ss)
