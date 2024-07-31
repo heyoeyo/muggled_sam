@@ -82,7 +82,7 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
         return model_path
 
     # If we're given a path that doesn't exist, use it to match to similarly named model files
-    # -> This allows the user to select models using substrings, e.g. 'large_5' to match to 'beit_large_512'
+    # -> This allows the user to select models using substrings, e.g. 'large' to match to 'large_model'
     model_file_paths = get_model_weights_paths(file_dunder)
     if path_was_given:
 
@@ -91,9 +91,13 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
         if len(filtered_paths) == 1:
             return filtered_paths[0]
 
-    # If there are no files in the model weights folder, as the user to enter a path to load a model
+    # Handle no files vs. 1 file vs. many files
     if len(model_file_paths) == 0:
+        # If there are no files in the model weights folder, ask the user to enter a path to load a model
         model_path = ask_for_path_if_missing(model_path, "model weights", default_prompt_path)
+    elif len(model_file_paths) == 1:
+        # If we have exactly one model, return that by default (no need to ask user)
+        model_path = model_file_paths[0]
     else:
         # If more than 1 file is available, provide a menu to select from the models
         model_path = ask_for_model_from_menu(model_file_paths, default_prompt_path)
@@ -105,6 +109,23 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
 
 
 def ask_for_model_from_menu(model_files_paths, default_path=None):
+
+    """
+    Function which provides a simple cli 'menu' for selecting which model to load.
+    A 'default' can be provided, which will highlight a matching entry in the menu
+    (if present), and will be used if the user does not enter a selection.
+
+    Entries are 'selected' by entering their list index, or can be selected by providing
+    a partial string match (or otherwise a full path can be used, if valid), looks like:
+
+    Select model file:
+
+      1: model_a.pth
+      2: model_b.pth (default)
+      3: model_c.pth
+
+    Enter selection:
+    """
 
     # Wipe out bad default paths
     if default_path is not None:
@@ -121,6 +142,11 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
         if is_default:
             menu_str += " (default)"
         menu_item_strs.append(menu_str)
+
+    # Set up prompt text and feedback printing
+    prompt_txt = "Enter selection: "
+    feedback_prefix = " " * (len(prompt_txt) - len("-->") - 1) + "-->"
+    print_selected_model = lambda index_select: print(f"{feedback_prefix} {model_names[idx_select]}")
 
     # Keep giving menu until user selects something
     selected_model_path = None
@@ -140,6 +166,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
             try:
                 idx_select = int(user_selection) - 1
                 selected_model_path = model_files_paths[idx_select]
+                print_selected_model(idx_select)
                 break
             except (ValueError, IndexError):
                 # Happens is user didn't input an integer selecting an item in the menu
@@ -157,6 +184,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
                 user_selected_name = filtered_names[0]
                 idx_select = model_names.index(user_selected_name)
                 selected_model_path = model_files_paths[idx_select]
+                print_selected_model(idx_select)
                 break
 
             # If we get here, we didn't get a valid input. So warn user and repeat prompt
