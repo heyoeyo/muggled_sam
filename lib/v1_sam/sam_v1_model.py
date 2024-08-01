@@ -15,7 +15,7 @@ import numpy as np
 # %% Classes
 
 
-class SAMModel(nn.Module):
+class SAMV1Model(nn.Module):
     """
     Wrapper around separated SAM model components, so that the model can be used as a singular entity
     """
@@ -109,10 +109,11 @@ class SAMModel(nn.Module):
 
         with torch.inference_mode():
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length)
-            image_hw = image_rgb_normalized_bchw.shape[2:]
+            image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image = self.image_encoder(image_rgb_normalized_bchw, window_size)
 
-        return encoded_image, image_hw
+        patch_grid_hw = encoded_image.shape[2:]
+        return encoded_image, patch_grid_hw, image_preenc_hw
 
     # .................................................................................................................
 

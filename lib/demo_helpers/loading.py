@@ -109,7 +109,6 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
 
 
 def ask_for_model_from_menu(model_files_paths, default_path=None):
-
     """
     Function which provides a simple cli 'menu' for selecting which model to load.
     A 'default' can be provided, which will highlight a matching entry in the menu
@@ -133,7 +132,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
             default_path = None
 
     # Generate list of model selections (ordered by size)
-    model_files_paths = sorted(model_files_paths, key=osp.getsize)
+    model_files_paths = sorted(model_files_paths)
     model_names = [osp.basename(filepath) for filepath in model_files_paths]
     menu_item_strs = []
     for idx, (path, name) in enumerate(zip(model_files_paths, model_names)):

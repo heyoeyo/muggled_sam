@@ -14,7 +14,7 @@ import torch.nn as nn
 import cv2
 import numpy as np
 
-from lib.make_sam import make_sam_from_original_state_dict
+from lib.make_sam import make_sam_from_state_dict
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.layout import HStack, VStack, OverlayStack
@@ -130,7 +130,7 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_original_state_dict(model_path)
+model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
@@ -148,7 +148,7 @@ is_tall_img, is_very_tall_img, is_very_wide_img = image_ar < 0.7, image_ar < 0.4
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, imgenc_window_size)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, imgenc_window_size)
 torch.cuda.synchronize()
 t2 = perf_counter()
 time_taken_ms = round(1000 * (t2 - t1))
@@ -163,7 +163,7 @@ mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
 image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
-token_hw_str = f"{encoded_img.shape[2]} x {encoded_img.shape[3]}"
+token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
     f"Config ({model_name}):",
@@ -176,7 +176,6 @@ print(
 
 # Provide memory usage feedback, if using cuda GPU
 if model_device == "cuda":
-    using_vram_mb = torch.cuda.memory_allocated() // 1_000_000
     peak_vram_mb = torch.cuda.max_memory_allocated() // 1_000_000
     print("  VRAM:", peak_vram_mb, "MB")
 
