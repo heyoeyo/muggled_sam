@@ -8,6 +8,8 @@ This repo contains a simplified implementation of the awesome 'Segment Anything 
 
 While the focus of this implementation is on readability of the code, there are some additional capabilities compared to the original implementation, as well as potential performance improvements due to support for half precision values on GPU. Most notably, this implementation does not require input images to be padded and supports arbitrary input resolutions, assuming enough VRAM is available.
 
+This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
+
 ## Getting started
 
 This repo is still a work-in-progress and only includes a single [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) script for now. To use this script, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.

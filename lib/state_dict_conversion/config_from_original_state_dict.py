@@ -235,20 +235,17 @@ def get_image_encoder_window_size(state_dict):
 def get_features_per_prompt_token(state_dict):
     """
     The state dict is expected to contain many weights which encode the number of
-    features per prompt, including the image encoder itself, which downsamples it's
-    own outputs to match the prompt sizing. This is available from the output
-    'neck' stage weights.
+    features per prompt, a simple weight to target is to find the learned
+    'not-a-point' embedding, which is sized to match the features per prompt.
     """
 
     # Make sure the target key is in the given state dict
-    target_key = "image_encoder.neck.0.weight"
+    target_key = "prompt_encoder.not_a_point_embed.weight"
     assert target_key in state_dict.keys(), f"Error determining features per prompt token! Couldn't find: {target_key}"
 
-    # Expecting weights of shape: fxFx1x1
-    # -> f is the features per prompt token
-    # -> F is the features per image patch token
-    # -> 1x1 is due to a 1x1 convolution kernel
-    features_per_prompt_token, _, _, _ = state_dict[target_key].shape
+    # Expecting weights of shape: 1xF
+    # -> F is the features per prompt token
+    _, features_per_prompt_token = state_dict[target_key].shape
 
     return int(features_per_prompt_token)
 

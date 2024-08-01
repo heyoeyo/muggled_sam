@@ -46,13 +46,11 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         new_key = _convert_imgenc_keys(orig_key, imgenc_blocks_per_stage)
         if found_key(new_key):
 
-            # Fix layer-norm shapes (add missing H, W dimensions)
-            if "output_projection.1" in new_key:
-                orig_data = orig_data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-            elif "output_projection.3" in new_key:
-                orig_data = orig_data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            # Correct layernorm2d weight shapes
+            layernorm_key_hints = ("output_projection.1", "output_projection.3")
+            mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
-            imgenc_sd[new_key] = orig_data
+            imgenc_sd[new_key] = mod_data
             continue
 
         new_key = _convert_coordencoder_keys(orig_key)
@@ -68,15 +66,11 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         new_key = _convert_maskdecoder_keys(orig_key)
         if found_key(new_key):
 
-            # Fix layer-norm shapes (add missing H, W dimensions)
-            if "maskhint_encoder.downscaler.1" in new_key:
-                orig_data = orig_data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-            elif "maskhint_encoder.downscaler.4" in new_key:
-                orig_data = orig_data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-            elif "maskgen.img_patch_upscaler.1" in new_key:
-                orig_data = orig_data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            # Correct layernorm2d weight shapes
+            layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.1")
+            mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
-            maskdecoder_sd[new_key] = orig_data
+            maskdecoder_sd[new_key] = mod_data
             continue
 
     # Bundle new state dict model components together for easier handling
@@ -93,6 +87,28 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Component functions
 
+
+def _reshape_layernorm2d(key, data, *key_hints):
+    """
+    Helper used to re-shape weight tensors for layernorm layers. The original
+    model used weights that had a single dimension (i.e. a vector), but then
+    internally added the missing batch/height/width dimensions to make them
+    image-like, with a shape of: 1xFx1x1
+    (where F is the length of the original weight 'vector')
+
+    Rather than re-shaping every time the model runs, we can reshape on load
+    and just use the result directly!
+    """
+
+    # If we get a key with a matching hint, reshape it
+    for hint in key_hints:
+        if hint in key:
+            res = data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            return res
+
+    return data
+
+# .....................................................................................................................
 
 def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
     """
