@@ -19,7 +19,7 @@ from torch import Tensor
 # %% Classes
 
 
-class SAMMaskDecoder(nn.Module):
+class SAMV1MaskDecoder(nn.Module):
     """
     Simplified implementation of the 'mask-decoder' model/component described in:
         "Segment Anything"

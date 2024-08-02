@@ -23,7 +23,7 @@ from numpy import ndarray
 # %% Classes
 
 
-class SAMImageEncoder(nn.Module):
+class SAMV1ImageEncoder(nn.Module):
     """
     Simplified implementation of the 'image-encoder' model/component described in:
         "Segment Anything"

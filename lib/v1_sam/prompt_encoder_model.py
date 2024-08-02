@@ -16,7 +16,7 @@ from torch import Tensor
 # %% Classes
 
 
-class SAMPromptEncoder(nn.Module):
+class SAMV1PromptEncoder(nn.Module):
     """
     Simplified implementation of the 'prompt-encoder' model/component described in:
         "Segment Anything"

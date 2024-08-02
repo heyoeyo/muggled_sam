@@ -9,10 +9,10 @@ import torch
 
 from .v1_sam.sam_v1_model import SAMV1Model
 
-from .v1_sam.image_encoder_model import SAMImageEncoder
-from .v1_sam.coordinate_encoder_model import SAMCoordinateEncoder
-from .v1_sam.prompt_encoder_model import SAMPromptEncoder
-from .v1_sam.mask_decoder_model import SAMMaskDecoder
+from .v1_sam.image_encoder_model import SAMV1ImageEncoder
+from .v1_sam.coordinate_encoder_model import SAMV1CoordinateEncoder
+from .v1_sam.prompt_encoder_model import SAMV1PromptEncoder
+from .v1_sam.mask_decoder_model import SAMV1MaskDecoder
 
 from .v1_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
 from .v1_sam.state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
@@ -91,7 +91,7 @@ def make_sam_v1(
 ) -> SAMV1Model:
     """
     Helper used to build all SAM model components. The arguments for this function are
-    expected to come from the 'make_sam_from_original_state_dict' function, which
+    expected to come from the 'make_samv1_from_original_state_dict' function, which
     will fill in the function arguments based on a loaded state dictionary.
 
     However, if you want to make a model without pretrained weights
@@ -109,6 +109,7 @@ def make_sam_v1(
         features_per_prompt_token = 256
         features_per_decoder_token = 128
         num_output_mask_tokens = 4
+        num_decoder_heads = 8
         num_decoder_blocks = 2
 
     # vit-large
@@ -122,6 +123,7 @@ def make_sam_v1(
         features_per_prompt_token = 256
         features_per_decoder_token = 128
         num_output_mask_tokens = 4
+        num_decoder_heads = 8
         num_decoder_blocks = 2
 
     # vit-base
@@ -135,11 +137,12 @@ def make_sam_v1(
         features_per_prompt_token = 256
         features_per_decoder_token = 128
         num_output_mask_tokens = 4
+        num_decoder_heads = 8
         num_decoder_blocks = 2
     """
 
     # Construct model components
-    imgenc_model = SAMImageEncoder(
+    imgenc_model = SAMV1ImageEncoder(
         features_per_image_token,
         num_encoder_blocks,
         num_encoder_heads,
@@ -149,9 +152,12 @@ def make_sam_v1(
         patch_size_px,
         num_encoder_stages,
     )
-    coordenc_model = SAMCoordinateEncoder(features_per_prompt_token)
-    promptenc_model = SAMPromptEncoder(features_per_prompt_token)
-    maskdec_model = SAMMaskDecoder(
+
+    coordenc_model = SAMV1CoordinateEncoder(features_per_prompt_token)
+
+    promptenc_model = SAMV1PromptEncoder(features_per_prompt_token)
+
+    maskdec_model = SAMV1MaskDecoder(
         features_per_prompt_token,
         features_per_decoder_token,
         num_decoder_blocks,

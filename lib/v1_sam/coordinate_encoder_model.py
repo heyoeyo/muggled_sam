@@ -17,7 +17,7 @@ from torch import Tensor
 # %% Classes
 
 
-class SAMCoordinateEncoder(nn.Module):
+class SAMV1CoordinateEncoder(nn.Module):
     """
     Modified implementation of the 'prompt positional-encoder' component described in:
         "Segment Anything"
