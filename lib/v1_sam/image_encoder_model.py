@@ -70,6 +70,9 @@ class SAMV1ImageEncoder(nn.Module):
         # Inherit from parent
         super().__init__()
 
+        # Storage for window size override
+        self._window_size_override = None
+
         # Create patch embedding to create patch tokens along with positional encoder
         self._patch_size_px = patch_size_px
         self.patch_embed = PatchEmbed(features_per_token, patch_size_px)
@@ -99,7 +102,7 @@ class SAMV1ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, image_tensor_bchw: Tensor, window_size: int | None = None) -> Tensor:
+    def forward(self, image_tensor_bchw: Tensor) -> Tensor:
         """
         Outputs a batch of feature tensors of shape: (batch, 256, H, W), where H & W are both 64 (= 1024 / 16)
         - Result of applying repeated transformer blocks on 16x16 patches of input image + final projection layer
@@ -116,7 +119,7 @@ class SAMV1ImageEncoder(nn.Module):
 
         # Run transformer layers
         for stage in self.stages:
-            patch_tokens_bhwc = stage(patch_tokens_bhwc, window_size)
+            patch_tokens_bhwc = stage(patch_tokens_bhwc, self._window_size_override)
 
         return self.output_projection(patch_tokens_bhwc.permute(0, 3, 1, 2))
 
@@ -153,6 +156,25 @@ class SAMV1ImageEncoder(nn.Module):
             image_tensor_bchw = nn.functional.pad(image_tensor_bchw, (pad_left, pad_right, pad_top, pad_bottom))
 
         return image_tensor_bchw
+
+    # .................................................................................................................
+
+    def set_window_size(self, window_size: int | None):
+        """
+        Function used to adjust the window sizing used when encoding image data
+        Setting a value of None will cause the model to fall back to a default value
+        (default is 14 if using original SAM v1 model)
+        """
+
+        # Window sizing is square, so if given something like a (h,w) sizing, just take the first value
+        if isinstance(window_size, (tuple, list)):
+            window_size = window_size[0]
+
+        # Only update the size if it is an integer value or None (None forces a fallback to a default size)
+        if isinstance(window_size, int) or (window_size is None):
+            self._window_size_override = window_size
+
+        return self
 
     # .................................................................................................................
 

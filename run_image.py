@@ -145,10 +145,13 @@ is_tall_img, is_very_tall_img, is_very_wide_img = image_ar < 0.7, image_ar < 0.4
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Run image encoder
 
+# Adjust window size if possible
+sammodel.set_window_size(imgenc_window_size)
+
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, imgenc_window_size)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size)
 torch.cuda.synchronize()
 t2 = perf_counter()
 time_taken_ms = round(1000 * (t2 - t1))

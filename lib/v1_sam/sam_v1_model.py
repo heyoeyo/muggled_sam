@@ -10,6 +10,14 @@ import torch.nn as nn
 
 import numpy as np
 
+# For type hints
+from torch import Tensor
+from numpy import ndarray
+from .image_encoder_model import SAMV1ImageEncoder
+from .coordinate_encoder_model import SAMV1CoordinateEncoder
+from .prompt_encoder_model import SAMV1PromptEncoder
+from .mask_decoder_model import SAMV1MaskDecoder
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
@@ -22,7 +30,13 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, image_encoder_model, coordinate_encoder, prompt_encoder_model, mask_decoder_model):
+    def __init__(
+        self,
+        image_encoder_model: SAMV1ImageEncoder,
+        coordinate_encoder: SAMV1CoordinateEncoder,
+        prompt_encoder_model: SAMV1PromptEncoder,
+        mask_decoder_model: SAMV1MaskDecoder,
+    ):
 
         # Inherit from parent
         super().__init__()
@@ -38,7 +52,28 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, image_rgb_normalized_bchw, boxes_tensor, fg_tensor, bg_tensor, mask_hint=None):
+    def set_window_size(self, window_size: int | None):
+        """
+        Function used to adjust the window sizing of the SAMV1 image encoder. If set to
+        None, then the encoder will fall back to a default value (14 in original SAM model).
+        Larger window sizes can provide improved masking details, at the expense of higher
+        computational cost.
+        """
+
+        self.image_encoder.set_window_size(window_size)
+
+        return self
+
+    # .................................................................................................................
+
+    def forward(
+        self,
+        image_rgb_normalized_bchw: Tensor,
+        boxes_tensor: Tensor,
+        fg_tensor: Tensor,
+        bg_tensor: Tensor,
+        mask_hint: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """
         Main functionality of the SAM model, bundled into a single function.
         Takes an image and set of prompts and produces several candidate segmentation masks.
@@ -65,7 +100,7 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """
         Function used to encode prompt coordinates. Inputs should be given as lists
         of prompts. The length of each list does not need to match. Enter either
@@ -105,19 +140,30 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def encode_image(self, image_bgr, max_side_length=1024, window_size=None):
+    def encode_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length=1024,
+    ) -> tuple[Tensor, tuple[int, int], tuple[int, int]]:
 
         with torch.inference_mode():
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
-            encoded_image = self.image_encoder(image_rgb_normalized_bchw, window_size)
+            encoded_image = self.image_encoder(image_rgb_normalized_bchw)
 
+        # Get patch sizing of the encoded image tokens (as needed by other components)
         patch_grid_hw = encoded_image.shape[2:]
+
         return encoded_image, patch_grid_hw, image_preenc_hw
 
     # .................................................................................................................
 
-    def generate_masks(self, encoded_image, encoded_prompts, mask_hint=None):
+    def generate_masks(
+        self,
+        encoded_image: Tensor,
+        encoded_prompts: Tensor,
+        mask_hint: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
 
         with torch.inference_mode():
             patch_grid_hw = encoded_image.shape[2:]
@@ -128,14 +174,14 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def get_best_mask_index(self, iou_predictions):
+    def get_best_mask_index(self, iou_predictions: Tensor) -> int:
         """Returns the index of the highest IoU prediction score"""
         return self.mask_decoder.get_best_mask_index(iou_predictions)
 
     # .................................................................................................................
 
     @staticmethod
-    def normalize_xy(xy_px_list, frame_shape, use_original_SAM_method=True):
+    def normalize_xy(xy_px_list: list, frame_shape: tuple, use_original_SAM_method=True) -> list:
         """Helper used to normalize (x,y) pixel coordinates to the 0-to-1 range used by SAM"""
 
         # For convenience
