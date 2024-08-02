@@ -1,18 +1,19 @@
 # Muggled SAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything Model' (SAM) from [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base. Most of the changes come from separating the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything Model' versions 1 & 2 from [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything), and [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base. Most of the changes come from separating/simplifying the different components of the model structure.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
 </p>
 
-While the focus of this implementation is on readability of the code, there are some additional capabilities compared to the original implementation, as well as potential performance improvements due to support for half precision values on GPU. Most notably, this implementation does not require input images to be padded and supports arbitrary input resolutions, assuming enough VRAM is available.
+While the focus of this implementation is on readability of the code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases.
 
-This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
+> [!Note]
+> This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
 
 ## Getting started
 
-This repo is still a work-in-progress and only includes a single [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) script for now. To use this script, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
+This repo only includes a single [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) script for now. To use this script, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
 
 ### Install
 First create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
@@ -48,7 +49,7 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 ### Model Weights
 
-Before you can run a model, you'll need to download it's weights. There are 3 officially support models (vit-base, vit-large and vit-huge). This repo uses the exact same weights as the original implementation (or any fine-tuned variant of the original models), which can be downloaded from the **Model Checkpoints** section of [original repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
+Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Download Checkpoints** section of [SAMv2 repo](https://github.com/facebookresearch/segment-anything-2?tab=readme-ov-file#download-checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
 
 After downloading a model file, you can place it in the `model_weights` folder of this repo or otherwise just keep note of the file path, since you'll need to provide this when running the demo scripts. If you do place the file in the [model_weights](https://github.com/heyoeyo/muggled_sam/tree/main/model_weights) folder, then it will auto-load when running the scripts.
 
@@ -56,9 +57,16 @@ After downloading a model file, you can place it in the `model_weights` folder o
 
 <summary>Direct download links</summary>
 
-The table below includes direct download links to all of the supported models. **Note:** These are all links to the original repo, none of these files belong to MuggledSAM!
+The tables below include direct download links to all of the supported models. **Note:** These are all links to the original repos, none of these files belong to MuggledSAM!
 
-| Model | Size (MB) |
+| SAMv2 Models | Size (MB) |
+| -----| -----|
+| [sam2_hiera_tiny](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt) | 160 |
+| [sam2_hiera_small](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt) | 185 |
+| [sam2_hiera_base_plus](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt) | 325 |
+| [sam2_hiera_large](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt) | 900 |
+
+| SAMv1 Models | Size (MB) |
 | -----| -----|
 | [sam-vit-base](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth) | 375 |
 | [sam-vit-large](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth) | 1250 |
@@ -82,7 +90,7 @@ If you don't provide an image path (using the `-i` flag), then you will be asked
 
 # Acknowledgements
 
-The code in this repo is entirely based off the original segment-anything github repo:
+The code in this repo is entirely based off the original segment-anything github repos:
 
 [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything)
 ```
@@ -91,6 +99,17 @@ The code in this repo is entirely based off the original segment-anything github
   author={Kirillov, Alexander and Mintun, Eric and Ravi, Nikhila and Mao, Hanzi and Rolland, Chloe and Gustafson, Laura and Xiao, Tete and Whitehead, Spencer and Berg, Alexander C. and Lo, Wan-Yen and Doll{\'a}r, Piotr and Girshick, Ross},
   journal={arXiv:2304.02643},
   year={2023}
+}
+```
+
+
+[facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2)
+```bibtex
+@article{ravi2024sam2,
+  title={SAM 2: Segment Anything in Images and Videos},
+  author={Ravi, Nikhila and Gabeur, Valentin and Hu, Yuan-Ting and Hu, Ronghang and Ryali, Chaitanya and Ma, Tengyu and Khedr, Haitham and R{\"a}dle, Roman and Rolland, Chloe and Gustafson, Laura and Mintun, Eric and Pan, Junting and Alwala, Kalyan Vasudev and Carion, Nicolas and Wu, Chao-Yuan and Girshick, Ross and Doll{\'a}r, Piotr and Feichtenhofer, Christoph},
+  journal={arXiv preprint},
+  year={2024}
 }
 ```
 
