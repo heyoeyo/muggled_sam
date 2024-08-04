@@ -140,7 +140,13 @@ class SAMV2ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def prepare_image(self, image_bgr: ndarray, max_side_length=1024, pad_to_square=False) -> Tensor:
+    def prepare_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length=1024,
+        use_square_sizing=False,
+        pad_to_square=False,
+    ) -> Tensor:
         """
         Helper used to convert opencv-formatted images (e.g. from loading: cv2.imread(path_to_image)
         into the format needed by the image encoder model (includes scaling and RGB normalization steps)
@@ -150,12 +156,17 @@ class SAMV2ImageEncoder(nn.Module):
 
         # Figure out scaling factor to get target side length
         img_h, img_w = image_bgr.shape[0:2]
-        scale_factor = max_side_length / max(img_h, img_w)
+        largest_side = max(img_h, img_w)
+        scale_factor = max_side_length / largest_side
 
         # Force sizing to multiples of a specific tiling size
         tiling_size = self.get_image_tiling_size_constraint()
-        scaled_h = int(np.ceil(img_h * scale_factor / tiling_size)) * tiling_size
-        scaled_w = int(np.ceil(img_w * scale_factor / tiling_size)) * tiling_size
+        if use_square_sizing:
+            scaled_side = int(np.ceil(largest_side * scale_factor / tiling_size)) * tiling_size
+            scaled_h = scaled_w = scaled_side
+        else:
+            scaled_h = int(np.ceil(img_h * scale_factor / tiling_size)) * tiling_size
+            scaled_w = int(np.ceil(img_w * scale_factor / tiling_size)) * tiling_size
 
         # Scale RGB image to correct size and re-order from HWC to BCHW (with batch of 1)
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)

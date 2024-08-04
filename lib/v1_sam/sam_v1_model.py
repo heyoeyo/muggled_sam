@@ -144,10 +144,11 @@ class SAMV1Model(nn.Module):
         self,
         image_bgr: ndarray,
         max_side_length=1024,
+        use_square_sizing=False,
     ) -> tuple[Tensor, tuple[int, int], tuple[int, int]]:
 
         with torch.inference_mode():
-            image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length)
+            image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image = self.image_encoder(image_rgb_normalized_bchw)
 

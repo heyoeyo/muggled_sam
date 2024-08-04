@@ -125,17 +125,26 @@ class SAMV1ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def prepare_image(self, image_bgr: ndarray, max_side_length=1024, pad_to_square=False) -> Tensor:
+    def prepare_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length=1024,
+        use_square_sizing=False,
+        pad_to_square=False,
+    ) -> Tensor:
 
         # Figure out scaling factor to get target side length
         img_h, img_w = image_bgr.shape[0:2]
-        scale_factor = max_side_length / max(img_h, img_w)
-        scaled_h = int(round(img_h * scale_factor))
-        scaled_w = int(round(img_w * scale_factor))
+        largest_side = max(img_h, img_w)
+        scale_factor = max_side_length / largest_side
 
         # Force sizing to multiples of patch size
-        scaled_w = int(np.ceil(scaled_w / self._patch_size_px)) * self._patch_size_px
-        scaled_h = int(np.ceil(scaled_h / self._patch_size_px)) * self._patch_size_px
+        if use_square_sizing:
+            scaled_side = int(np.ceil(largest_side * scale_factor / self._patch_size_px)) * self._patch_size_px
+            scaled_h = scaled_w = scaled_side
+        else:
+            scaled_h = int(np.ceil(img_h * scale_factor / self._patch_size_px)) * self._patch_size_px
+            scaled_w = int(np.ceil(img_w * scale_factor / self._patch_size_px)) * self._patch_size_px
 
         # Scale RGB image to correct size and re-order from HWC to BCHW (with batch of 1)
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)

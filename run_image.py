@@ -75,6 +75,13 @@ parser.add_argument(
     help="Use 32-bit floating point model weights. Note: this doubles VRAM usage",
 )
 parser.add_argument(
+    "-sq",
+    "--use_square_sizing",
+    default=False,
+    action="store_true",
+    help="Process the image at a square aspect ratio (matches original SAM behavior) ",
+)
+parser.add_argument(
     "-b",
     "--base_size_px",
     default=default_base_size,
@@ -103,6 +110,7 @@ arg_model_path = args.model_path
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
+use_square_sizing = args.use_square_sizing
 imgenc_base_size = args.base_size_px
 imgenc_window_size = args.window_size
 show_iou_preds = args.show_q_estimate
@@ -151,7 +159,7 @@ sammodel.set_window_size(imgenc_window_size)
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
 torch.cuda.synchronize()
 t2 = perf_counter()
 time_taken_ms = round(1000 * (t2 - t1))
