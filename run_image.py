@@ -79,7 +79,7 @@ parser.add_argument(
     "--use_square_sizing",
     default=False,
     action="store_true",
-    help="Process the image at a square aspect ratio (matches original SAM behavior) ",
+    help="Process the image at a square aspect ratio (better match to original SAM behavior) ",
 )
 parser.add_argument(
     "-b",
@@ -93,14 +93,14 @@ parser.add_argument(
     "--window_size",
     default=default_window_size,
     type=int,
-    help="Change the window size of attention blocks within SAM's image encoder (default:{default_window_size})",
+    help=f"Change the window size of attention blocks within SAM's image encoder (default:{default_window_size})",
 )
 parser.add_argument(
     "-q",
-    "--show_q_estimate",
+    "--quality_estimate",
     default=default_show_iou_preds,
     action="store_false" if default_show_iou_preds else "store_true",
-    help="Show mask quality estimates" if default_show_iou_preds else "Hide mask quality estimates",
+    help="Hide mask quality estimates" if default_show_iou_preds else "Show mask quality estimates",
 )
 
 # For convenience
@@ -113,7 +113,7 @@ use_float32 = args.use_float32
 use_square_sizing = args.use_square_sizing
 imgenc_base_size = args.base_size_px
 imgenc_window_size = args.window_size
-show_iou_preds = args.show_q_estimate
+show_iou_preds = args.quality_estimate
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
