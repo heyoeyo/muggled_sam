@@ -11,7 +11,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .components.imgenc_components import Hiera, OutputProjection
+from .components.hiera_model import HieraModel
+from .components.imgenc_components import HalfStepPatchEmbed, WindowedPositionEncoding, OutputProjection
 from .components.shared import Conv1x1Layer
 
 # For type hints
@@ -52,7 +53,7 @@ class SAMV2ImageEncoder(nn.Module):
         output_channels=256,
         num_heads=2,
         blocks_per_stage=(2, 3, 16, 3),
-        global_attn_spacing=4,
+        global_attn_spacing_per_stage=(None, None, 4, None),
         window_size_per_stage=(8, 4, 14, 17),
         window_pos_embed_bkg_spatial_size=(14, 14),
         patch_size_px=7,
@@ -71,12 +72,17 @@ class SAMV2ImageEncoder(nn.Module):
         self.posenc = WindowedPositionEncoding(features_per_token, window_pos_embed_bkg_spatial_size, poswin_hw)
 
         # Set up hierarchical image encoder model
-        self.trunk = Hiera(features_per_token, num_heads, blocks_per_stage, window_size_per_stage, global_attn_spacing)
+        self.trunk = HieraModel(
+            features_per_token,
+            num_heads,
+            blocks_per_stage,
+            window_size_per_stage,
+            global_attn_spacing_per_stage,
+        )
 
-        # Pre-compute output feature sizes from hierarchical model
-        # -> Better to have the Hiera model compute this!!
-        backbone_channel_list = tuple(features_per_token * mul for mul in (8, 4, 2, 1))
-        self.output_projection = OutputProjection(output_channels, backbone_channel_list)
+        # Create output projection model which follows the trunk model
+        features_per_stage = self.trunk.get_features_per_stage()
+        self.output_projection = OutputProjection(output_channels, features_per_stage)
 
         # Embedding added to encoded image features (when not using memory encoding?)
         self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, output_channels))
@@ -119,9 +125,8 @@ class SAMV2ImageEncoder(nn.Module):
         # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/sam2_image_predictor.py#L142
         lowres_features += self.no_mem_embed.squeeze(0).unsqueeze(-1).unsqueeze(-1)
 
-        # Re-bundle features/posembeds for easier handling (note, this is reversed order from original!)
+        # Re-bundle features for easier handling (note, this is reversed order from original!)
         features_list = [lowres_features, hires_features_x2, hires_features_x4]
-        # posembed_list = [lowres_posembd, hires_posembed_x2, hires_posembed_x4]
 
         # Skipping '_prepare_backbone_features' step from original code, see:
         # https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/sam2_base.py#L477C9-L477C35
@@ -199,156 +204,5 @@ class SAMV2ImageEncoder(nn.Module):
         to_multiples_requirement = patch_tiling_size * (2**num_downsamples)
 
         return int(to_multiples_requirement)
-
-    # .................................................................................................................
-
-
-class HalfStepPatchEmbed(nn.Module):
-    """
-    Patch embedding model used to convert full-sized RGB images into
-    a much smaller grid of image 'tokens' for processing by a transformer model.
-
-    In this version (used by SAMV2), patches 'overlap' by having the convolution
-    take half-steps between patches. This doubles the number of tokens!
-
-    For example, below each 'pixel' is indicated with a vertical bar |,
-    and the patch that that pixel belongs to is labeled A, B, C, etc.
-    In 'typical' patch embedding, each pixel belongs to a single patch,
-    while with half-step embeddings, many pixels will be included in
-    multiple patches (e.g. the 3rd pixel down ends up in patch A & B):
-
-      Typical       Half-Step
-        A |           A |
-        A |           A |
-        A |           A | B
-        B |             | B
-        B |           C | B
-        B |           C |
-        C |           C | D
-        C |             | D
-        C |             | D
-         etc.          etc.
-
-    """
-
-    # .................................................................................................................
-
-    def __init__(self, features_per_token, patch_size_px=7, num_input_channels=3):
-
-        # Inherit from parent
-        super().__init__()
-
-        # Force odd-sized patches
-        assert (patch_size_px % 2) == 1, "Must use odd number for patch size"
-
-        # Compute patch stride/padding for half-step patches
-        stride = (patch_size_px + 1) // 2
-        padding = stride - 1
-
-        # Both patch grouping + linear transformation is handled with a single strided convolution step!
-        self.proj = nn.Conv2d(
-            num_input_channels,
-            features_per_token,
-            kernel_size=patch_size_px,
-            stride=stride,
-            padding=padding,
-        )
-
-    # .................................................................................................................
-
-    def forward(self, image_tensor_bchw: Tensor) -> Tensor:
-        """
-        Reshapes & projects image tensor: BxCxHxW -> BxhxwxF
-            -> Where B is batch size
-            -> C is image channels (i.e. 3 for RGB image)
-            -> F is features per token
-            -> H, W are the height & width of the image
-            -> h, w are the size of the patch grid
-        """
-
-        patch_tokens = self.proj(image_tensor_bchw)
-        return patch_tokens.permute(0, 2, 3, 1)
-
-    # .................................................................................................................
-
-
-class WindowedPositionEncoding(nn.Module):
-    """
-    Simplified implementation of the position encoding components of the image encoder from:
-        "SAM 2: Segment Anything in Images and Videos"
-        By: Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma,
-        Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan,
-        Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick,
-        Piotr Dollár, Christoph Feichtenhofer
-        @ https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/
-
-    The original implementation also references the following paper:
-    https://arxiv.org/abs/2311.05613
-
-    The position encoding is built directly into the image encoding in the original implementation,
-    but has been separated for clarity here. Other minor adjustments include support for caching
-    the position encodings, as well as potentially more flexibility in the size of encodings.
-
-    Based on the following original code:
-    https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/backbones/hieradet.py#L284
-    """
-
-    # .................................................................................................................
-
-    def __init__(self, features_per_token, base_hw, window_hw):
-
-        # Inherit from parent
-        super().__init__()
-
-        # Storage for fixed-size learned position embedding
-        self.base_embedding = nn.Parameter(torch.zeros(1, features_per_token, *base_hw))
-        self.base_window_tile = nn.Parameter(torch.zeros(1, features_per_token, *window_hw))
-
-        # Allocate storage for caching positional encoding, so we don't keep re-calculating them
-        self.register_buffer("cached_encoding_bhwc", torch.empty((1, 1, 1, features_per_token)), persistent=False)
-
-    # .................................................................................................................
-
-    def extra_repr(self) -> str:
-        _, features_per_token, grid_h, grid_w = self.base_embedding.shape
-        _, _, win_h, win_w = self.base_window_tile.shape
-        features_str = f"features_per_token={features_per_token}"
-        base_hw_str = f"base_grid_hw=({grid_h}, {grid_w})"
-        win_hw_str = f"window_hw=({win_h}, {win_w})"
-        return f"{features_str}, {base_hw_str}, {win_hw_str}"
-
-    # .................................................................................................................
-
-    def forward(self, patch_tokens_bhwc: Tensor) -> Tensor:
-        """Adds positional encoding to patch tokens"""
-        _, grid_h, grid_w, _ = patch_tokens_bhwc.shape
-        return patch_tokens_bhwc + self._scale_to_patch_grid((grid_h, grid_w))
-
-    # .................................................................................................................
-
-    def _scale_to_patch_grid(self, patch_grid_hw: tuple[int, int]) -> Tensor:
-        """
-        Helper used to make sure the position embeddings are scaled
-        to match the input patch sizing, by linear interpolation.
-        """
-
-        # If sizing is different from the cache, then re-compute it
-        grid_h, grid_w = patch_grid_hw
-        _, cache_h, cache_w, _ = self.cached_encoding_bhwc.shape
-        if grid_h != cache_h or grid_w != cache_w:
-
-            # Scale base embedding to match patch grid size
-            scaled_base = nn.functional.interpolate(self.base_embedding, size=patch_grid_hw, mode="bicubic")
-
-            # Repeat/tile window embedding to match the patch grid shape
-            # -> Need to truncate to exactly match the grid shape at the end!
-            _, _, win_h, win_w = self.base_window_tile.shape
-            num_tile_h, num_tile_w = 1 + grid_h // win_h, 1 + grid_w // win_w
-            tiled_win_embed = self.base_window_tile.tile(1, 1, num_tile_h, num_tile_w)[:, :, :grid_h, :grid_w]
-
-            # Add tiled window embedding and convert to channels-last shape: BxCxHxW -> BxHxWxC
-            self.cached_encoding_bhwc = (scaled_base + tiled_win_embed).permute(0, 2, 3, 1)
-
-        return self.cached_encoding_bhwc
 
     # .................................................................................................................

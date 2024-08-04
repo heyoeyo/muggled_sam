@@ -30,7 +30,7 @@ def get_model_config_from_state_dict(state_dict):
         "imgencoder_heads": get_image_encoder_heads(total_block_count),
         "imgencoder_blocks_per_stage": get_blocks_per_stage(total_block_count),
         "imgencoder_window_size_per_stage": get_window_size_per_stage(total_block_count),
-        "imgencoder_global_attn_spacing": get_global_attention_spacing(total_block_count),
+        "imgencoder_global_attn_spacing_per_stage": get_global_attention_spacing_per_stage(total_block_count),
         "window_pos_embed_bkg_spatial_size": get_posembed_bkg_hw(state_dict),
         "num_output_mask_tokens": get_num_output_mask_tokens(state_dict),
         "num_decoder_blocks": get_mask_decoder_block_count(state_dict),
@@ -63,16 +63,16 @@ def get_image_encoder_heads(total_block_count):
     return num_heads
 
 
-def get_global_attention_spacing(total_block_count):
+def get_global_attention_spacing_per_stage(total_block_count):
 
     # Hard-code the known mapping between block counts & global attention spacing
     # -> Isn't part of model weights
     # -> Doesn't seem to follow a clear pattern...
     spacing_by_blockcount_lut = {
-        12: 2,
-        16: 3,
-        24: 4,
-        48: 10,
+        12: (None, None, 2, None),
+        16: (None, None, 3, None),
+        24: (None, None, 4, None),
+        48: (None, None, 10, None),
     }
 
     # Warn if we don't know what to do with block count

@@ -25,6 +25,18 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         "imgencoder", "coordencoder", "promptencoder", "maskdecoder", "memoryencoder", "memoryattention"
     """
 
+    # Pre-compute mapping between old block indexing & new stage + block indexing
+    # - This is used to convert from: trunk.blocks.9.... -to-> trunk.stages.2.blocks.4
+    # - For example, for the tiny model which has blocks_per_stage: (2, 3, 7, 2),
+    #   'new' block indexing would look like: 0, 1 | 0, 1, 2 | 0, 1, 2, 3, 4, 5, 6 | 0, 1
+    #   where each | ... | represents the block indexing within a stage
+    imgenc_blocks_per_stage = config_dict["imgencoder_blocks_per_stage"]
+    block_idx_to_stage_idx = []
+    block_idx_offset_by_stage = []
+    for stage_idx, num_blocks in enumerate(imgenc_blocks_per_stage):
+        block_idx_to_stage_idx += [stage_idx for _ in range(num_blocks)]
+        block_idx_offset_by_stage.append(sum(imgenc_blocks_per_stage[:stage_idx]))
+
     # Allocate storage for state dict of each (new) model component
     imgenc_sd = {}
     coordencoder_sd = {}
@@ -40,7 +52,7 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         # For sanity, make sure the key is definitely a string
         orig_key = str(orig_key)
 
-        new_key = _convert_imgenc_keys(orig_key)
+        new_key = _convert_imgenc_keys(orig_key, block_idx_to_stage_idx, block_idx_offset_by_stage)
         if found_key(new_key):
 
             # Correct layernorm2d weight shapes
@@ -126,7 +138,9 @@ def _reshape_layernorm2d(key, data, *key_hints):
 # .....................................................................................................................
 
 
-def _convert_imgenc_keys(key: str) -> None | str:
+def _convert_imgenc_keys(
+    key: str, block_idx_to_stage_idx: list[int], block_idx_offset_by_stage: list[int]
+) -> None | str:
     """Converts keys associated with the image encoder component of the model"""
 
     # Capture oddly placed hi-res convolution layers on the mask decoder
@@ -156,13 +170,32 @@ def _convert_imgenc_keys(key: str) -> None | str:
     if new_key.startswith("trunk.patch_embed"):
         return new_key.removeprefix("trunk.")
 
-    # Fix block MLP layer indexing
-    if ".mlp.layers." in new_key:
-        block_idx = get_nth_integer(new_key, 0)
-        layer_idx = get_nth_integer(new_key, 1)
-        new_idx = 2 * layer_idx
-        weight_or_bias = get_suffix_terms(new_key, 1)
-        return f"trunk.blocks.{block_idx}.mlp.layers.{new_idx}.{weight_or_bias}"
+    # Re-format block keys into stage-based keys
+    if new_key.startswith("trunk.blocks"):
+
+        # Rename transformer layernorm layers
+        if "norm1" in new_key:
+            new_key = new_key.replace("norm1", "norm_preattn")
+        if "norm2" in new_key:
+            new_key = new_key.replace("norm2", "norm_premlp")
+
+        # Fix block MLP layer indexing
+        orig_block_idx = get_nth_integer(new_key, 0)
+        if ".mlp.layers." in new_key:
+            # block_idx = get_nth_integer(new_key, 0)
+            mlp_layer_idx = get_nth_integer(new_key, 1)
+            new_idx = 2 * mlp_layer_idx
+            weight_or_bias = get_suffix_terms(new_key, 1)
+            new_key = f"trunk.blocks.{orig_block_idx}.mlp.layers.{new_idx}.{weight_or_bias}"
+
+        # Create new stage-block indexing (from older  'global block indexing')
+        stage_idx = block_idx_to_stage_idx[orig_block_idx]
+        new_block_idx = orig_block_idx - block_idx_offset_by_stage[stage_idx]
+        old_prefix = f"trunk.blocks.{orig_block_idx}"
+        new_prefix = f"trunk.stages.{stage_idx}.{new_block_idx}"
+        new_key = new_key.replace(old_prefix, new_prefix)
+
+        return new_key
 
     # Fix weird FPN convolution layers
     if "neck.convs" in new_key:
