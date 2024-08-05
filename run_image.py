@@ -75,11 +75,11 @@ parser.add_argument(
     help="Use 32-bit floating point model weights. Note: this doubles VRAM usage",
 )
 parser.add_argument(
-    "-sq",
-    "--use_square_sizing",
+    "-ar",
+    "--use_aspect_ratio",
     default=False,
     action="store_true",
-    help="Process the image at a square aspect ratio (better match to original SAM behavior) ",
+    help="Process the image at it's original aspect ratio",
 )
 parser.add_argument(
     "-b",
@@ -110,7 +110,7 @@ arg_model_path = args.model_path
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
-use_square_sizing = args.use_square_sizing
+use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 imgenc_window_size = args.window_size
 show_iou_preds = args.quality_estimate
@@ -410,7 +410,15 @@ try:
         final_img, final_mask_uint8 = base_disp_img, mask_uint8
         ok_contours, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
         if ok_contours:
-            mask_contours_norm, final_mask_uint8 = mask_postprocessor(mask_uint8, mask_contours_norm)
+
+            # If only 1 fg point prompt is given, use it to hint at selecting largest masks
+            point_hint = None
+            only_one_fg_pt = len(all_fg_norm_list) == 1
+            no_box_prompt = len(box_tlbr_norm_list) == 0
+            if only_one_fg_pt and no_box_prompt:
+                point_hint = all_fg_norm_list[0]
+
+            mask_contours_norm, final_mask_uint8 = mask_postprocessor(mask_uint8, mask_contours_norm, point_hint)
             if show_mask_preview:
                 final_img = checker_pattern.superimpose(base_disp_img, final_mask_uint8)
 
