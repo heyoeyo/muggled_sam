@@ -112,14 +112,14 @@ class WindowedPositionEncoding(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, features_per_token, base_hw, window_hw):
+    def __init__(self, features_per_token, base_patch_grid_hw, window_tile_hw):
 
         # Inherit from parent
         super().__init__()
 
         # Storage for fixed-size learned position embedding
-        self.base_embedding = nn.Parameter(torch.zeros(1, features_per_token, *base_hw))
-        self.base_window_tile = nn.Parameter(torch.zeros(1, features_per_token, *window_hw))
+        self.base_embedding = nn.Parameter(torch.zeros(1, features_per_token, *base_patch_grid_hw))
+        self.base_window_tile = nn.Parameter(torch.zeros(1, features_per_token, *window_tile_hw))
 
         # Allocate storage for caching positional encoding, so we don't keep re-calculating them
         self.register_buffer("cached_encoding_bhwc", torch.empty((1, 1, 1, features_per_token)), persistent=False)
@@ -131,7 +131,7 @@ class WindowedPositionEncoding(nn.Module):
         _, _, win_h, win_w = self.base_window_tile.shape
         features_str = f"features_per_token={features_per_token}"
         base_hw_str = f"base_grid_hw=({grid_h}, {grid_w})"
-        win_hw_str = f"window_hw=({win_h}, {win_w})"
+        win_hw_str = f"window_tile_hw=({win_h}, {win_w})"
         return f"{features_str}, {base_hw_str}, {win_hw_str}"
 
     # .................................................................................................................
@@ -157,11 +157,18 @@ class WindowedPositionEncoding(nn.Module):
             # Scale base embedding to match patch grid size
             scaled_base = nn.functional.interpolate(self.base_embedding, size=patch_grid_hw, mode="bicubic")
 
+            # Figure out how many x/y copies of the window tile are needed to match patch grid sizing
+            _, _, win_h, win_w = self.base_window_tile.shape
+            is_int_y_tiles = (grid_h % win_h) == 0
+            is_int_x_tiles = (grid_w % win_w) == 0
+            num_y_tiles = grid_h // win_h if is_int_y_tiles else 1 + grid_h // win_h
+            num_x_tiles = grid_w // win_w if is_int_x_tiles else 1 + grid_w // win_w
+
             # Repeat/tile window embedding to match the patch grid shape
             # -> Need to truncate to exactly match the grid shape at the end!
-            _, _, win_h, win_w = self.base_window_tile.shape
-            num_tile_h, num_tile_w = 1 + grid_h // win_h, 1 + grid_w // win_w
-            tiled_win_embed = self.base_window_tile.tile(1, 1, num_tile_h, num_tile_w)[:, :, :grid_h, :grid_w]
+            tiled_win_embed = self.base_window_tile.tile(1, 1, num_y_tiles, num_x_tiles)
+            if not (is_int_x_tiles and is_int_y_tiles):
+                tiled_win_embed = tiled_win_embed[:, :, :grid_h, :grid_w]
 
             # Add tiled window embedding and convert to channels-last shape: BxCxHxW -> BxHxWxC
             self.cached_encoding_bhwc = (scaled_base + tiled_win_embed).permute(0, 2, 3, 1)

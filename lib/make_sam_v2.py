@@ -93,7 +93,7 @@ def make_sam_v2(
     imgencoder_blocks_per_stage=(2, 3, 16, 3),
     imgencoder_global_attn_spacing_per_stage=(None, None, 4, None),
     imgencoder_window_size_per_stage=(8, 4, 14, 17),
-    window_pos_embed_bkg_spatial_size=(14, 14),
+    base_patch_grid_hw=(14, 14),
     num_decoder_blocks=2,
     num_decoder_heads=8,
     num_output_mask_tokens=4,
@@ -128,7 +128,7 @@ def make_sam_v2(
         imgencoder_blocks_per_stage,
         imgencoder_global_attn_spacing_per_stage,
         imgencoder_window_size_per_stage,
-        window_pos_embed_bkg_spatial_size,
+        base_patch_grid_hw,
         patch_size_px,
     )
     coordenc_model = SAMV2CoordinateEncoder(features_per_prompt_token)

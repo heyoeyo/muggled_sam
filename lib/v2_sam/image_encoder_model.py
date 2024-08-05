@@ -55,7 +55,7 @@ class SAMV2ImageEncoder(nn.Module):
         blocks_per_stage=(2, 3, 16, 3),
         global_attn_spacing_per_stage=(None, None, 4, None),
         window_size_per_stage=(8, 4, 14, 17),
-        window_pos_embed_bkg_spatial_size=(14, 14),
+        base_patch_grid_hw=(14, 14),
         patch_size_px=7,
     ):
 
@@ -68,8 +68,8 @@ class SAMV2ImageEncoder(nn.Module):
 
         # Set up position encoding applied to patch embedding tokens
         first_stage_window_size = window_size_per_stage[0]
-        poswin_hw = (first_stage_window_size, first_stage_window_size)
-        self.posenc = WindowedPositionEncoding(features_per_token, window_pos_embed_bkg_spatial_size, poswin_hw)
+        base_wintile_hw = (first_stage_window_size, first_stage_window_size)
+        self.posenc = WindowedPositionEncoding(features_per_token, base_patch_grid_hw, base_wintile_hw)
 
         # Set up hierarchical image encoder model
         self.trunk = HieraModel(

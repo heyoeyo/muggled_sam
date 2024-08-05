@@ -31,7 +31,7 @@ def get_model_config_from_state_dict(state_dict):
         "imgencoder_blocks_per_stage": get_blocks_per_stage(total_block_count),
         "imgencoder_window_size_per_stage": get_window_size_per_stage(total_block_count),
         "imgencoder_global_attn_spacing_per_stage": get_global_attention_spacing_per_stage(total_block_count),
-        "window_pos_embed_bkg_spatial_size": get_posembed_bkg_hw(state_dict),
+        "base_patch_grid_hw": get_base_patch_grid_hw(state_dict),
         "num_output_mask_tokens": get_num_output_mask_tokens(state_dict),
         "num_decoder_blocks": get_mask_decoder_block_count(state_dict),
         "num_decoder_heads": hardcoded_num_decoder_heads,
@@ -125,10 +125,6 @@ def get_blocks_per_stage(total_block_count):
     return blocks_per_stage
 
 
-def get_total_block_count(state_dict):
-    return
-
-
 def get_features_per_memory_token(state_dict):
 
     target_key = "memory_encoder.out_proj.weight"
@@ -142,12 +138,12 @@ def get_features_per_memory_token(state_dict):
     return int(features_per_memory_token)
 
 
-def get_posembed_bkg_hw(state_dict):
+def get_base_patch_grid_hw(state_dict):
 
     target_key = "image_encoder.trunk.pos_embed"
     assert (
         target_key in state_dict.keys()
-    ), f"Error determining posembed hw in image encoder! Couldn't find key: {target_key}"
+    ), f"Error determining base patch grid hw in image encoder! Couldn't find key: {target_key}"
 
     # Expecting weights with shape: 1xFxHxW
     # -> F is num features per token in transformer
