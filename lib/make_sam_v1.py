@@ -24,7 +24,9 @@ from .v1_sam.state_dict_conversion.convert_original_state_dict_keys import conve
 # .....................................................................................................................
 
 
-def make_samv1_from_original_state_dict(original_state_dict: dict | str, strict_load=True) -> [dict, SAMV1Model]:
+def make_samv1_from_original_state_dict(
+    original_state_dict: dict | str, strict_load=True, weights_only=True
+) -> [dict, SAMV1Model]:
     """
     Function used to initialize a SAM (v1) model from a state dictionary (i.e. model weights) file.
     This function will automatically figure out the model sizing parameters from the state dict,
@@ -43,9 +45,9 @@ def make_samv1_from_original_state_dict(original_state_dict: dict | str, strict_
         path_to_state_dict = original_state_dict
         # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
         try:
-            original_state_dict = torch.load(path_to_state_dict)
+            original_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
         except RuntimeError:
-            original_state_dict = torch.load(path_to_state_dict, map_location="cpu")
+            original_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
 
     # Feedback on using non-strict loading
     if not strict_load:

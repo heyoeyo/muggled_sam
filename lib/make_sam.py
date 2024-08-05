@@ -12,13 +12,13 @@ import torch
 # %% Functions
 
 
-def make_sam_from_state_dict(path_to_state_dict: str, strict_load=True, model_type=None):
+def make_sam_from_state_dict(path_to_state_dict: str, strict_load=True, weights_only=True, model_type=None):
 
     # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
     try:
-        state_dict = torch.load(path_to_state_dict)
+        state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
     except RuntimeError:
-        state_dict = torch.load(path_to_state_dict, map_location="cpu")
+        state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
 
     # Try to figure out which type of model we're creating from state dict keys (e.g. samv1 vs v2)
     if model_type is None:
@@ -32,7 +32,7 @@ def make_sam_from_state_dict(path_to_state_dict: str, strict_load=True, model_ty
 
     # Build the model & supporting data
     make_sam_func = import_model_functions(model_type)
-    config_dict, sam_model = make_sam_func(state_dict, strict_load)
+    config_dict, sam_model = make_sam_func(state_dict, strict_load, weights_only)
 
     return config_dict, sam_model
 
