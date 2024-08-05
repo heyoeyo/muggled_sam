@@ -1,6 +1,6 @@
 # Muggled SAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything Model' versions 1 & 2 from [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything), and [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base. Most of the changes come from separating/simplifying the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything Model' versions 1 & 2 from [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything), and [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
@@ -78,12 +78,16 @@ The tables below include direct download links to all of the supported models. *
 
 ## Run Image
 
-The `run_image.py` script will run the segment-anything model on a single image with an interactive UI. The capabilities of this script resemble the [official demo](https://segment-anything.com/demo) page, but it runs without a web connection. To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
+<p align="center">
+  <img src=".readme_assets/run_image_anim.gif">
+</p>
+
+The `run_image.py` script will run the segment-anything model on a single image with an interactive UI running locally. To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
 ```bash
 python run_image.py
 ```
 
-You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. One especially interesting flag is `-b`, which allows for processing images at different resolutions.
+You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. One especially interesting flag is `-b`, which allows for processing images at different resolutions and `-ar` for processing images at their original aspect ratio.
 
 If you don't provide an image path (using the `-i` flag), then you will be asked to provide one when you run the script, likewise for a path to the model weights. Afterwards, a window will pop-up, with options for how to 'prompt' the model (e.g. bounding boxes or clicking to add points) along the top and various sliders to alter the segmentation results at the bottom. Results can be saved by pressing the `s` key.
 
@@ -117,6 +121,7 @@ The code in this repo is entirely based off the original segment-anything github
 # TODOs
 - Clean up code base (especially the image encoder, which is unfinished)
 - Add interactive script replicating the original 'automatic mask geneartor'
+- Add interactive script for processing videos using sam-v2
 - Add model structure documentation
 - Add various experiment scripts
 - Inevitable bugfixes
