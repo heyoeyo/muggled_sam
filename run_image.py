@@ -34,6 +34,7 @@ from lib.demo_helpers.saving import save_segmentation_results
 from lib.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
+    find_best_display_arrangement,
 )
 
 
@@ -169,6 +170,7 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+prediction_hw = mask_preds.shape[2:]
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -214,7 +216,7 @@ fgpt_btn.add_on_change_listeners(fgpt_olay.enable)
 bgpt_btn.add_on_change_listeners(bgpt_olay.enable)
 
 # Set up mask preview selection UI
-blank_mask_btn_imgs = [np.zeros(mask_preds.shape[-2:], dtype=np.uint8)] * 4
+blank_mask_btn_imgs = [np.zeros(prediction_hw, dtype=np.uint8)] * 4
 mask_btns_list = ToggleImage.many(*blank_mask_btn_imgs, highlight_color=(0, 120, 255))
 selected_mask_constraint = RadioConstraint(*mask_btns_list, initial_selected_index=1)
 for mbtn in mask_btns_list:
@@ -243,22 +245,18 @@ imgoverlay_cb._rdr.pad.color = (35, 25, 30)
 show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn = ToggleButton.many(
     "Preview", "Invert", "Largest Only", "Pick best", default_state=False, text_scale=0.5
 )
-secondary_ctrls = HStack(show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn)
-img_with_ctrls = VStack(imgoverlay_cb, secondary_ctrls)
 large_mask_only_btn.toggle(True)
+secondary_ctrls = HStack(show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn, save_btn)
 
-# Set up main display row, with image & mask previews, re-oriented based on tall vs. wide images
-maskselect_cb = VStack(*mask_btns_list)
-main_row = HStack(img_with_ctrls, maskselect_cb)
-if is_very_wide_img:
-    maskselect_cb = VStack(HStack(*mask_btns_list[:2]), HStack(*mask_btns_list[2:]))
-    main_row = VStack(maskselect_cb, img_with_ctrls)
-if is_tall_img:
-    maskselect_cb = VStack(HStack(*mask_btns_list[:2]), HStack(*mask_btns_list[2:]))
-    main_row = HStack(img_with_ctrls, maskselect_cb)
-if is_very_tall_img:
-    maskselect_cb = HStack(*mask_btns_list)
-    main_row = HStack(img_with_ctrls, maskselect_cb)
+# Set up main display row, with image & mask previews, oriented based on display aspect ratio
+side_str, stack_order_str = find_best_display_arrangement(full_image_bgr.shape, prediction_hw)
+order_lut = {
+    "grid": VStack(HStack(*mask_btns_list[:2]), HStack(*mask_btns_list[2:])),
+    "vertical": VStack(*mask_btns_list),
+    "horizontal": HStack(*mask_btns_list),
+}
+maskselect_cb = order_lut[stack_order_str]
+main_row = HStack(imgoverlay_cb, maskselect_cb) if side_str == "right" else VStack(maskselect_cb, imgoverlay_cb)
 maskselect_cb._rdr.pad.color = (60, 60, 60)
 maskselect_cb.set_debug_name("MaskStack")
 main_row.set_debug_name("DisplayRow")
@@ -268,11 +266,12 @@ disp_layout = VStack(
     header_msgbar,
     toolselect_cb,
     main_row,
+    secondary_ctrls,
     thresh_slider,
     simplify_slider,
     rounding_slider,
     padding_slider,
-    HStack(footer_msgbar, save_btn),
+    footer_msgbar,
 ).set_debug_name("DisplayLayout")
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
@@ -301,6 +300,7 @@ window.attach_keypress_callback(KEY.SPACEBAR, show_preview_btn.toggle)
 window.attach_keypress_callback(KEY.TAB, large_mask_only_btn.toggle)
 window.attach_keypress_callback("i", invert_mask_btn.toggle)
 window.attach_keypress_callback("s", save_btn.click)
+window.attach_keypress_callback("c", clear_all_prompts_btn.click)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
