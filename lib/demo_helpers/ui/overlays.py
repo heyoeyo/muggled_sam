@@ -441,7 +441,7 @@ class BoxSelectOverlay(BaseOverlay):
         return
 
     def on_right_click(self, cbxy, cbflags):
-        self.remove_surrounding(cbxy.xy_norm)
+        self.remove_closest(cbxy.xy_norm, cbxy.hw_px)
         return
 
     # .................................................................................................................
@@ -470,29 +470,32 @@ class BoxSelectOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def remove_surrounding(self, xy_norm) -> None:
+    def remove_closest(self, xy_norm, frame_hw=None) -> None:
 
-        x, y = xy_norm
-        idxs_to_keep = []
-        for idx, tlbr_xy_norm in enumerate(self._tlbr_norm_list):
-            (x1, y1), (x2, y2) = tlbr_xy_norm
-            is_in_x = x1 <= x <= x2
-            is_in_y = y1 <= y <= y2
-            if not (is_in_x and is_in_y):
-                idxs_to_keep.append(idx)
-            pass
+        # Can't remove boxes if there aren't any!
+        if len(self._tlbr_norm_list) == 0:
+            return None
 
-        # Bail if we wouldn't change anything
-        if len(idxs_to_keep) == len(self._tlbr_norm_list):
-            return
+        # Default to 'fake' pixel count if not given (so we can re-use the same calculations)
+        if frame_hw is None:
+            frame_hw = (10, 10)
+        frame_h, frame_w = frame_hw
+        norm_to_px_scale = np.float32((frame_w - 1, frame_h - 1))
 
-        # Update to keep all boxes not surrounding the given point
-        new_tlbr_list = [self._tlbr_norm_list[idx] for idx in idxs_to_keep]
-        self._is_changed = len(new_tlbr_list) < len(self._tlbr_norm_list)
-        self._tlbr_norm_list = new_tlbr_list
+        # For each box, find the distance to the closest corner
+        input_array = np.int32(xy_norm * norm_to_px_scale)
+        closest_dist_list = []
+        for (x1, y1), (x2, y2) in self._tlbr_norm_list:
+            xy_px_array = np.float32([(x1, y1), (x2, y1), (x2, y2), (x1, y2)]) * norm_to_px_scale
+            dist_to_pts = np.linalg.norm(xy_px_array - input_array, ord=2, axis=1)
+            closest_dist_list.append(min(dist_to_pts))
+
+        # Among all boxes, remove the one with the closest corner to the given click
+        closest_pt_idx = np.argmin(closest_dist_list)
+        closest_tlbr_norm = self._tlbr_norm_list.pop(closest_pt_idx)
         self._is_changed = True
 
-        return
+        return closest_tlbr_norm
 
     # .................................................................................................................
 
