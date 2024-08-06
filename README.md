@@ -1,12 +1,12 @@
 # Muggled SAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything Model' versions 1 & 2 from [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything), and [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2) (and [SAMV1](https://github.com/facebookresearch/segment-anything)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
 </p>
 
-While the focus of this implementation is on readability of the code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases.
+While the focus of this implementation is on interactivity and readability of the code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases.
 
 > [!Note]
 > This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
@@ -74,7 +74,26 @@ The tables below include direct download links to all of the supported models. *
 
 </details>
 
+### Simple Example
+Here is an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/encode_image.py) of using the model to generate masks from an image:
+```python
+import cv2
+from lib.make_sam import make_sam_from_state_dict
 
+# Define prompts using 0-to-1 xy coordinates
+box_tlbrs = []  # Example [((0.25, 0.25), (0.75, 0.75))]
+fg_xys = [(0.5, 0.5)]
+bg_xys = []
+
+# Load image & model
+img_bgr = cv2.imread("/path/to/image.jpg")
+model_config_dict, model = make_sam_from_state_dict("/path/to/model.pth")
+
+# Process data
+encoded_img, _, _ = model.encode_image(img_bgr)
+encoded_prompts = model.encode_prompts(box_tlbrs, fg_xys, bg_xys)
+mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
+```
 
 ## Run Image
 

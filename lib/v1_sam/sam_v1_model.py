@@ -144,7 +144,7 @@ class SAMV1Model(nn.Module):
         self,
         image_bgr: ndarray,
         max_side_length=1024,
-        use_square_sizing=False,
+        use_square_sizing=True,
     ) -> tuple[Tensor, tuple[int, int], tuple[int, int]]:
 
         with torch.inference_mode():
