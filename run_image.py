@@ -29,7 +29,7 @@ from lib.demo_helpers.contours import get_contours_from_mask
 from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
-from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
+from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from lib.demo_helpers.saving import save_segmentation_results
 from lib.demo_helpers.misc import (
     get_default_device_string,
@@ -45,6 +45,7 @@ from lib.demo_helpers.misc import (
 default_device = get_default_device_string()
 default_image_path = None
 default_model_path = None
+default_prompts_path = None
 default_display_size = 900
 default_base_size = 1024
 default_window_size = 16
@@ -54,6 +55,13 @@ default_show_iou_preds = False
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")
+parser.add_argument(
+    "-p",
+    "--prompts_path",
+    default=default_prompts_path,
+    type=str,
+    help="Path to a json file containing initial prompts to use on start-up (see saved json results for formatting)",
+)
 parser.add_argument(
     "-s",
     "--display_size",
@@ -103,11 +111,19 @@ parser.add_argument(
     action="store_false" if default_show_iou_preds else "store_true",
     help="Hide mask quality estimates" if default_show_iou_preds else "Show mask quality estimates",
 )
+parser.add_argument(
+    "--hide_info",
+    default=False,
+    action="store_true",
+    help="Hide text info elements from UI",
+)
+
 
 # For convenience
 args = parser.parse_args()
 arg_image_path = args.image_path
 arg_model_path = args.model_path
+int_prompts_path = args.prompts_path
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
@@ -115,6 +131,7 @@ use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 imgenc_window_size = args.window_size
 show_iou_preds = args.quality_estimate
+show_info = not args.hide_info
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -263,7 +280,7 @@ main_row.set_debug_name("DisplayRow")
 
 # Set up full display layout
 disp_layout = VStack(
-    header_msgbar,
+    header_msgbar if show_info else None,
     toolselect_cb,
     main_row,
     secondary_ctrls,
@@ -271,7 +288,7 @@ disp_layout = VStack(
     simplify_slider,
     rounding_slider,
     padding_slider,
-    footer_msgbar,
+    footer_msgbar if show_info else None,
 ).set_debug_name("DisplayLayout")
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
@@ -279,6 +296,14 @@ display_image = disp_layout.render(h=display_size_px, w=display_size_px)
 render_side = "h" if display_image.shape[1] > display_image.shape[0] else "w"
 render_limit_dict = {render_side: display_size_px}
 min_display_size_px = disp_layout._rdr.limits.min_h if render_side == "h" else disp_layout._rdr.limits.min_w
+
+# Load initial prompts, if provided
+have_init_prompts, init_prompts_dict = load_init_prompts(int_prompts_path)
+if have_init_prompts:
+    clear_all_prompts_btn.read()
+    box_olay.add_boxes(*init_prompts_dict.get("boxes", []))
+    fgpt_olay.add_points(*init_prompts_dict.get("fg_points", []))
+    bgpt_olay.add_points(*init_prompts_dict.get("bg_points", []))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -315,6 +340,17 @@ box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
 base_disp_img = full_image_bgr.copy()
 dispimg_h, dispimg_w = base_disp_img.shape[0:2]
 prev_disp_h, prev_disp_w = base_disp_img.shape[0:2]
+
+# Some feedback
+print(
+    "",
+    "Use prompts to segment the image!",
+    "- Shift-click to add multiple points",
+    "- Right-click to remove points",
+    "",
+    sep="\n",
+    flush=True,
+)
 
 # *** Main display loop ***
 try:
@@ -448,7 +484,15 @@ try:
 
         # Save data
         if save_btn.read():
-            save_folder, save_idx = save_segmentation_results(image_path, mask_contours_norm, mask_uint8)
+            disp_image = main_row.rerender()
+            all_prompts_dict = {
+                "boxes": box_tlbr_norm_list,
+                "fg_points": all_fg_norm_list,
+                "bg_points": bg_xy_norm_list,
+            }
+            save_folder, save_idx = save_segmentation_results(
+                image_path, disp_image, mask_contours_norm, mask_uint8, all_prompts_dict
+            )
             print(f"SAVED ({save_idx}):", save_folder)
 
         pass

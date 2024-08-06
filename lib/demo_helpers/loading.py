@@ -7,6 +7,7 @@
 
 import os
 import os.path as osp
+import json
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -212,3 +213,43 @@ def get_model_weights_paths(file_dunder, model_weights_folder_name="model_weight
     model_file_paths = [osp.join(model_weights_path, file) for file in model_files_list]
 
     return model_file_paths
+
+
+# .....................................................................................................................
+
+
+def load_init_prompts(path_to_json: str | None):
+
+    # Initialize outputs
+    ok_prompts = False
+    prompts_dict = {}
+
+    # Bail if we don't get a path
+    if path_to_json is None:
+        return ok_prompts, prompts_dict
+
+    # Bail if the given path isn't valid
+    if not osp.exists(path_to_json):
+        print("", "Warning: Not using prompts JSON, path is invalid", f"@ {path_to_json}", sep="\n")
+        return ok_prompts, prompts_dict
+
+    try:
+        # Try to load the given file as json data, expecting a dictionary!
+        with open(path_to_json, "r") as infile:
+            json_data = json.load(infile)
+        if not isinstance(json_data, dict):
+            raise TypeError("Prompt JSON must be a dictionary")
+
+        # Make sure the json data has the expected keys
+        req_keys = ("boxes", "fg_points", "bg_points")
+        ok_prompts = all(key in json_data.keys() for key in req_keys)
+        if not ok_prompts:
+            raise ValueError(f"Prompt JSON must contain keys: {req_keys}")
+
+        # If we get here, the json data is ok to use
+        prompts_dict = json_data
+
+    except Exception as err:
+        print("", "Warning: Unable to load prompt json", f"@ {path_to_json}", "", str(err), sep="\n")
+
+    return ok_prompts, prompts_dict

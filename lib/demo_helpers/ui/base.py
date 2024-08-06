@@ -187,6 +187,10 @@ class BaseCallback:
 
     def append_children(self, *child_items):
         for child in child_items:
+            # Skip None entries, which allows for 'disabling' when building UIs
+            if child is None:
+                continue
+            # Assume numpy arrays are meant to be static images
             if isinstance(child, np.ndarray):
                 child = BaseImageCallback(child)
             assert isinstance(child, BaseCallback), f"Children must be inherit from: BaseCallback, got: {type(child)}"
@@ -356,6 +360,11 @@ class BaseCallback:
             ), f"Bad render size: {frame.shape} vs {render_size} ({self._debug_name})"
 
         return frame
+
+    def rerender(self):
+        """Helper used to re-render using last render size"""
+        render_h = self._rdr.size.h
+        return self.render(h=render_h)
 
     def _render_up_to_size(self, h, w):
         class_name = self.__class__.__name__

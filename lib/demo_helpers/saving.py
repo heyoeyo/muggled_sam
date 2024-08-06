@@ -7,6 +7,7 @@
 
 import os
 import os.path as osp
+import json
 
 import cv2
 import numpy as np
@@ -18,7 +19,9 @@ from .contours import pixelize_contours
 # %% Functions
 
 
-def save_segmentation_results(image_path, mask_contours_norm, raw_result_uint8, base_save_folder=None):
+def save_segmentation_results(
+    image_path, display_image, mask_contours_norm, raw_result_uint8, all_prompts_dict, base_save_folder=None
+):
     """Helper used to handle saving of segmentation results"""
 
     # Load copy of original image for saving results
@@ -61,6 +64,7 @@ def save_segmentation_results(image_path, mask_contours_norm, raw_result_uint8, 
         "full_segmentation": full_transparent,
         "cropped_segmentation": cropped_transparent,
         "cropped": cropped_color,
+        "display": display_image,
     }
 
     # Build saving path
@@ -83,5 +87,11 @@ def save_segmentation_results(image_path, mask_contours_norm, raw_result_uint8, 
         save_name = make_save_name(name)
         save_path = osp.join(save_folder, save_name)
         cv2.imwrite(save_path, image_data)
+
+    # Save prompt data
+    prompt_save_name = f"{idx_str}_prompts.json"
+    prompt_save_path = osp.join(save_folder, prompt_save_name)
+    with open(prompt_save_path, "w") as outfile:
+        json.dump(all_prompts_dict, outfile, indent=2)
 
     return save_folder, save_idx

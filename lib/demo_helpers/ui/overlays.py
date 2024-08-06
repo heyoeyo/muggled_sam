@@ -308,6 +308,9 @@ class PointSelectOverlay(BaseOverlay):
 
     def add_points(self, *xy_norm_points):
 
+        if len(xy_norm_points) == 0:
+            return self
+
         self._xy_norm_list.extend(xy_norm_points)
         self._is_changed = True
 
@@ -467,6 +470,18 @@ class BoxSelectOverlay(BaseOverlay):
             cv2.rectangle(frame, xy1_px, xy2_px, self._fg_color, self._fg_thick, self._ltype)
 
         return frame
+
+    # .................................................................................................................
+
+    def add_boxes(self, *tlbr_norm_list):
+
+        if len(tlbr_norm_list) == 0:
+            return self
+
+        self._tlbr_norm_list.extend(tlbr_norm_list)
+        self._is_changed = True
+
+        return self
 
     # .................................................................................................................
 
