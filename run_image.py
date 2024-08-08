@@ -117,6 +117,12 @@ parser.add_argument(
     action="store_true",
     help="Hide text info elements from UI",
 )
+parser.add_argument(
+    "--enable_promptless_masks",
+    default=False,
+    action="store_true",
+    help="If set, the model will generate mask predictions even when no prompts are given",
+)
 
 
 # For convenience
@@ -132,6 +138,7 @@ imgenc_base_size = args.base_size_px
 imgenc_window_size = args.window_size
 show_iou_preds = args.quality_estimate
 show_info = not args.hide_info
+disable_promptless_masks = not args.enable_promptless_masks
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -164,8 +171,6 @@ full_image_bgr = cv2.imread(image_path)
 if full_image_bgr is None:
     print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
     raise FileNotFoundError(osp.basename(image_path))
-image_ar = full_image_bgr.shape[1] / full_image_bgr.shape[0]
-is_tall_img, is_very_tall_img, is_very_wide_img = image_ar < 0.7, image_ar < 0.4, image_ar > 2
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -186,7 +191,9 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 # Run model without prompts as sanity check. Also gives initial result values
 box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+mask_preds, iou_preds = sammodel.generate_masks(
+    encoded_img, encoded_prompts, blank_promptless_output=disable_promptless_masks
+)
 prediction_hw = mask_preds.shape[2:]
 
 # Provide some feedback about how the model is running
@@ -422,7 +429,9 @@ try:
 
             # Re-run SAM model to generate new segmentation masks
             encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, all_fg_norm_list, bg_xy_norm_list)
-            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint=None)
+            mask_preds, iou_preds = sammodel.generate_masks(
+                encoded_img, encoded_prompts, mask_hint=None, blank_promptless_output=disable_promptless_masks
+            )
             if use_best_mask:
                 best_mask_idx = sammodel.get_best_mask_index(iou_preds)
                 selected_mask_constraint.change_to(best_mask_idx)

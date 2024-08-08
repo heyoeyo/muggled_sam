@@ -170,6 +170,7 @@ class SAMV2Model(nn.Module):
         encoded_image_features_list: list[Tensor],
         encoded_prompts: Tensor,
         mask_hint: Tensor | None = None,
+        blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
 
         # Get sizing of the lowest-resolution image encoding
@@ -178,7 +179,7 @@ class SAMV2Model(nn.Module):
         with torch.inference_mode():
             grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
             mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.mask_decoder(
-                encoded_image_features_list, encoded_prompts, grid_posenc, mask_hint
+                encoded_image_features_list, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 
         return mask_preds, iou_preds

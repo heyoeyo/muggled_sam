@@ -79,6 +79,7 @@ class SAMV1MaskDecoder(nn.Module):
         encoded_prompts_bnc: Tensor,
         grid_positional_encoding: Tensor,
         mask_hint: Tensor | int | None = None,
+        blank_promptless_output=True,
     ) -> tuple[Tensor, Tensor]:
         """
         Generates multiple candidate segmentation masks given an image encoding and
@@ -90,6 +91,9 @@ class SAMV1MaskDecoder(nn.Module):
         the mask_hint argument is given as an integer, this is interpretted to mean to
         run the model twice, once to generate onc eset of masks and then to index out
         one of those masks to use as a hint for re-running the model.
+
+        If 'blank_promptless_output' is true and no prompts are given, then a fully
+        'blank' result will be returned instead of running the full decoder.
 
         Returns:
             mask_predictions, iou_predictions
@@ -104,7 +108,7 @@ class SAMV1MaskDecoder(nn.Module):
         patch_grid_hw = encoded_image_bchw.shape[2:]
 
         # Special case, return blank masks if no prompt is given
-        if num_prompts == 0:
+        if num_prompts == 0 and blank_promptless_output:
             return self.maskgen.make_blank_results(patch_grid_hw)
 
         # If an integer mask hint is given, interpret it to mean to run the model once, take
@@ -118,7 +122,7 @@ class SAMV1MaskDecoder(nn.Module):
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_iou_token, self.cls_mask_tokens], dim=0).unsqueeze(0)
         cls_tokens = cls_tokens.expand(batch_size, -1, -1)
-        prompt_tokens = torch.cat((cls_tokens, encoded_prompts_bnc), dim=1)
+        num_cls_tokens = cls_tokens.shape[1]
 
         # Expand per-image data in batch direction to be per-mask, as well as the position encoding
         img_tokens_bchw = encoded_image_bchw + self.maskhint_encoder(patch_grid_hw, mask_hint)
@@ -126,10 +130,11 @@ class SAMV1MaskDecoder(nn.Module):
         img_posenc_bchw = torch.repeat_interleave(grid_positional_encoding, batch_size, dim=0)
 
         # Cross-encode image tokens with prompt tokens
+        prompt_tokens = torch.cat((cls_tokens, encoded_prompts_bnc), dim=1)
         prompt_tokens, img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
 
         # Extract the (now-encoded) 'cls' tokens by undoing the earlier cls concatenation step
-        encoded_cls_tokens = prompt_tokens[:, :-num_prompts, :]
+        encoded_cls_tokens = prompt_tokens[:, :num_cls_tokens, :]
         iou_token_out = encoded_cls_tokens[:, 0, :]
         mask_tokens_out = encoded_cls_tokens[:, 1:, :]
 
@@ -142,7 +147,7 @@ class SAMV1MaskDecoder(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def get_best_mask_index(iou_predictions):
+    def get_best_mask_index(iou_predictions) -> int:
         """Helper used to select the index of the 'best' output, based on the highest IoU prediction score"""
         return int(iou_predictions.cpu().argmax())
 
