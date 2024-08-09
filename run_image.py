@@ -448,7 +448,9 @@ try:
         # Update selected base mask
         if is_prompt_changed or is_mask_thresh_changed or is_mask_changed:
             raw_mask_select = mask_preds[:, mask_idx, :, :].unsqueeze(1)
-            raw_mask_upscale = nn.functional.interpolate(raw_mask_select.float(), size=preencode_img_hw)
+            raw_mask_upscale = nn.functional.interpolate(
+                raw_mask_select.float(), size=preencode_img_hw, mode="bilinear", align_corners=False
+            )
             mask_uint8 = ((raw_mask_upscale[0, 0] > mask_thresh) * 255).byte().cpu().numpy()
 
         # Process contour data
