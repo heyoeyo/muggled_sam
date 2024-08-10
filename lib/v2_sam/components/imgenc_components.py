@@ -26,7 +26,8 @@ class HalfStepPatchEmbed(nn.Module):
     a much smaller grid of image 'tokens' for processing by a transformer model.
 
     In this version (used by SAMV2), patches 'overlap' by having the convolution
-    take half-steps between patches. This doubles the number of tokens!
+    take half-steps between patches. This doubles the number of tokens compared
+    to a conventional (whole-step) patch embedding!
 
     For example, below each 'pixel' is indicated with a vertical bar |,
     and the patch that that pixel belongs to is labeled A, B, C, etc.
@@ -209,7 +210,6 @@ class OutputProjection(nn.Module):
 
         in_chs_large_first = sorted(input_channels_list, reverse=True)
         self.multires_projs = nn.ModuleList(Conv1x1Layer(in_ch, output_channels) for in_ch in in_chs_large_first)
-        self.position_encoding = PositionEmbeddingSine(output_channels)
 
     # .................................................................................................................
 
@@ -255,8 +255,6 @@ class OutputProjection(nn.Module):
         )
         tokens_smallest_first_list[0] += top_down_features.to(dtype=initial_dtype)
 
-        posembed_list = [self.position_encoding(x).to(x.dtype) for x in tokens_smallest_first_list]
-
-        return tokens_smallest_first_list, posembed_list
+        return tokens_smallest_first_list
 
     # .................................................................................................................

@@ -156,7 +156,7 @@ class SAMV2Model(nn.Module):
         with torch.inference_mode():
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
-            encoded_image_features_list, encoded_image_posembed = self.image_encoder(image_rgb_normalized_bchw)
+            encoded_image_features_list = self.image_encoder(image_rgb_normalized_bchw)
 
         # Get patch sizing of lowest-res tokens (as needed by other components)
         patch_grid_hw = encoded_image_features_list[0].shape[2:]

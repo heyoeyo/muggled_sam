@@ -112,7 +112,7 @@ class SAMV2ImageEncoder(nn.Module):
 
         # Forward through backbone
         multires_tokens_list = self.trunk(patch_tokens_bhwc)
-        features_list, posembed_list = self.output_projection(multires_tokens_list)
+        features_list = self.output_projection(multires_tokens_list)
 
         # For clarity
         lowres_features, hires_features_x2, hires_features_x4 = features_list
@@ -120,10 +120,6 @@ class SAMV2ImageEncoder(nn.Module):
         # Further process high-res features
         hires_features_x4 = self.proj_x4(hires_features_x4)
         hires_features_x2 = self.proj_x2(hires_features_x2)
-
-        # Add no-memory embedding to lowest-res feature map (that is used), see:
-        # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/sam2_image_predictor.py#L142
-        lowres_features += self.no_mem_embed.squeeze(0).unsqueeze(-1).unsqueeze(-1)
 
         # Re-bundle features for easier handling (note, this is reversed order from original!)
         features_list = [lowres_features, hires_features_x2, hires_features_x4]
@@ -136,7 +132,7 @@ class SAMV2ImageEncoder(nn.Module):
         # -> Seems to just be re-arranging features back into image-like shape, after earlier flatten
         # -> Flatten step seems to be done just for adding no_mem_embed?
 
-        return features_list, posembed_list
+        return features_list
 
     # .................................................................................................................
 
