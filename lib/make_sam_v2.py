@@ -13,7 +13,7 @@ from .v2_sam.image_encoder_model import SAMV2ImageEncoder
 from .v2_sam.coordinate_encoder_model import SAMV2CoordinateEncoder
 from .v2_sam.prompt_encoder_model import SAMV2PromptEncoder
 from .v2_sam.mask_decoder_model import SAMV2MaskDecoder
-from .v2_sam.memory_attention_model import SAMV2MemoryAttention
+from .v2_sam.memory_fusion_model import SAMV2MemoryFusion
 from .v2_sam.memory_encoder_model import SAMV2MemoryEncoder
 
 from .v2_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
@@ -77,7 +77,7 @@ def make_samv2_from_original_state_dict(
     sam_model.prompt_encoder.load_state_dict(new_state_dict["promptencoder"], strict_load)
     sam_model.mask_decoder.load_state_dict(new_state_dict["maskdecoder"], strict_load)
     sam_model.memory_encoder.load_state_dict(new_state_dict["memoryencoder"], strict_load)
-    sam_model.memory_attention.load_state_dict(new_state_dict["memoryattention"], strict_load)
+    sam_model.memory_fusion.load_state_dict(new_state_dict["memoryfusion"], strict_load)
 
     return model_config_dict, sam_model
 
@@ -99,6 +99,9 @@ def make_sam_v2(
     num_decoder_blocks=2,
     num_decoder_heads=8,
     num_output_mask_tokens=4,
+    num_memory_downsample_layers=4,
+    num_memory_encoder_layers=2,
+    num_memory_fusion_layers=4,
 ) -> SAMV2Model:
     """
     Helper used to build all SAMV2 model components. The arguments for this function are
@@ -144,9 +147,14 @@ def make_sam_v2(
     )
 
     memenc_model = SAMV2MemoryEncoder(
-        features_per_prompt_token, features_per_memory_token, num_downsample_layers=4, num_fuse_layers=2
+        features_per_prompt_token,
+        features_per_memory_token,
+        num_downsample_layers=num_memory_downsample_layers,
+        num_fuse_layers=num_memory_encoder_layers,
     )
-    memattn_model = SAMV2MemoryAttention(features_per_prompt_token, features_per_memory_token, num_layers=4)
+    memfuse_model = SAMV2MemoryFusion(
+        features_per_prompt_token, features_per_memory_token, num_layers=num_memory_fusion_layers
+    )
 
     # Bundle components into complete SAM model!
-    return SAMV2Model(imgenc_model, coordenc_model, promptenc_model, maskdec_model, memenc_model, memattn_model)
+    return SAMV2Model(imgenc_model, coordenc_model, promptenc_model, maskdec_model, memenc_model, memfuse_model)

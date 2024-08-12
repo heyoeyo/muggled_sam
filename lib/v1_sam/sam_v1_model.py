@@ -8,8 +8,6 @@
 import torch
 import torch.nn as nn
 
-import numpy as np
-
 # For type hints
 from torch import Tensor
 from numpy import ndarray
@@ -183,21 +181,3 @@ class SAMV1Model(nn.Module):
         return self.mask_decoder.get_best_mask_index(iou_predictions)
 
     # .................................................................................................................
-
-    @staticmethod
-    def normalize_xy(xy_px_list: list, frame_shape: tuple, use_original_SAM_method=True) -> list:
-        """Helper used to normalize (x,y) pixel coordinates to the 0-to-1 range used by SAM"""
-
-        # For convenience
-        frame_h, frame_w = frame_shape[0:2]
-
-        # Original method 'centers' pixel coordinates when normalizing, see:
-        # https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/modeling/prompt_encoder.py#L80
-        # https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/modeling/prompt_encoder.py#L95
-        if use_original_SAM_method:
-            x_scale, y_scale = np.float32(1 / frame_w), np.float32(1 / frame_h)
-            return [((x + 0.5) * x_scale, (y + 0.5) * y_scale) for x, y in xy_px_list]
-
-        # Natural way to normalize coords (imo), maps 0.0 to left/top-most pixel index, 1.0 to right/bottom most index
-        x_scale, y_scale = np.float32(1 / (frame_w - 1)), np.float32(1 / (frame_h - 1))
-        return [(x * x_scale, y * y_scale) for x, y in xy_px_list]

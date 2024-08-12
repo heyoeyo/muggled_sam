@@ -14,7 +14,6 @@ from .components.shared import LayerNorm2d
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 
@@ -72,7 +71,7 @@ class SAMV2MaskDecoder(nn.Module):
         # Create layers for generating final outputs
         self.maskgen = MaskGen(input_channels, num_mask_tokens)
         self.iou_token_mlp = MLP3Layers(input_channels, num_mask_tokens, use_sigmoid_output=True)
-        self.obj_token_mlp = MLP3Layers(input_channels, 1)
+        self.objptrgen = ObjectPointerGen(input_channels)
 
     # .................................................................................................................
 
@@ -99,11 +98,11 @@ class SAMV2MaskDecoder(nn.Module):
         'blank' result will be returned instead of running the full decoder.
 
         Returns:
-            mask_predictions, iou_predictions, object_score_prediction, encoded_mask_tokens
+            mask_predictions, iou_predictions, object_pointers, object_score
             -> Mask prediction has shape: Bx4xHxW
             -> IoU has shape: Bx4
-            -> Object score has shape: Bx1
-            -> Encoded mask tokens has shape: Bx4xF (F is features per token, default 256)
+            -> Object pointer has shape: Bx4xF (F is features per token, default 256)
+            -> Object score has shape Bx1 and indicates (score > 0) if an object is masked
             -> Mask H & W are 4x the size of the image patch encoding size
             -> The 0-th mask was originally intended to be used in cases with
                many prompts, and not to be used with single points/box prompts
@@ -117,16 +116,20 @@ class SAMV2MaskDecoder(nn.Module):
         # Special case, return blank masks if no prompt is given
         if num_prompts == 0 and blank_promptless_output:
             mask_preds, iou_preds = self.maskgen.make_blank_results(patch_grid_hw)
-            objscore_pred = torch.zeros((1, 1), dtype=iou_preds.dtype, device=iou_preds.device)
-            mask_tokens_out = torch.zeros_like(self.cls_mask_tokens).unsqueeze(0)
-            return mask_preds, iou_preds, objscore_pred, mask_tokens_out
+            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens)
+            return mask_preds, iou_preds, obj_ptrs, obj_score
 
         # If an integer mask hint is given, interpret it to mean to run the model once, take
         # the predicted mask (given by the 'hint' as an index) and re-run the model using
         # the mask as a mask hint
         if isinstance(mask_hint, int):
-            mask_preds, iou_preds = self(
-                encoded_image_tokens_list_bchw, encoded_prompts_bnc, grid_positional_encoding, None
+            no_mask_hint = None
+            mask_preds, iou_preds, obj_ptrs, obj_score = self(
+                encoded_image_tokens_list_bchw,
+                encoded_prompts_bnc,
+                grid_positional_encoding,
+                no_mask_hint,
+                blank_promptless_output,
             )
             hint_idx = mask_hint % mask_preds.shape[1]
             mask_hint = mask_preds[:, hint_idx, :, :]
@@ -155,9 +158,11 @@ class SAMV2MaskDecoder(nn.Module):
         # Produce final output mask & quality predictions
         mask_preds = self.maskgen(img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out, patch_grid_hw)
         iou_preds = self.iou_token_mlp(iou_token_out)
-        objscore_pred = self.obj_token_mlp(obj_token_out)
 
-        return mask_preds, iou_preds, objscore_pred, mask_tokens_out
+        # Generate 'object pointer' output
+        obj_score, obj_ptrs = self.objptrgen(obj_token_out, mask_tokens_out)
+
+        return mask_preds, iou_preds, obj_ptrs, obj_score
 
     # .................................................................................................................
 
@@ -165,6 +170,34 @@ class SAMV2MaskDecoder(nn.Module):
     def get_best_mask_index(iou_predictions) -> int:
         """Helper used to select the index of the 'best' output, based on the highest IoU prediction score"""
         return int(iou_predictions.cpu().argmax())
+
+    # .................................................................................................................
+
+    @staticmethod
+    def get_best_decoder_results(
+        mask_preds, iou_preds, obj_ptrs, exclude_0th_index=True
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Helper used to keep only the 'best' result from the mask decoder predictions.
+        The 'exclude_0th_index' flag is used to ignore the mask normally associated
+        with 'multi-prompt' masking (which is stored in the 0th index of the results)
+
+        Returns:
+            best_mask_prediction, best_iou_score, best_object_pointer
+            -> Mask prediction has shape: Bx1xHxW
+            -> IoU has shape: Bx1
+            -> Object pointer has shape: Bx1x
+        """
+
+        # Use highest iou prediction as indicator of the 'best' results
+        # -> Optionally exclude the 0th index, which is normally used when multiple-prompts are given
+        best_idx = 1 + torch.argmax(iou_preds[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds, dim=-1)
+
+        best_mask_pred = mask_preds[:, best_idx, :, :]
+        best_iou_pred = iou_preds[:, best_idx]
+        best_obj_ptr = obj_ptrs[:, best_idx, :]
+
+        return best_mask_pred, best_iou_pred, best_obj_ptr
 
     # .................................................................................................................
 
@@ -368,6 +401,44 @@ class MaskHintEncoder(nn.Module):
             encoded_mask_hint = encoded_mask_hint.squeeze(0)
 
         return encoded_mask_hint
+
+    # .................................................................................................................
+
+
+class ObjectPointerGen(nn.Module):
+    """
+    Helper module of the SAMV2 mask decoder. This module handles creation of
+    the 'object pointer' tensors, which are generated from encoded mask tokens.
+    If an object isn't present (based on the object score prediction), then
+    this model returns a learned 'no object pointer' embedding
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token=256):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Projection layers to convert encoded tokens to score & pointer
+        # -> The 'no_ptr' parameter is the pointer given for low object scores
+        self.no_ptr = nn.Parameter(torch.zeros(1, features_per_token))
+        self.score_mlp = MLP3Layers(features_per_token, 1)
+        self.pointer_mlp = MLP3Layers(features_per_token, features_per_token)
+
+    # .................................................................................................................
+
+    def forward(self, encoded_object_token, encoded_mask_tokens) -> tuple[Tensor, Tensor]:
+        objscore = self.score_mlp(encoded_object_token)
+        objptr = self.pointer_mlp(encoded_mask_tokens) if objscore > 0 else self.no_ptr.expand_as(encoded_mask_tokens)
+        return objscore, objptr
+
+    # .................................................................................................................
+
+    def make_blank_results(self, mask_tokens):
+        no_obj_score = -100
+        no_obj_ptr = self.no_ptr.expand_as(mask_tokens)
+        return no_obj_score, no_obj_ptr
 
     # .................................................................................................................
 

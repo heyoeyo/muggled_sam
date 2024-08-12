@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Imports
+
+import torch
+import torch.nn as nn
+
+from .components.memfuse_components import MemoryFusionTransformerLayer, FusionPositionOffset
+from .components.posenc_sine import PositionEmbeddingSine
+
+
+# For type hints
+from torch import Tensor
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Classes
+
+
+class SAMV2MemoryFusion(nn.Module):
+    """
+    Simplified implementation of the 'memory-attention' model from:
+        "SAM 2: Segment Anything in Images and Videos"
+        By: Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma,
+        Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan,
+        Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick,
+        Piotr Dollár, Christoph Feichtenhofer
+        @ https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/
+
+    The purpose of this model is to combine image encodings with information from past
+    'memory encoding' tokens (from the memory encoder model) as well as 'object pointers'
+    which come from the mask decoder, in order to generate a new set of image tokens.
+    These 'memory fused' image tokens are used by the mask decoder to continue to segment
+    an object on future frames, without having to provide new prompts.
+
+    The original memory-attention model code can be found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/memory_attention.py
+
+    This implementation differs significantly from the original. Much of the model code comes from
+    the 'prepare_memory_conditioned_features' method of the 'sam2_base' model found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/sam2_base.py
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        features_per_image_token=256,
+        features_per_memory_token=64,
+        num_layers=4,
+        max_memory_history=6,
+    ):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store sizing info for reshaping operations during inference
+        self.features_per_memory_token = features_per_memory_token
+        self._num_tokens_per_pointer = features_per_image_token // features_per_memory_token
+
+        # Embedding added to encoded image features when not using memory encoding
+        self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, features_per_image_token))
+
+        # Set up positional encoding helpers
+        self.memposenc = FusionPositionOffset(features_per_memory_token, max_memory_history)
+        self.imgposenc = PositionEmbeddingSine(features_per_image_token)
+
+        # Build transformer layers
+        layers_list = []
+        for _ in range(num_layers):
+            layer = MemoryFusionTransformerLayer(features_per_image_token, features_per_memory_token, mlp_ratio=8)
+            layers_list.append(layer)
+        self.layers = nn.ModuleList(layers_list)
+        self.out_norm = nn.LayerNorm(features_per_image_token)
+
+    # .................................................................................................................
+
+    def forward(
+        self,
+        lowres_image_tokens: Tensor,
+        prompt_memory_encodings: list[Tensor],
+        prompt_object_pointers: list[Tensor],
+        previous_memory_encodings: list[Tensor],
+        previous_object_pointers: list[Tensor],
+        history_is_recent_first=True,
+        is_prompt_frame=False,
+    ):
+
+        # If we're prompting or there is no memory data, do simpler fuse
+        if is_prompt_frame or len(prompt_memory_encodings) == 0:
+            no_mem_bchw = self.no_mem_embed.squeeze(0).unsqueeze(-1).unsqueeze(-1)
+            fused_tokens = lowres_image_tokens + no_mem_bchw
+            return fused_tokens
+
+        # Allocate storage for all memory encodings and positional encodings
+        memory_list = []
+        posenc_list = []
+
+        # Build memory encoding input
+        # num_mem_idx = self.base_memposenc_offsets.shape[0]
+        num_mem_idx = 7
+        max_pos_idx = num_mem_idx - 1
+        for init_memenc in prompt_memory_encodings:
+
+            # Convert from BxCxHxW to BxNxC
+            maskmem_enc = init_memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(init_memenc.shape, -1).flatten(2).permute(0, 2, 1)
+            memory_list.append(maskmem_enc)
+            posenc_list.append(maskmem_pos)
+
+        # Combine memory encodings from past frames
+        for buffer_idx, memenc in enumerate(previous_memory_encodings):
+
+            # Get index representing how 'far away' each item is from current frame
+            # -> Assumes buffer is built with 'appendleft' (i.e. 0th index is closest in time)
+            pos_idx = min(buffer_idx + 1, max_pos_idx)
+            if not history_is_recent_first:
+                pos_idx = num_mem_idx - pos_idx - 1
+
+            # Convert from BxCxHxW to BxNxC
+            maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(init_memenc.shape, -1).flatten(2).permute(0, 2, 1)
+            memory_list.append(maskmem_enc)
+            posenc_list.append(maskmem_pos)
+
+        # Build object pointer input
+        num_ptr_tokens = 0
+        ptrs_list = [ptr for ptr in prompt_object_pointers]
+        ptrs_list += [ptr for ptr in previous_object_pointers]
+        if len(ptrs_list) > 0:
+
+            # Combine all pointers and figure out token shaping
+            # -> Pointers themselves are 'simple' embedding vectors
+            # -> They have a larger dimension than memory encodings (default sizing is: 256 vs 64)
+            # -> Each pointer gets broken into multiple smaller 'tokens' to match memory dimension
+            #    so that pointers can be stacked together with memory encodings for attention calculations
+            ptrs = torch.stack(ptrs_list, dim=0)
+            num_ptrs, ptr_batch_size = ptrs.shape[0:2]
+            num_ptr_tokens = num_ptrs * self._num_tokens_per_pointer
+
+            # Combine pointers into BxNxC shape (where 'C' channels matches memory tokens)
+            ptrs = ptrs.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
+            ptr_pos = torch.zeros_like(ptrs)
+            memory_list.append(ptrs)
+            posenc_list.append(ptr_pos)
+
+        # Stack memory & object pointer tokens (and positional encodings) into large BxNxC tensor
+        memory_tensor = torch.cat(memory_list, dim=1)
+        memory_posenc_tensor = torch.cat(posenc_list, dim=1)
+
+        # ----------------------------------------------------------------
+
+        # Get input shape so we can restore it on output
+        b, _, h, w = lowres_image_tokens.shape
+
+        # Flatten to rows-of-tokens format, shape: BxNxC
+        img_posenc = self.imgposenc(b, h, w)
+        flat_imgtokens_bnc = lowres_image_tokens.flatten(2).permute(0, 2, 1)
+        flat_imgposenc_bnc = img_posenc.flatten(2).permute(0, 2, 1)
+
+        # Odd detail from original implementation... doesn't have a significant impact on results
+        flat_imgtokens_bnc = flat_imgtokens_bnc + 0.1 * flat_imgposenc_bnc
+
+        # Run transformer layers to fuse memory results with image tokens
+        for layer in self.layers:
+            flat_imgtokens_bnc = layer(
+                tgt=flat_imgtokens_bnc,
+                memory=memory_tensor,
+                pos=memory_posenc_tensor,
+                query_pos=flat_imgposenc_bnc,
+                num_k_exclude_rope=num_ptr_tokens,
+            )
+
+        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
+        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
+        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(b, -1, h, w)
+
+    # .................................................................................................................

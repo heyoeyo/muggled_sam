@@ -75,7 +75,7 @@ The tables below include direct download links to all of the supported models. *
 </details>
 
 ### Simple Example
-Here is an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/encode_image.py) of using the model to generate masks from an image:
+Here is an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
 ```python
 import cv2
 from lib.make_sam import make_sam_from_state_dict

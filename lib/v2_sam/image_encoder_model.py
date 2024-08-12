@@ -84,9 +84,6 @@ class SAMV2ImageEncoder(nn.Module):
         features_per_stage = self.trunk.get_features_per_stage()
         self.output_projection = OutputProjection(output_channels, features_per_stage)
 
-        # Embedding added to encoded image features (when not using memory encoding?)
-        self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, output_channels))
-
         # New to version-2, used to process pass-thru features sent to the mask decoder
         self.proj_x4 = Conv1x1Layer(output_channels, output_channels // 8)
         self.proj_x2 = Conv1x1Layer(output_channels, output_channels // 4)

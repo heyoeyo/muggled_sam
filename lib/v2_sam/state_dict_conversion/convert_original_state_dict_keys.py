@@ -22,7 +22,7 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         new_state_dict
 
     Note: The new state dict has keys corresponding the the model components:
-        "imgencoder", "coordencoder", "promptencoder", "maskdecoder", "memoryencoder", "memoryattention"
+        "imgencoder", "coordencoder", "promptencoder", "maskdecoder", "memoryencoder", "memoryfusion"
     """
 
     # Pre-compute mapping between old block indexing & new stage + block indexing
@@ -93,7 +93,7 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             memencoder_sd[new_key] = mod_data
             continue
 
-        new_key = _convert_memattention_keys(orig_key)
+        new_key = _convert_memfusion_keys(orig_key)
         if found_key(new_key):
             memattn_sd[new_key] = orig_data
             continue
@@ -105,7 +105,7 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         "promptencoder": promptencoder_sd,
         "maskdecoder": maskdecoder_sd,
         "memoryencoder": memencoder_sd,
-        "memoryattention": memattn_sd,
+        "memoryfusion": memattn_sd,
     }
 
     return new_state_dict
@@ -148,10 +148,6 @@ def _convert_imgenc_keys(
         return key.replace("sam_mask_decoder.conv_s0", "proj_x4")
     if key.startswith("sam_mask_decoder.conv_s1"):
         return key.replace("sam_mask_decoder.conv_s1", "proj_x2")
-
-    # Capture 'no_mem_embed' which originally belonged to parent SAM model
-    if key == "no_mem_embed":
-        return key
 
     # Re-arrange/name positional encoding weights to a different model component
     if key == "image_encoder.trunk.pos_embed":
@@ -273,16 +269,31 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
         if key.startswith("sam_prompt_encoder.mask_downscaling"):
             return key.replace("sam_prompt_encoder.mask_downscaling", "maskhint_encoder.downscaler")
 
+    # Capture object pointer weights (now part of mask decoder, instead of 'parent' model)
+    if key == "no_obj_ptr":
+        return "objptrgen.no_ptr"
+    if key.startswith("obj_ptr_proj"):
+        layer_idx = get_nth_integer(key, 0)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key)
+        return f"objptrgen.pointer_mlp.layers.{new_idx}.{weight_or_bias}"
+
+    # Convert 'object score head' keys to MLP naming scheme
+    if key.startswith("sam_mask_decoder.pred_obj_score_head"):
+        layer_idx = get_nth_integer(key, 0)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key, 1)
+        return f"objptrgen.score_mlp.layers.{new_idx}.{weight_or_bias}"
+
     # Bail on non-decoder keys
     if not key.startswith("sam_mask_decoder"):
         return None
 
+    # Map the learned 'cls' tokens
     if key.startswith("sam_mask_decoder.obj_score_token"):
         return "cls_obj_token"
-
     if key.startswith("sam_mask_decoder.iou_token"):
         return "cls_iou_token"
-
     if key.startswith("sam_mask_decoder.mask_tokens"):
         return "cls_mask_tokens"
 
@@ -314,7 +325,6 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
 
         # All upscaling keys have a different prefix
         new_key = key.replace("sam_mask_decoder", "maskgen")
-        # new_key = key.replace("sam_mask_decoder.output_upscaling", "maskgen.img_patch_upscaler")
 
         # Adjust nested key names, which were original stored in a sequential model, now stored in a separate module
         find_and_replace_lut = {
@@ -328,13 +338,6 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
             return new_key.replace(targ_str, match_str)
 
         return new_key
-
-    # Convert 'object score head' keys to MLP naming scheme
-    if key.startswith("sam_mask_decoder.pred_obj_score_head"):
-        layer_idx = get_nth_integer(key, 0)
-        new_idx = 2 * layer_idx
-        weight_or_bias = get_suffix_terms(key, 1)
-        return f"obj_token_mlp.layers.{new_idx}.{weight_or_bias}"
 
     # Convert 'iou prediction head' keys to MLP naming scheme
     if key.startswith("sam_mask_decoder.iou_prediction_head"):
@@ -381,10 +384,26 @@ def _convert_memencoder_keys(key: str) -> None | str:
 # .....................................................................................................................
 
 
-def _convert_memattention_keys(key: str) -> None | str:
+def _convert_memfusion_keys(key: str) -> None | str:
+
+    # Capture 'no_mem_embed' which originally belonged to parent SAM model
+    if key == "no_mem_embed":
+        return key
+
+    # Rename frame position offset embedding
+    if key == "maskmem_tpos_enc":
+        return "memposenc.base_memposenc_offsets"
 
     # Remove model name prefix
     if key.startswith("memory_attention"):
-        return key.removeprefix("memory_attention.")
+
+        # Remove memory_attention prefix from all keys
+        new_key = key.removeprefix("memory_attention.")
+
+        # Rename final norm layer for clarity
+        if new_key.startswith("norm"):
+            new_key = new_key.replace("norm", "out_norm")
+
+        return new_key
 
     return None

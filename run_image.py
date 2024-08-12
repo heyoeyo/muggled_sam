@@ -318,7 +318,7 @@ if have_init_prompts:
 
 # Set up display
 cv2.destroyAllWindows()
-window = DisplayWindow("Display", display_fps=60).attach_mouse_callbacks(disp_layout)
+window = DisplayWindow("Display - q to quit", display_fps=60).attach_mouse_callbacks(disp_layout)
 window.move(200, 50)
 
 # Change tools/masks on arrow keys
@@ -354,6 +354,7 @@ print(
     "Use prompts to segment the image!",
     "- Shift-click to add multiple points",
     "- Right-click to remove points",
+    "- Press q or esc to close the window",
     "",
     sep="\n",
     flush=True,

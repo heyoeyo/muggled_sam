@@ -8,8 +8,6 @@
 import torch
 import torch.nn as nn
 
-from .posenc_sine import PositionEmbeddingSine
-
 from .shared import Conv1x1Layer
 
 # For type hints

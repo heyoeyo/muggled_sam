@@ -5,10 +5,11 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from collections import deque
+from dataclasses import dataclass
+
 import torch
 import torch.nn as nn
-
-import numpy as np
 
 # For type hints
 from torch import Tensor
@@ -18,7 +19,7 @@ from .coordinate_encoder_model import SAMV2CoordinateEncoder
 from .prompt_encoder_model import SAMV2PromptEncoder
 from .mask_decoder_model import SAMV2MaskDecoder
 from .memory_encoder_model import SAMV2MemoryEncoder
-from .memory_attention_model import SAMV2MemoryAttention
+from .memory_fusion_model import SAMV2MemoryFusion
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -39,7 +40,7 @@ class SAMV2Model(nn.Module):
         prompt_encoder_model: SAMV2PromptEncoder,
         mask_decoder_model: SAMV2MaskDecoder,
         memory_encoder_model: SAMV2MemoryEncoder,
-        memory_attention_model: SAMV2MemoryAttention,
+        memory_fusion_model: SAMV2MemoryFusion,
     ):
 
         # Inherit from parent
@@ -51,7 +52,11 @@ class SAMV2Model(nn.Module):
         self.prompt_encoder = prompt_encoder_model
         self.mask_decoder = mask_decoder_model
         self.memory_encoder = memory_encoder_model
-        self.memory_attention = memory_attention_model
+        self.memory_fusion = memory_fusion_model
+
+        # Store 'empty' prompt encoding, used when stepping video (so we don't repeatedly re-compute it!)
+        no_prompt_encoding = self.encode_prompts([], [], [])
+        self.register_buffer("_video_noprompt_encoding", no_prompt_encoding, persistent=False)
 
         # Default to eval mode, expecting to use inference only
         self.eval()
@@ -169,7 +174,7 @@ class SAMV2Model(nn.Module):
         self,
         encoded_image_features_list: list[Tensor],
         encoded_prompts: Tensor,
-        mask_hint: Tensor | None = None,
+        mask_hint: Tensor | int | None = None,
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
 
@@ -178,7 +183,7 @@ class SAMV2Model(nn.Module):
 
         with torch.inference_mode():
             grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
-            mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.mask_decoder(
+            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 encoded_image_features_list, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 
@@ -186,28 +191,100 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
-    def get_best_mask_index(self, iou_predictions: Tensor) -> int:
-        """Returns the index of the highest IoU prediction score"""
-        return self.mask_decoder.get_best_mask_index(iou_predictions)
+    def initialize_video_masking(
+        self,
+        encoded_image_features_list: list[Tensor],
+        box_tlbr_norm_list: list,
+        fg_xy_norm_list: list,
+        bg_xy_norm_list: list,
+        mask_hint: Tensor | int | None = None,
+        mask_index_select: int | None = None,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+
+        # Encode initial prompts
+        encoded_prompts = self.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+        with torch.inference_mode():
+
+            # For convenience
+            lowres_imgenc, *hires_imgenc = encoded_image_features_list
+            token_hw = lowres_imgenc.shape[2:]
+
+            # Generate mask prediction from image/prompt encodings, as usual
+            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(token_hw)
+            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
+                encoded_image_features_list,
+                encoded_prompts,
+                grid_posenc,
+                mask_hint=mask_hint,
+                blank_promptless_output=False,
+            )
+
+            # Select mask to use for initial encodings (auto-select if not given an index)
+            if mask_index_select is None:
+                mask_index_select = self.mask_decoder.get_best_mask_index(iou_preds)
+            best_mask_pred = mask_preds[:, [mask_index_select], :, :]
+            best_obj_ptr = obj_ptrs[:, [mask_index_select]]
+
+            # Encode initial memory
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, is_prompt_encoding=True)
+
+        return best_mask_pred, memory_encoding, best_obj_ptr
 
     # .................................................................................................................
 
-    @staticmethod
-    def normalize_xy(xy_px_list: list, frame_shape: tuple, use_original_SAM_method=True) -> list:
-        """Helper used to normalize (x,y) pixel coordinates to the 0-to-1 range used by SAM"""
+    def step_video_masking(
+        self,
+        encoded_image_features_list: list[Tensor],
+        prompt_memory_encodings: list[Tensor],
+        prompt_object_pointers: list[Tensor],
+        previous_memory_encodings: list[Tensor],
+        previous_object_pointers: list[Tensor],
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
 
-        # For convenience
-        frame_h, frame_w = frame_shape[0:2]
+        with torch.inference_mode():
 
-        # Original method 'centers' pixel coordinates when normalizing, see:
-        # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/sam/prompt_encoder.py#L86
-        # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/sam/prompt_encoder.py#L105
-        if use_original_SAM_method:
-            x_scale, y_scale = np.float32(1 / frame_w), np.float32(1 / frame_h)
-            return [((x + 0.5) * x_scale, (y + 0.5) * y_scale) for x, y in xy_px_list]
+            # Encode image features with previous memory encodings & object pointer data
+            lowres_imgenc, *hires_imgenc = encoded_image_features_list
+            memfused_encimg = self.memory_fusion(
+                lowres_imgenc,
+                prompt_memory_encodings,
+                prompt_object_pointers,
+                previous_memory_encodings,
+                previous_object_pointers,
+            )
 
-        # Natural way to normalize coords (imo), maps 0.0 to left/top-most pixel index, 1.0 to right/bottom most index
-        x_scale, y_scale = np.float32(1 / (frame_w - 1)), np.float32(1 / (frame_h - 1))
-        return [(x * x_scale, y * y_scale) for x, y in xy_px_list]
+            # Run mask decoder on memory encoded features
+            # Called '_forward_sam_heads' in original code
+            # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L762
+            patch_grid_hw = memfused_encimg.shape[2:]
+            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
+                [memfused_encimg, *hires_imgenc],
+                self._video_noprompt_encoding,
+                grid_posenc,
+                mask_hint=None,
+                blank_promptless_output=False,
+            )
+
+            # Keep only the 'best' results
+            best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
+                mask_preds,
+                iou_preds,
+                obj_ptrs,
+                exclude_0th_index=True,
+            )
+
+            # Encode new memory features
+            # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L787
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred)
+
+        return obj_score, best_mask_pred, memory_encoding, best_obj_ptr
+
+    # .................................................................................................................
+
+    def get_best_mask_index(self, iou_predictions: Tensor) -> int:
+        """Returns the index of the highest IoU prediction score"""
+        return self.mask_decoder.get_best_mask_index(iou_predictions)
 
     # .................................................................................................................
