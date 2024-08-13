@@ -19,7 +19,8 @@ import torch
 from lib.make_sam import make_sam_from_state_dict
 
 
-# Define pathing
+# Setup
+batch_size = 4
 image_path = "/path/to/image.jpg"
 model_path = "/path/to/model.pth"
 device, dtype = "cpu", torch.float32
@@ -41,20 +42,25 @@ print("Loading model...")
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
 
+# Set up image batch by just repeating the single input image
+print(f"Encoding image batch... (batch size: {batch_size})")
+image_tensor = sammodel.image_encoder.prepare_image(img_bgr, max_side_length=1024, use_square_sizing=True)
+image_batch = image_tensor.repeat(batch_size, 1, 1, 1)
+encoded_img = sammodel.image_encoder(image_batch)
+tokens_shape = encoded_img[0].shape if isinstance(encoded_img, list) else encoded_img.shape  # SAMv2 vs v1
+
 # Process data
 print("Generating masks...")
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(img_bgr, max_side_length=1024, use_square_sizing=True)
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 
 # Feedback
 print("")
 print("Results:")
+if torch.cuda.is_available():
+    print("Peak VRAM:", torch.cuda.max_memory_allocated() // 1_000_000, "MB")
 print("Input image shape:", img_bgr.shape)
-print("Pre-encoded image height & width:", tuple(preencode_img_hw))
-print("Image tokens height & width:", tuple(token_hw))
+print("Pre-encoded image shape:", tuple(image_batch.shape))
+print("Image tokens shape:", tuple(tokens_shape))
 print("Mask results shape:", tuple(mask_preds.shape))
-print("IoU scores:", iou_preds[0].tolist())
-print("")
-print("Model config:")
-print(*[f"  {k}: {v}" for k, v in model_config_dict.items()], sep="\n")
+print("IoU results shape:", tuple(iou_preds.shape))

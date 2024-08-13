@@ -81,17 +81,18 @@ class GenericAttention(nn.Module):
             -> shape: BxNqxF (Nq is number of tokens matching q input)
         """
 
-        # For convenience, get the (shared) batch size for reshaping operations
-        b = q.shape[0]
+        # For convenience, get the batch size for reshaping operations
+        batch_size_q = q.shape[0]
+        batch_size_kv = k.shape[0]
 
         # Comput QKV tokens & split into 'per-head' shape
         # -> Inputs have shape: BxNxF
         # -> Projection changes shape to: BxNxF' (F' is 'internal' feature count)
         # -> Reshape to get features per head: BxNxHxf (H is number of heads, f is features per head)
         # -> Transpose gives final shape: BxHxNxf
-        q = self.q_proj(q).reshape(b, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        k = self.k_proj(k).reshape(b, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        v = self.v_proj(v).reshape(b, -1, self.num_heads, self.features_per_head).transpose(1, 2)
+        q = self.q_proj(q).reshape(batch_size_q, -1, self.num_heads, self.features_per_head).transpose(1, 2)
+        k = self.k_proj(k).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
+        v = self.v_proj(v).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
 
         # Perform query-key 'scaled dot-product' for all heads
         # -> k.transpose converts shape: BxHxNxf -> BxHxfxN

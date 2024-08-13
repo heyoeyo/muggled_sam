@@ -429,9 +429,19 @@ class ObjectPointerGen(nn.Module):
     # .................................................................................................................
 
     def forward(self, encoded_object_token, encoded_mask_tokens) -> tuple[Tensor, Tensor]:
+
+        # Compute object score (indicator of whether there is a valid object being masked)
         objscore = self.score_mlp(encoded_object_token)
-        objptr = self.pointer_mlp(encoded_mask_tokens) if objscore > 0 else self.no_ptr.expand_as(encoded_mask_tokens)
-        return objscore, objptr
+
+        # Get pointer for each batch
+        objptrs_list = []
+        for batch_idx in range(encoded_mask_tokens.shape[0]):
+            tokens = encoded_mask_tokens[batch_idx]
+            ptr = self.pointer_mlp(tokens) if objscore[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
+            objptrs_list.append(ptr)
+        objptrs = torch.stack(objptrs_list)
+
+        return objscore, objptrs
 
     # .................................................................................................................
 
