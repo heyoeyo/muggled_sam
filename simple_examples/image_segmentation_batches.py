@@ -44,10 +44,11 @@ sammodel.to(device=device, dtype=dtype)
 
 # Set up image batch by just repeating the single input image
 print(f"Encoding image batch... (batch size: {batch_size})")
-image_tensor = sammodel.image_encoder.prepare_image(img_bgr, max_side_length=1024, use_square_sizing=True)
-image_batch = image_tensor.repeat(batch_size, 1, 1, 1)
-encoded_img = sammodel.image_encoder(image_batch)
-tokens_shape = encoded_img[0].shape if isinstance(encoded_img, list) else encoded_img.shape  # SAMv2 vs v1
+with torch.inference_mode():
+    image_tensor = sammodel.image_encoder.prepare_image(img_bgr, max_side_length=1024, use_square_sizing=True)
+    image_batch = image_tensor.repeat(batch_size, 1, 1, 1)
+    encoded_img = sammodel.image_encoder(image_batch)
+    tokens_shape = encoded_img[0].shape if isinstance(encoded_img, list) else encoded_img.shape  # SAMv2 vs v1
 
 # Process data
 print("Generating masks...")
