@@ -169,8 +169,12 @@ sammodel.to(**device_config_dict)
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
 if full_image_bgr is None:
-    print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
-    raise FileNotFoundError(osp.basename(image_path))
+    vreader = cv2.VideoCapture(image_path)
+    ok_read, full_image_bgr = vreader.read()
+    vreader.release()
+    if not ok_read:
+        print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
+        raise FileNotFoundError(osp.basename(image_path))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -183,7 +187,8 @@ sammodel.set_window_size(imgenc_window_size)
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
 encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
-torch.cuda.synchronize()
+if torch.cuda.is_available():
+    torch.cuda.synchronize()
 t2 = perf_counter()
 time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
@@ -256,7 +261,7 @@ simplify_slider = HSlider("Simplify contours", 0, 0, 10, 0.25, marker_steps=4)
 device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str, space_equally=True)
 footer_msgbar = StaticMessageBar(
-    "[arrows] Tools/Masks", "[i] Invert", "[tab] Contouring", "[spacebar] Preview", text_scale=0.35
+    "[arrows] Tools/Masks", "[i] Invert", "[tab] Contouring", "[p] Preview", text_scale=0.35
 )
 save_btn = ImmediateButton("Save", (60, 170, 20))
 
@@ -328,7 +333,7 @@ window.attach_keypress_callback(KEY.UP_ARROW, selected_mask_constraint.previous)
 window.attach_keypress_callback(KEY.DOWN_ARROW, selected_mask_constraint.next)
 
 # Keypress for secondary controls
-window.attach_keypress_callback(KEY.SPACEBAR, show_preview_btn.toggle)
+window.attach_keypress_callback("p", show_preview_btn.toggle)
 window.attach_keypress_callback(KEY.TAB, large_mask_only_btn.toggle)
 window.attach_keypress_callback("i", invert_mask_btn.toggle)
 window.attach_keypress_callback("s", save_btn.click)
