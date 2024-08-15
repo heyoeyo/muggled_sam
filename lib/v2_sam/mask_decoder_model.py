@@ -197,7 +197,7 @@ class SAMV2MaskDecoder(nn.Module):
         best_iou_pred = iou_preds[:, best_idx]
         best_obj_ptr = obj_ptrs[:, best_idx, :]
 
-        return best_mask_pred, best_iou_pred, best_obj_ptr
+        return best_idx, best_mask_pred, best_iou_pred, best_obj_ptr
 
     # .................................................................................................................
 

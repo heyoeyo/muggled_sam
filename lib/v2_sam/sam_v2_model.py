@@ -200,6 +200,18 @@ class SAMV2Model(nn.Module):
         mask_hint: Tensor | int | None = None,
         mask_index_select: int | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Creates initial 'prompt memory' for segmenting objects through a video.
+        Similar to calling the prompt encoder & mask decoder, however, this function
+        outputs a single mask prediction along with a memory encoding and
+        object pointer, both of which must be passed along to the per-frame video
+        masking function.
+
+        If a 'mask_index_select' isn't given, then the 'best' mask will be chosen automatically.
+
+        Returns:
+            best_mask_prediction, memory_encoding, object_pointer
+        """
 
         # Encode initial prompts
         encoded_prompts = self.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
@@ -268,7 +280,7 @@ class SAMV2Model(nn.Module):
             )
 
             # Keep only the 'best' results
-            best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
+            best_mask_idx, best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
                 mask_preds,
                 iou_preds,
                 obj_ptrs,
@@ -279,7 +291,7 @@ class SAMV2Model(nn.Module):
             # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L787
             memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred)
 
-        return obj_score, best_mask_pred, memory_encoding, best_obj_ptr
+        return obj_score, best_mask_idx, mask_preds, memory_encoding, best_obj_ptr
 
     # .................................................................................................................
 

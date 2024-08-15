@@ -128,6 +128,11 @@ def blank_image(height: int, width: int, bgr_color: None | int | tuple[int, int,
     return np.full((height, width, 3), bgr_color, dtype=np.uint8)
 
 
+def blank_mask(height: int, width: int, gray_value: int = 0):
+    """Helper used to create a blank mask (i.e. grayscale/no channels) of a given size"""
+    return np.full((height, width), gray_value, dtype=np.uint8)
+
+
 def draw_box_outline(frame, color=(0, 0, 0), thickness=1):
     """Helper used to draw a box outline around the outside of a given frame"""
     img_h, img_w = frame.shape[0:2]

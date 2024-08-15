@@ -91,16 +91,24 @@ class ToggleButton(Toggleable):
         label: str,
         default_state=False,
         on_color=(80, 80, 80),
-        off_color=(40, 40, 40),
+        off_color=None,
         button_height=40,
         text_scale=0.75,
+        text_on_color=(255, 255, 255),
+        text_off_color=(120, 120, 120),
     ):
+
+        # Figure out off color, if needed
+        if off_color is None:
+            h_on, s_on, v_on = convert_color(on_color, cv2.COLOR_BGR2HSV_FULL)
+            hsv_off_color = (h_on, s_on * 0.4, v_on * 0.5)
+            off_color = convert_color(hsv_off_color, cv2.COLOR_HSV2BGR_FULL)
 
         # Store visual settings
         self._label = f" {label} "
         self._color_on = on_color
         self._color_off = off_color
-        self._txt_bright = TextDrawer(scale=text_scale)
+        self._txt_bright = TextDrawer(scale=text_scale).style(color=text_on_color)
 
         # Make sure our text sizing fits in the given bar height
         _, txt_h, _ = self._txt_bright.get_text_size(self._label)
@@ -108,7 +116,7 @@ class ToggleButton(Toggleable):
             new_scale = text_scale * (button_height / txt_h) * 0.8
             self._txt_bright.style(scale=new_scale)
         btn_w, _, _ = self._txt_bright.get_text_size(self._label)
-        self._txt_dim = TextDrawer.from_existing(self._txt_bright).style(color=(120, 120, 120))
+        self._txt_dim = TextDrawer.from_existing(self._txt_bright).style(color=text_off_color)
 
         # Inherit from parent & set default helper name for debugging
         super().__init__(button_height, btn_w, default_state)
@@ -122,7 +130,7 @@ class ToggleButton(Toggleable):
         *labels: list[str],
         default_state=False,
         on_color=(80, 80, 80),
-        off_color=(40, 40, 40),
+        off_color=None,
         button_height=40,
         text_scale=0.75,
         force_same_width=True,
