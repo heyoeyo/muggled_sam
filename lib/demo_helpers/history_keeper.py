@@ -23,7 +23,9 @@ class HistoryKeeper:
     def __init__(self, file_dunder=None, history_file_name=".history"):
 
         # Set up history save file pathing
-        folder_path = os.path.dirname(file_dunder) if file_dunder is not None else None
+        folder_path = None
+        if file_dunder is not None:
+            folder_path = os.path.dirname(file_dunder) if os.path.isfile(file_dunder) else file_dunder
         filename = str(os.path.splitext(history_file_name)[0]).lower()
         filepath = filename if folder_path is None else os.path.join(folder_path, filename)
 
