@@ -21,7 +21,7 @@ from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton
 from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.ui.static import StaticMessageBar
 
-from lib.demo_helpers.shared_ui_layout import UIControl, SharedUI, ReusableBaseImage
+from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
 
 from lib.demo_helpers.contours import get_contours_from_mask
 from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
@@ -212,8 +212,8 @@ if model_device == "cuda":
 # %% Set up the UI
 
 # Set up shared UI elements & control logic
-ui_elems = SharedUI(full_image_bgr, mask_preds)
-uictrl = UIControl(ui_elems)
+ui_elems = PromptUI(full_image_bgr, mask_preds)
+uictrl = PromptUIControl(ui_elems)
 
 # Set up message bars to communicate data info & controls
 device_dtype_str = f"{model_device}/{model_dtype}"

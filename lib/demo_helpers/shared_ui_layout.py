@@ -30,7 +30,7 @@ from .ui.window import DisplayWindow
 
 
 @dataclass
-class ToolsGroup:
+class ToolButtonsGroup:
     hover: ToggleButton
     box: ToggleButton
     fgpt: ToggleButton
@@ -41,30 +41,101 @@ class ToolsGroup:
         """Helper which returns a tuple of tool items"""
         return (self.hover, self.box, self.fgpt, self.bgpt, self.clear)
 
+    def enable(self, enabled=True):
+        for item in self.totuple():
+            item.enable(enabled)
+        return self
+
 
 @dataclass
-class OverlaysGroup:
-    hover: HoverOverlay
-    box: BoxSelectOverlay
-    fgpt: PointSelectOverlay
-    bgpt: PointSelectOverlay
-    polygon: DrawPolygonsOverlay
+class OverlayGroup:
+    polygon: DrawPolygonsOverlay | None
+    hover: HoverOverlay | None
+    box: BoxSelectOverlay | None
+    fgpt: PointSelectOverlay | None
+    bgpt: PointSelectOverlay | None
 
     def totuple(self) -> tuple:
-        """Helper which returns a tuple of all overlays (with polygon first!)"""
+        """Helper which returns a tuple of all overlays"""
         return (self.polygon, self.hover, self.box, self.fgpt, self.bgpt)
+
+    def enable(self, enabled=True):
+        for item in self.totuple():
+            item.enable(enabled)
+        return self
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Builder functions
+
+
+def build_basic_overlay() -> OverlayGroup:
+    """Helper used to build the basic polygon/segmentation overlay UI element"""
+    polygon_olay = DrawPolygonsOverlay((100, 10, 255), bg_color=(0, 0, 0))
+    return OverlayGroup(polygon_olay, None, None, None, None)
+
+
+def build_tool_overlays() -> OverlayGroup:
+    """Helper used to build overlay UI (draws polygon outlines, bounding-boxes, points etc.)"""
+
+    # Set up prompt UI interactions
+    hover_olay = HoverOverlay()
+    box_olay = BoxSelectOverlay(thickness=2)
+    fgpt_olay = PointSelectOverlay((0, 255, 0), point_radius=3)
+    bgpt_olay = PointSelectOverlay((0, 0, 0), bg_color=(0, 255, 0), point_radius=3).style(bg_thickness=2)
+    polygon_olay = DrawPolygonsOverlay((100, 10, 255), bg_color=(0, 0, 0))
+
+    return OverlayGroup(polygon_olay, hover_olay, box_olay, fgpt_olay, bgpt_olay)
+
+
+def build_tool_buttons() -> tuple[ToolButtonsGroup, RadioConstraint]:
+    """Helper used to build tool group UI (tool select buttons + prompt clear button)"""
+
+    # Set up tool selection UI
+    hover_btn, box_btn, fgpt_btn, bgpt_btn = ToggleButton.many("Hover", "Box", "FG Point", "BG Point")
+    clear_all_prompts_btn = ImmediateButton("Clear", color=(0, 0, 150))
+
+    # Set up constraint so only 1 tool can be active (excluding clear button, which isn't toggled)
+    tools_group = ToolButtonsGroup(hover_btn, box_btn, fgpt_btn, bgpt_btn, clear_all_prompts_btn)
+    tool_constraint = RadioConstraint(hover_btn, box_btn, fgpt_btn, bgpt_btn)
+
+    return tools_group, tool_constraint
+
+
+def build_mask_preview_buttons(mask_predictions: Tensor) -> tuple[list[ToggleImage], RadioConstraint]:
+    """Helper used to build mask previews UI (set of mask images showing model predictions)"""
+
+    mask_hw = mask_predictions.shape[2:]
+
+    # Set up mask preview selection UI
+    blank_mask_btn_imgs = [blank_mask(*mask_hw)] * 4
+    mask_btns_list = ToggleImage.many(*blank_mask_btn_imgs, highlight_color=(0, 120, 255))
+
+    # Configure text, in case iou prediction needs to be drawn into mask previews
+    for mbtn in mask_btns_list:
+        mbtn.set_text(text=None, scale=0.35, xy_norm=(1, 1), offset_xy_px=(-6, -6), bg_color=(0, 0, 0))
+
+    # Set up constraint so only 1 mask button can be active
+    mask_constraint = RadioConstraint(*mask_btns_list, initial_selected_index=1)
+
+    return mask_btns_list, mask_constraint
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 
 
-class SharedUI:
+class PromptUI:
     """
-    Somewhat hacky class used to bundle all 'standard' UI elements which are shared
-    for (most?) SAM model use cases. This includes providing UI for selecting between
-    hover/box/fg/bg prompt inputs, providing overlays for drawing prompts/mask outlines
-    as well as providing UI for mask preview images.
+    Hacky-ish class used to bundle all 'base' UI elements which are shared
+    for (most?) SAM model use cases. This consists of a regular image stacked
+    alongside multiple mask images (which also act as radio buttons) for showing
+    SAM mask results, along with support for rendering segmentation outlines
+    as an overlay. This is stored as a 'display_block' component
+
+    Additionally this class includes a tool-select bar for providing model prompts
+    through hover/box/fg-point/bg-point buttons, along with the corresponding
+    overlay graphics (i.e. rendering boxes or fg points)
     """
 
     # .................................................................................................................
@@ -72,94 +143,35 @@ class SharedUI:
     def __init__(self, full_image_bgr: ndarray, mask_predictions: Tensor):
 
         # Build out UI component pieces
-        self.olays = self._build_overlays()
-        self.tools, self.tools_constraint = self._build_tools()
-        self.mask_btns, self.masks_constraint = self._build_mask_preview_buttons(mask_predictions)
+        self.olays = build_tool_overlays()
+        self.tools, self.tools_constraint = build_tool_buttons()
+        self.mask_btns, self.masks_constraint = build_mask_preview_buttons(mask_predictions)
 
         # Build main layout!
-        self.image, self.display_block, self.layout = self._build_ui_layout(
-            full_image_bgr, mask_predictions, self.olays, self.tools, self.mask_btns
-        )
+        self.image, self.display_block = self._build_display_block(full_image_bgr, mask_predictions)
+        self.layout = self._build_ui_layout()
 
     # .................................................................................................................
 
-    def _build_overlays(self) -> OverlaysGroup:
-        """Helper used to build overlay UI (draws polygon outlines, bounding-boxes, points etc.)"""
-
-        # Set up prompt UI interactions
-        hover_olay = HoverOverlay()
-        box_olay = BoxSelectOverlay(thickness=2)
-        fgpt_olay = PointSelectOverlay((0, 255, 0), point_radius=3)
-        bgpt_olay = PointSelectOverlay((0, 0, 0), bg_color=(0, 255, 0), point_radius=3).style(bg_thickness=2)
-        pgon_olay = DrawPolygonsOverlay((100, 10, 255), bg_color=(0, 0, 0))
-
-        return OverlaysGroup(hover_olay, box_olay, fgpt_olay, bgpt_olay, pgon_olay)
-
-    # .................................................................................................................
-
-    def _build_tools(self) -> tuple[ToolsGroup, RadioConstraint]:
-        """Helper used to build tool group UI (tool select buttons + prompt clear button)"""
-
-        # Set up tool selection UI
-        hover_btn, box_btn, fgpt_btn, bgpt_btn = ToggleButton.many("Hover", "Box", "FG Point", "BG Point")
-        clear_all_prompts_btn = ImmediateButton("Clear", color=(0, 0, 150))
-
-        # Set up constraint so only 1 tool can be active (excluding clear button, which isn't toggled)
-        tools_group = ToolsGroup(hover_btn, box_btn, fgpt_btn, bgpt_btn, clear_all_prompts_btn)
-        tool_constraint = RadioConstraint(hover_btn, box_btn, fgpt_btn, bgpt_btn)
-
-        return tools_group, tool_constraint
-
-    # .................................................................................................................
-
-    def _build_mask_preview_buttons(self, mask_predictions: Tensor) -> tuple[list[ToggleImage], RadioConstraint]:
-        """Helper used to build mask previews UI (set of mask images showing model predictions)"""
-
-        mask_hw = mask_predictions.shape[2:]
-
-        # Set up mask preview selection UI
-        blank_mask_btn_imgs = [blank_mask(*mask_hw)] * 4
-        mask_btns_list = ToggleImage.many(*blank_mask_btn_imgs, highlight_color=(0, 120, 255))
-
-        # Configure text, in case iou prediction needs to be drawn into mask previews
-        for mbtn in mask_btns_list:
-            mbtn.set_text(text=None, scale=0.35, xy_norm=(1, 1), offset_xy_px=(-6, -6), bg_color=(0, 0, 0))
-
-        # Set up constraint so only 1 mask button can be active
-        mask_constraint = RadioConstraint(*mask_btns_list, initial_selected_index=1)
-
-        return mask_btns_list, mask_constraint
-
-    # .................................................................................................................
-
-    def _build_ui_layout(
-        self,
-        full_image_bgr: ndarray,
-        mask_preds: Tensor,
-        overlays: OverlaysGroup,
-        tools: ToolsGroup,
-        mask_preview_buttons: list[ToggleImage],
-    ) -> tuple[ExpandingImage, VStack | HStack, VStack]:
-        """Function used to build out the final UI block, containing tool UI, overlays and mask previews"""
+    def _build_display_block(self, image_bgr: ndarray, mask_preds: Tensor) -> tuple[ExpandingImage, HStack]:
+        """Function used to build out the centrl display block, containing image & mask previews"""
 
         # For convenience
-        img_shape = full_image_bgr.shape
+        img_shape = image_bgr.shape
         mask_hw = mask_preds.shape[2:]
 
-        # For tool button bar
-        toolselect_bar = HStack(*tools.totuple())
-
         # Set up display image
-        main_display_image = ExpandingImage(full_image_bgr).set_debug_name("ColorImg")
-        imgoverlay_cb = OverlayStack(main_display_image, *overlays.totuple())
+        main_display_image = ExpandingImage(image_bgr).set_debug_name("MainDisplayImage")
+        imgoverlay_cb = OverlayStack(main_display_image, *self.olays.totuple())
         imgoverlay_cb._rdr.pad.color = (35, 25, 30)
 
         # Set up mask previews, which are oriented/arranged based on display aspect ratio
+        mask_btns = self.mask_btns
         side_str, stack_order_str = find_best_display_arrangement(img_shape, mask_hw)
         order_lut = {
-            "grid": VStack(HStack(*mask_preview_buttons[:2]), HStack(*mask_preview_buttons[2:])),
-            "vertical": VStack(*mask_preview_buttons),
-            "horizontal": HStack(*mask_preview_buttons),
+            "grid": VStack(HStack(*mask_btns[:2]), HStack(*mask_btns[2:])),
+            "vertical": VStack(*mask_btns),
+            "horizontal": HStack(*mask_btns),
         }
         maskselect_stack = order_lut[stack_order_str]
         maskselect_stack._rdr.pad.color = (60, 60, 60)
@@ -174,32 +186,144 @@ class SharedUI:
         main_display_block = item_stack(*item_order)
         main_display_block.set_debug_name("MainDisplayBlock")
 
-        # Set up full display layout
-        display_layout = VStack(toolselect_bar, main_display_block)
-        display_layout.set_debug_name("DisplayLayout")
+        return main_display_image, main_display_block
+
+    # .................................................................................................................
+
+    def _build_ui_layout(self) -> VStack:
+        """Function used to build out the final UI block which includes prompt tool buttons"""
 
         # Tie tool overlays to toggle buttons (so only 1 overlay responds to user input, based on tool selection)
-        tools.hover.add_on_change_listeners(overlays.hover.enable)
-        tools.box.add_on_change_listeners(overlays.box.enable)
-        tools.fgpt.add_on_change_listeners(overlays.fgpt.enable)
-        tools.bgpt.add_on_change_listeners(overlays.bgpt.enable)
+        self.tools.hover.add_on_change_listeners(self.olays.hover.enable)
+        self.tools.box.add_on_change_listeners(self.olays.box.enable)
+        self.tools.fgpt.add_on_change_listeners(self.olays.fgpt.enable)
+        self.tools.bgpt.add_on_change_listeners(self.olays.bgpt.enable)
 
-        return main_display_image, main_display_block, display_layout
+        # Set up full display layout
+        toolselect_bar = HStack(*self.tools.totuple())
+        display_layout = VStack(toolselect_bar, self.display_block)
+        display_layout.set_debug_name("DisplayLayout")
+
+        return display_layout
+
+    # .................................................................................................................
+
+    def disable_tools(self, clear_prompt_data=True):
+        """Helper used to disable the tool components of the UI"""
+
+        self.tools.enable(False)
+        self.olays.enable(False)
+        self.olays.polygon.enable(True)
+
+        # Wipe out prompt data if needed (to clear display of prompts)
+        if clear_prompt_data:
+            self.olays.hover.clear()
+            self.olays.box.clear()
+            self.olays.fgpt.clear()
+            self.olays.bgpt.clear()
+
+        return self
+
+    # .................................................................................................................
+
+    def disable_masks(self):
+        """Disables ability to interact with mask previews"""
+
+        for mask_btn in self.mask_btns:
+            mask_btn.enable(False)
+
+        return
 
     # .................................................................................................................
 
 
-class UIControl:
+class BaseUIControl:
     """
-    Helper class used to manage access to the standard/shared UI implementation
-    Helps to handle various typical interactions with prompt tools & mask display
+    Helper class used to manage access to the base UI implementation
+    Includes functionality for rendering alpha/checker-board masked images,
+    as well as mask preview buttons & final 'hi-res' mask results
     """
 
     # .................................................................................................................
 
-    def __init__(self, shared_ui: SharedUI):
-        self.elems = shared_ui
-        self.checker_pattern = CheckerPattern()
+    def __init__(self, ui_elements: PromptUI):
+        self.elems = ui_elements
+        self._checker_pattern = CheckerPattern()
+
+    # .................................................................................................................
+
+    def attach_arrowkey_callbacks(self, window: DisplayWindow):
+        """Helper used to attach keypress callbacks so that mask previews can be switched with arrow keys"""
+
+        window.attach_keypress_callback(KEY.UP_ARROW, self.elems.masks_constraint.previous)
+        window.attach_keypress_callback(KEY.DOWN_ARROW, self.elems.masks_constraint.next)
+
+        return self
+
+    # .................................................................................................................
+
+    def update_main_display_image(
+        self, image_bgr: ndarray, mask_uint8: ndarray, mask_contours_norm, show_with_alpha=False
+    ) -> None:
+        """Helper used to update the displayed image + mask outlines, with alpha checkerboarding if needed"""
+
+        # Use checker background to suggest alpha channel if needed
+        if show_with_alpha:
+            image_bgr = self._checker_pattern.superimpose(image_bgr, mask_uint8)
+
+        self.elems.olays.polygon.set_polygons(mask_contours_norm if not show_with_alpha else None)
+        self.elems.image.set_image(image_bgr)
+
+        return
+
+    # .................................................................................................................
+
+    def update_mask_previews(self, mask_predictions, mask_select_index, mask_threshold=0.0, invert_mask=False) -> None:
+        """Updates mask preview buttons with binary copies of predictions"""
+
+        # Update mask selection images
+        mask_preds_uint8 = ((mask_predictions.squeeze(0) > mask_threshold) * 255).byte().cpu().numpy()
+        for pred_idx, (mpred_uint8, mbtn) in enumerate(zip(mask_preds_uint8, self.elems.mask_btns)):
+            mbtn.set_image(mpred_uint8 if not invert_mask else np.bitwise_not(mpred_uint8))
+
+        return
+
+    # .................................................................................................................
+
+    def draw_iou_predictions(self, iou_predictions) -> None:
+        """Draws IoU (%) on to mask preview buttons"""
+
+        for pred_idx, mbtn in enumerate(self.elems.mask_btns):
+            quality_estimate = round(float(iou_predictions[0, pred_idx].float().cpu()) * 100)
+            mbtn.set_text(str(quality_estimate))
+
+        return
+
+    # .................................................................................................................
+
+    @staticmethod
+    def create_hires_mask_uint8(mask_predictions, mask_select_index, output_hw, mask_threshold=0.0) -> ndarray:
+        """Draws binary mask matching the given output height & width"""
+
+        mask_select = mask_predictions[:, mask_select_index, :, :].unsqueeze(1).float()
+        mask_upscale = nn.functional.interpolate(mask_select, size=output_hw, mode="bilinear", align_corners=False)
+        mask_uint8 = ((mask_upscale.squeeze() > mask_threshold) * 255).byte().cpu().numpy()
+
+        return mask_uint8
+
+    # .................................................................................................................
+
+
+class PromptUIControl(BaseUIControl):
+    """
+    An extension to the BaseUIControl class, with additional
+    functions for dealing with prompts
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, prompt_ui: PromptUI):
+        super().__init__(prompt_ui)
 
     # .................................................................................................................
 
@@ -236,56 +360,6 @@ class UIControl:
         window.attach_keypress_callback(KEY.DOWN_ARROW, mask_const.next)
 
         return self
-
-    # .................................................................................................................
-
-    def update_main_display_image(
-        self, image_bgr: ndarray, mask_uint8: ndarray, mask_contours_norm, show_with_alpha=False
-    ) -> None:
-        """Helper used to update the displayed image + mask outlines, with alpha checkerboarding if needed"""
-
-        # Use checker background to suggest alpha channel if needed
-        if show_with_alpha:
-            image_bgr = self.checker_pattern.superimpose(image_bgr, mask_uint8)
-
-        self.elems.olays.polygon.set_polygons(mask_contours_norm if not show_with_alpha else None)
-        self.elems.image.set_image(image_bgr)
-
-        return
-
-    # .................................................................................................................
-
-    def update_mask_previews(self, mask_predictions, mask_select_index, mask_threshold=0.0, invert_mask=False) -> None:
-        """Updates mask preview buttons with binary copies of predictions"""
-
-        # Update mask selection images
-        mask_preds_uint8 = ((mask_predictions.squeeze(0) > mask_threshold) * 255).byte().cpu().numpy()
-        for pred_idx, (mpred_uint8, mbtn) in enumerate(zip(mask_preds_uint8, self.elems.mask_btns)):
-            mbtn.set_image(mpred_uint8 if not invert_mask else np.bitwise_not(mpred_uint8))
-
-        return
-
-    # .................................................................................................................
-
-    def create_hires_mask_uint8(self, mask_predictions, mask_select_index, output_hw, mask_threshold=0.0) -> ndarray:
-        """Draws binary mask matching the given output height & width"""
-
-        mask_select = mask_predictions[:, mask_select_index, :, :].unsqueeze(1).float()
-        mask_upscale = nn.functional.interpolate(mask_select, size=output_hw, mode="bilinear", align_corners=False)
-        mask_uint8 = ((mask_upscale.squeeze() > mask_threshold) * 255).byte().cpu().numpy()
-
-        return mask_uint8
-
-    # .................................................................................................................
-
-    def draw_iou_predictions(self, iou_predictions) -> None:
-        """Draws IoU (%) on to mask preview buttons"""
-
-        for pred_idx, mbtn in enumerate(self.elems.mask_btns):
-            quality_estimate = round(float(iou_predictions[0, pred_idx].float().cpu()) * 100)
-            mbtn.set_text(str(quality_estimate))
-
-        return
 
     # .................................................................................................................
 

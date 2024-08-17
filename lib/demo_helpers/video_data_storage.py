@@ -53,6 +53,17 @@ class SAM2VideoBuffer:
 
         return self
 
+    def clear(self, clear_memories=True, clear_pointers=True):
+
+        if clear_memories:
+            mem_history = self.memory_history.maxlen
+            self.memory_history = deque([], maxlen=mem_history)
+        if clear_pointers:
+            ptr_history = self.pointer_history.maxlen
+            self.pointer_history = deque([], maxlen=ptr_history)
+
+        return self
+
 
 @dataclass
 class SAM2VideoObjectResults:
@@ -77,7 +88,7 @@ class SAM2VideoObjectResults:
         self.prevframe_buffer.store(frame_index, memory_encoding, object_pointer)
         return self
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """Helper used to convert stored data into a dictionary, so it can be used as a 'kwargs' argument"""
         return {
             "prompt_memory_encodings": self.prompts_buffer.memory_history,
@@ -85,3 +96,22 @@ class SAM2VideoObjectResults:
             "previous_memory_encodings": self.prevframe_buffer.memory_history,
             "previous_object_pointers": self.prevframe_buffer.pointer_history,
         }
+
+    def get_num_memories(self) -> tuple[int, int]:
+        """Read the length of currently stored memory data. Returns: num_prompt_memory, num_prevframe_memory"""
+
+        num_prompt_mems = len(self.prompts_buffer.memory_history)
+        num_prevframe_mems = len(self.prevframe_buffer.memory_history)
+
+        return num_prompt_mems, num_prevframe_mems
+
+    def get_num_pointers(self) -> tuple[int, int]:
+        """
+        Read the length of currently stored object pointer data
+        Returns: num_prompt_pointers, num_prevframe_pointers
+        """
+
+        num_prompt_pointers = len(self.prompts_buffer.pointer_history)
+        num_prevframe_pointers = len(self.prevframe_buffer.pointer_history)
+
+        return num_prompt_pointers, num_prevframe_pointers

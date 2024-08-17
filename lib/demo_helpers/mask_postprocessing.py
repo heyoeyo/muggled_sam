@@ -26,7 +26,7 @@ class MaskPostProcessor:
     # .................................................................................................................
 
     def __init__(self):
-        self._use_large_contour = False
+        self._use_largest_contour = False
         self._mask_simplify = 0
         self._mask_rounding = 0
         self._mask_padding = 0
@@ -106,7 +106,7 @@ class MaskPostProcessor:
         return self
 
     # .................................................................................................................
-    
+
     def get_largest_contour(self, mask_contours_norm, mask_shape_px, point_hint_xy_norm=None):
 
         # Special case, if we're given a 'point hint' when using the largest contour only, we
@@ -124,7 +124,7 @@ class MaskPostProcessor:
         return mask_contours_norm
 
     # .................................................................................................................
-    
+
     def get_simplfied_contours(self, mask_contours_norm, mask_shape):
 
         # Perform simplification in pixel units (required by opencv) and convert back
@@ -133,9 +133,9 @@ class MaskPostProcessor:
         mask_contours_norm = normalize_contours(mask_contours_px, mask_shape)
 
         return mask_contours_norm
-    
+
     # .................................................................................................................
-    
+
     def draw_binary_mask(self, mask_contours_norm, mask_shape):
 
         # Draw mask from contours
@@ -146,7 +146,7 @@ class MaskPostProcessor:
         return final_mask_uint8
 
     # .................................................................................................................
-    
+
     def get_rounded_contours(self, mask_contours_norm, final_mask_uint8):
 
         final_mask_uint8 = cv2.morphologyEx(final_mask_uint8, self._round_type, self._round_kernel)
@@ -157,7 +157,7 @@ class MaskPostProcessor:
         return mask_contours_norm, final_mask_uint8
 
     # .................................................................................................................
-    
+
     def get_padded_mask(self, mask_contours_norm, final_mask_uint8):
 
         final_mask_uint8 = cv2.morphologyEx(final_mask_uint8, self._pad_type, self._pad_kernel)
@@ -166,5 +166,5 @@ class MaskPostProcessor:
             mask_contours_norm = padded_contour_norm
 
         return mask_contours_norm, final_mask_uint8
-    
+
     # .................................................................................................................
