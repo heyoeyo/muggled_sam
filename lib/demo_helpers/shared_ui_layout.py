@@ -208,15 +208,23 @@ class PromptUI:
 
     # .................................................................................................................
 
-    def disable_tools(self, clear_prompt_data=True):
-        """Helper used to disable the tool components of the UI"""
+    def enable_tools(self, enable=True, clear_prompt_data_on_disable=True, keep_polygon_overlay_on_disable=True):
+        """Helper used to enable/disable the tool components of the UI"""
 
-        self.tools.enable(False)
-        self.olays.enable(False)
-        self.olays.polygon.enable(True)
+        self.tools.enable(enable)
+        if enable:
+            # Only the overlay of the selected tool should be enabled
+            _, tool_select_idx, _ = self.tools_constraint.read()
+            olays_ordered_by_tool = [self.olays.hover, self.olays.box, self.olays.fgpt, self.olays.bgpt]
+            olay_select = olays_ordered_by_tool[tool_select_idx]
+            olay_select.enable(enable)
+
+        # Keep the segmentation overlay active
+        if keep_polygon_overlay_on_disable:
+            self.olays.polygon.enable(True)
 
         # Wipe out prompt data if needed (to clear display of prompts)
-        if clear_prompt_data:
+        if clear_prompt_data_on_disable and not enable:
             self.olays.hover.clear()
             self.olays.box.clear()
             self.olays.fgpt.clear()
@@ -226,11 +234,11 @@ class PromptUI:
 
     # .................................................................................................................
 
-    def disable_masks(self):
-        """Disables ability to interact with mask previews"""
+    def enable_masks(self, enable=True):
+        """Enables/disables ability to interact with mask previews"""
 
         for mask_btn in self.mask_btns:
-            mask_btn.enable(False)
+            mask_btn.enable(enable)
 
         return
 

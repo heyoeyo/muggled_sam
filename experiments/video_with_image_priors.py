@@ -312,7 +312,7 @@ try:
 
             # Produce prompt to be recorded for video segmentation
             _, init_mem, init_ptr = sammodel.initialize_video_masking(
-                encoded_img, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
+                encoded_img, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=mselect_idx
             )
             objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
@@ -397,6 +397,7 @@ if no_buffer and has_prompts:
         box_tlbr_norm_list,
         fg_xy_norm_list,
         bg_xy_norm_list,
+        mask_index_select=mselect_idx,
     )
     objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
@@ -416,8 +417,8 @@ mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
 
 # Set up simpler UI for video playback
-ui_elems.disable_tools()
-ui_elems.disable_masks()
+ui_elems.enable_tools(False)
+ui_elems.enable_masks(False)
 
 # Set up text-based reporting UI
 has_cuda = torch.cuda.is_available()
