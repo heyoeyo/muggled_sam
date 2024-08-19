@@ -20,7 +20,7 @@ from time import perf_counter
 from lib.make_sam import make_sam_from_state_dict
 
 # Define pathing
-model_path = "/path/to/model.pth"
+model_path = "/path/to/sam_v1_or_v2_model.pth"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
@@ -46,7 +46,7 @@ sammodel.to(device=device, dtype=dtype)
 t2 = perf_counter()
 print("-> Loading took", round(1000 * (t2 - t1)), "ms")
 
-# Model warm-up
+# Model warm-up (excludes one-time VRAM/cache allocation from timing)
 print("", f"Running warm-up ({device} / {dtype})", sep="\n", flush=True)
 test_img = np.random.randint(0, 255, (max_side_length, max_side_length, 3), dtype=np.uint8)
 for _ in range(num_warmup_iterations):
@@ -56,7 +56,7 @@ for _ in range(num_warmup_iterations):
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 
-# Image encoder
+# Time the image encoder
 print("", f"Running image encoder ({num_image_encoder_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_image_encoder_iterations):
@@ -68,7 +68,7 @@ total_time_ms = round(1000 * (t2 - t1))
 per_iter = total_time_ms / num_image_encoder_iterations
 print("-> Image encoder took", total_time_ms, "ms", f"({per_iter} ms / iter)")
 
-# Mask generation
+# Time prompt encoding + mask generation
 print("", f"Generating masks ({num_mask_generation_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_mask_generation_iterations):
