@@ -95,6 +95,7 @@ def make_sam_v2(
     imgencoder_blocks_per_stage=(2, 3, 16, 3),
     imgencoder_global_attn_spacing_per_stage=(None, None, 4, None),
     imgencoder_window_size_per_stage=(8, 4, 14, 17),
+    imgencoder_window_tile_posenc_hw=(8, 8),
     base_patch_grid_hw=(14, 14),
     num_decoder_blocks=2,
     num_decoder_heads=8,
@@ -133,6 +134,7 @@ def make_sam_v2(
         imgencoder_blocks_per_stage,
         imgencoder_global_attn_spacing_per_stage,
         imgencoder_window_size_per_stage,
+        imgencoder_window_tile_posenc_hw,
         base_patch_grid_hw,
         patch_size_px,
     )

@@ -30,6 +30,7 @@ def get_model_config_from_state_dict(state_dict):
         "imgencoder_heads": get_image_encoder_heads(total_block_count),
         "imgencoder_blocks_per_stage": get_blocks_per_stage(total_block_count),
         "imgencoder_window_size_per_stage": get_window_size_per_stage(total_block_count),
+        "imgencoder_window_tile_posenc_hw": get_image_encoder_window_tile_positional_encoding_hw(state_dict),
         "imgencoder_global_attn_spacing_per_stage": get_global_attention_spacing_per_stage(total_block_count),
         "base_patch_grid_hw": get_base_patch_grid_hw(state_dict),
         "num_output_mask_tokens": get_num_output_mask_tokens(state_dict),
@@ -199,6 +200,31 @@ def get_image_encoder_features_per_token(state_dict):
     features_per_image_token, _, _, _ = state_dict[target_key].shape
 
     return int(features_per_image_token)
+
+
+def get_image_encoder_window_tile_positional_encoding_hw(state_dict):
+    """
+    The state dict is expected to contain weights for a 'tiled' position
+    encoding/embedding value, used in the positional encoding of the
+    image encoder. This 'tile' is repeated to match the size of the
+    image token patch grid size, and was (in the original implementation)
+    tied directly to the first (image encoder) stage window size. However
+    it has been split out here, to allow for the possibility of adjusting
+    windows sizes without breaking the positional encoding tiling!
+    """
+
+    # Make sure there is a patch embedding key in the given state dict
+    target_key = "image_encoder.trunk.pos_embed_window"
+    assert (
+        target_key in state_dict.keys()
+    ), f"Error determining features per token in image encoder! Couldn't find key: {target_key}"
+
+    # Expecting weights with shape: 1x3xHxW
+    # -> F is num features per image token
+    # -> H & W are the height & width we're looking for
+    _, _, h, w = state_dict[target_key].shape
+
+    return (int(h), int(w))
 
 
 # .....................................................................................................................

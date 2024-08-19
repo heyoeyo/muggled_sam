@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from .components.hiera_model import HieraModel
-from .components.imgenc_components import HalfStepPatchEmbed, WindowedPositionEncoding, OutputProjection
+from .components.imgenc_components import HalfStepPatchEmbed, WindowTiledPositionEncoding, OutputProjection
 from .components.shared import Conv1x1Layer
 
 # For type hints
@@ -55,6 +55,7 @@ class SAMV2ImageEncoder(nn.Module):
         blocks_per_stage=(2, 3, 16, 3),
         global_attn_spacing_per_stage=(None, None, 4, None),
         window_size_per_stage=(8, 4, 14, 17),
+        window_tile_posenc_hw=(8, 8),
         base_patch_grid_hw=(14, 14),
         patch_size_px=7,
     ):
@@ -66,10 +67,8 @@ class SAMV2ImageEncoder(nn.Module):
         self._patch_size_px = patch_size_px
         self.patch_embed = HalfStepPatchEmbed(features_per_token, patch_size_px)
 
-        # Set up position encoding applied to patch embedding tokens
-        first_stage_window_size = window_size_per_stage[0]
-        base_wintile_hw = (first_stage_window_size, first_stage_window_size)
-        self.posenc = WindowedPositionEncoding(features_per_token, base_patch_grid_hw, base_wintile_hw)
+        # Set up position encoder for patch embedding tokens
+        self.posenc = WindowTiledPositionEncoding(features_per_token, base_patch_grid_hw, window_tile_posenc_hw)
 
         # Set up hierarchical image encoder model
         self.trunk = HieraModel(

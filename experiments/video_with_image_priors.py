@@ -26,6 +26,7 @@ import torch
 import cv2
 
 from lib.make_sam import make_sam_from_state_dict
+from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, FrameIndexKeeper
 from lib.demo_helpers.ui.window import DisplayWindow
@@ -170,6 +171,7 @@ model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
+assert isinstance(sammodel, SAMV2Model), "Only SAMv2 models are supported for video predictions!"
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display

@@ -88,7 +88,7 @@ class HalfStepPatchEmbed(nn.Module):
     # .................................................................................................................
 
 
-class WindowedPositionEncoding(nn.Module):
+class WindowTiledPositionEncoding(nn.Module):
     """
     Simplified implementation of the position encoding components of the image encoder from:
         "SAM 2: Segment Anything in Images and Videos"
