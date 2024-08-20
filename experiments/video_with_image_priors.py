@@ -28,11 +28,11 @@ import cv2
 from lib.make_sam import make_sam_from_state_dict
 from lib.v2_sam.sam_v2_model import SAMV2Model
 
-from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, FrameIndexKeeper
+from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
 from lib.demo_helpers.ui.window import DisplayWindow
 from lib.demo_helpers.ui.layout import HStack, VStack
 from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton
-from lib.demo_helpers.ui.text import TitledTextBlock, TextBlock
+from lib.demo_helpers.ui.text import TitledTextBlock, ValueBlock
 from lib.demo_helpers.ui.static import StaticMessageBar
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
 
@@ -41,7 +41,7 @@ from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
-from lib.demo_helpers.misc import get_default_device_string, make_device_config
+from lib.demo_helpers.misc import PeriodicVRAMReport, get_default_device_string, make_device_config
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -422,11 +422,11 @@ ui_elems.enable_masks(False)
 
 # Set up text-based reporting UI
 has_cuda = torch.cuda.is_available()
-vram_text = TextBlock("VRAM: 00000MB").set_text("VRAM: -")
-num_prompt_text = TextBlock("Prompts: 10").set_text("Prompts: -")
-num_prev_text = TextBlock("Memories: 10").set_text("Memories: -")
-objscore_text = TextBlock("Score: 1.5").set_text("ObjScore: -")
-text_header = HStack(vram_text, num_prompt_text, num_prev_text, objscore_text)
+vram_text = ValueBlock("VRAM: ", "-", "MB", max_characters=5)
+num_prompts_text = ValueBlock("Prompts: ", "0", max_characters=2)
+num_history_text = ValueBlock("History: ", "0", max_characters=2)
+objscore_text = ValueBlock("Score: ", None, max_characters=3)
+text_header = HStack(vram_text, num_prompts_text, num_history_text, objscore_text)
 
 # Define new UI
 show_preview_btn, enable_segment_btn, enable_memory_btn = ToggleButton.many(
@@ -452,7 +452,8 @@ window.attach_keypress_callback("p", show_preview_btn.toggle)
 window.move(200, 50)
 
 # Set up storage for keeping track of last encoded frame index
-idx_keeper = FrameIndexKeeper()
+idx_keeper = ValueChangeTracker()
+vram_report = PeriodicVRAMReport(update_period_ms=2000)
 
 try:
     for is_paused, frame_idx, frame in vreader:
@@ -468,13 +469,11 @@ try:
             idx_keeper.clear()
 
         # Update text feedback
+        vram_usage_mb = vram_report.get_vram_usage()
+        vram_text.set_value(vram_usage_mb)
         num_prompt_mems, num_prev_mems = objbuffer.get_num_memories()
-        num_prompt_text.set_text(f"Prompts: {num_prompt_mems}")
-        num_prev_text.set_text(f"Memories: {num_prev_mems}")
-        if has_cuda and frame_idx % 50 == 0:
-            free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
-            vram_usage_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
-            vram_text.set_text(f"VRAM: {vram_usage_mb}MB")
+        num_prompts_text.set_value(num_prompt_mems)
+        num_history_text.set_value(num_prev_mems)
 
         # Disable segmentation while paused or when adjusting playback (avoid crippling cpu/gpu)
         is_new_frame = idx_keeper.is_changed(frame_idx)
@@ -494,7 +493,7 @@ try:
                 video_preds = video_preds * 0.0
             elif enable_prevframe_storage:
                 objbuffer.store_result(frame_idx, mem_enc, obj_ptr)
-            objscore_text.set_text(f"Score: {round(obj_score, 1)}")
+            objscore_text.set_value(round(obj_score, 1))
 
             # Update the mask indicator to show which mask the model has chosen each frame
             best_mask_idx = int(best_mask_idx.squeeze().cpu())

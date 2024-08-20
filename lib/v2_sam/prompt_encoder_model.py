@@ -79,6 +79,13 @@ class SAMV2PromptEncoder(nn.Module):
 
     # .................................................................................................................
 
+    @staticmethod
+    def check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+        """Helper used to check if there are any prompts (i.e. check for at least one non-empty list)"""
+        return any((len(items) for items in (box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)))
+
+    # .................................................................................................................
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Model components

@@ -95,8 +95,7 @@ class LoopingVideoReader:
     # .................................................................................................................
 
     def get_frame_delay_ms(self, max_allowable_ms=1000):
-        fps = self._vcap.get(cv2.CAP_PROP_FPS)
-        frame_delay_ms = 1000.0 / fps
+        frame_delay_ms = 1000.0 / self._fps
         return int(min(max_allowable_ms, frame_delay_ms))
 
     # .................................................................................................................
@@ -330,22 +329,42 @@ class LoopingVideoPlaybackSlider(BaseCallback):
     # .................................................................................................................
 
 
-class FrameIndexKeeper:
-    """Simple helper object that can be used to check for changes to frame index values when running videos"""
+class ValueChangeTracker:
+    """
+    Simple helper object that be can be used to keep track of when a specific value of interest changes
+    This is meant to be used to keep track of moments where potentially important state changes
+    occur (e.g. pausing during video playback) and some important code may need to be run once
+    in response to the change (but doesn't need to continue to run afterwards!)
+
+    Main use is to check for changes using:
+        value_changed = keeper.is_changed(curr_value, record_value=False)
+    And then after responding to the change:
+        if value_changed and some_other_condition:
+            # do important/heavy work, then record value so we don't react to seeing it again
+            keeper.record(curr_value)
+    -> If the change will always be reacted to, it can be recorded during the .is_changed (...) check,
+       which allows the later .record(...) to be left out!
+    """
 
     # .................................................................................................................
 
-    def __init__(self):
-        self._prev_idx = -1
+    def __init__(self, initial_value=None):
+        self._prev_value = initial_value
 
-    def is_changed(self, frame_index: int):
-        return frame_index != self._prev_idx
+    def is_changed(self, value, record_value=False) -> bool:
+        """Function used to check if the given value is different from the previously recorded value"""
+        value_changed = value != self._prev_value
+        if value_changed and record_value:
+            self._prev_value = value
+        return value_changed
 
-    def record(self, frame_index: int):
-        self._prev_idx = frame_index
+    def record(self, value):
+        """Records the given value for use in future 'did it change' checks"""
+        self._prev_value = value
         return self
 
-    def clear(self):
-        self._prev_idx = -1
+    def clear(self, clear_value=None):
+        """Helper that is identical to 'record' but may be nicer to use to indicate intent!"""
+        self._prev_value = clear_value
 
     # .................................................................................................................

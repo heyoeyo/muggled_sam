@@ -13,7 +13,7 @@ While the focus of this implementation is on interactivity and readability of th
 
 ## Getting started
 
-This repo only includes a single [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) script for now. To use this script, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
+This repo includes two demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) and [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) (along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples)). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
 
 ### Install
 First create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
@@ -111,6 +111,19 @@ You can also add  `--help` to the end of this command to see a list of additiona
 If you don't provide an image path (using the `-i` flag), then you will be asked to provide one when you run the script, likewise for a path to the model weights. Afterwards, a window will pop-up, with options for how to 'prompt' the model (e.g. bounding boxes or clicking to add points) along the top and various sliders to alter the segmentation results at the bottom. Results can be saved by pressing the `s` key.
 
 
+## Run Video
+
+The `run_video.py` script allows for segmentation of videos based on prompts on paused frames of the video using an interactive UI running locally. However, it only works with SAMv2 models!
+To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
+```bash
+python run_video.py
+```
+
+As with the image script, you can add `--help` to the end of this command to see a list of additional flags.
+
+This script is a messy work-in-progress for now, more features & stability updates to come!
+
+
 # Acknowledgements
 
 The code in this repo is entirely based off the original segment-anything github repos:
@@ -140,7 +153,6 @@ The code in this repo is entirely based off the original segment-anything github
 # TODOs
 - Clean up code base (especially the image encoder, which is unfinished)
 - Add interactive script replicating the original 'automatic mask geneartor'
-- Add interactive script for processing videos using sam-v2
 - Add model structure documentation
 - Add various experiment scripts
 - Inevitable bugfixes

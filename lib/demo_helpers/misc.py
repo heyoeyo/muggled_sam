@@ -5,7 +5,38 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from time import perf_counter
 import torch
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Classes
+
+
+class PeriodicVRAMReport:
+    """Simpler helper object used to periodically check on VRAM usage (with cuda only)"""
+
+    def __init__(self, update_period_ms=1000):
+
+        self._has_cuda = torch.cuda.is_available()
+        self._update_period_ms = round(update_period_ms)
+        self._next_update_time_ms = 0
+        self._vram_usage_mb = None
+
+    def get_vram_usage(self):
+
+        # Bail if cuda isn't being used
+        if not self._has_cuda:
+            return None
+
+        # Update recorded VRAM usage periodically
+        curr_time_ms = int(1000 * perf_counter())
+        if curr_time_ms > self._next_update_time_ms:
+            free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
+            self._vram_usage_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
+            self._next_update_time_ms = curr_time_ms + self._update_period_ms
+
+        return self._vram_usage_mb
 
 
 # ---------------------------------------------------------------------------------------------------------------------

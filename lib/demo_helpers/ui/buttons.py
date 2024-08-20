@@ -124,6 +124,24 @@ class ToggleButton(Toggleable):
 
     # .................................................................................................................
 
+    def style(self, on_color=None, off_color=None, text_scale=None, text_on_color=None, text_off_color=None):
+
+        if on_color is not None:
+            self._color_on = on_color
+        if off_color is not None:
+            self._color_off = off_color
+        if text_scale is not None:
+            self._txt_bright.style(scale=text_scale)
+            self._txt_dim.style(scale=text_scale)
+        if text_on_color is not None:
+            self._txt_bright.style(color=text_on_color)
+        if text_off_color is not None:
+            self._txt_dim.style(color=text_off_color)
+
+        return self
+
+    # .................................................................................................................
+
     @classmethod
     def many(
         cls,
@@ -143,9 +161,7 @@ class ToggleButton(Toggleable):
         # Create toggle buttons, but force buttons to have same width (matched to max size)
         btns = [cls(label, default_state, on_color, off_color, button_height, text_scale) for label in labels]
         if force_same_width:
-            max_btn_w = max(btn._rdr.limits.min_w for btn in btns)
-            for btn in btns:
-                btn._rdr.limits.update(min_w=max_btn_w)
+            force_same_button_width(*btns)
 
         return btns
 
@@ -319,6 +335,17 @@ class ImmediateButton(BaseCallback):
 
     # .................................................................................................................
 
+    def style(self, color=None, text_scale=None):
+
+        if color is not None:
+            self._color = color
+        if text_scale is not None:
+            self._txtdraw.style(scale=text_scale)
+
+        return self
+
+    # .................................................................................................................
+
     @classmethod
     def many(cls, *labels: list[str], color=(70, 120, 140), button_height=40, text_scale=0.75, force_same_width=True):
         """Helper used to create multiple immediate buttons of the same style, all at once"""
@@ -329,9 +356,7 @@ class ImmediateButton(BaseCallback):
         # Create buttons, but force them to have same width (matched to largest button)
         btns = [cls(label, color, button_height, text_scale) for label in labels]
         if force_same_width:
-            max_btn_w = max(btn._rdr.limits.min_w for btn in btns)
-            for btn in btns:
-                btn._rdr.limits.update(min_w=max_btn_w)
+            force_same_button_width(*btns)
 
         return btns
 
@@ -501,3 +526,23 @@ class RadioConstraint:
         return self
 
     # .................................................................................................................
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Functions
+
+
+def force_same_button_width(*buttons, target_width=None):
+    """
+    Helper used to force all buttons to the same width.
+    If a target width isn't given, then the largest width
+    of the given buttons will be used
+    """
+
+    if target_width is None:
+        target_width = max(btn._rdr.limits.min_w for btn in buttons)
+
+    for btn in buttons:
+        btn._rdr.limits.update(min_w=target_width)
+
+    return target_width

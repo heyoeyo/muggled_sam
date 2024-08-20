@@ -181,3 +181,9 @@ class SAMV1Model(nn.Module):
         return self.mask_decoder.get_best_mask_index(iou_predictions)
 
     # .................................................................................................................
+
+    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+        """Helper used to check if there are any prompts"""
+        return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+    # .................................................................................................................

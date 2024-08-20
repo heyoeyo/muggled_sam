@@ -208,7 +208,7 @@ class PromptUI:
 
     # .................................................................................................................
 
-    def enable_tools(self, enable=True, clear_prompt_data_on_disable=True, keep_polygon_overlay_on_disable=True):
+    def enable_tools(self, enable=True, clear_prompt_data_on_disable=True):
         """Helper used to enable/disable the tool components of the UI"""
 
         self.tools.enable(enable)
@@ -219,16 +219,9 @@ class PromptUI:
             olay_select = olays_ordered_by_tool[tool_select_idx]
             olay_select.enable(enable)
 
-        # Keep the segmentation overlay active
-        if keep_polygon_overlay_on_disable:
-            self.olays.polygon.enable(True)
-
         # Wipe out prompt data if needed (to clear display of prompts)
-        if clear_prompt_data_on_disable and not enable:
-            self.olays.hover.clear()
-            self.olays.box.clear()
-            self.olays.fgpt.clear()
-            self.olays.bgpt.clear()
+        if not enable and clear_prompt_data_on_disable:
+            self.clear_prompts()
 
         return self
 
@@ -241,6 +234,18 @@ class PromptUI:
             mask_btn.enable(enable)
 
         return
+
+    # .................................................................................................................
+
+    def clear_prompts(self):
+        """Helper used to wipe out prompt data from overlays"""
+
+        self.olays.hover.clear()
+        self.olays.box.clear()
+        self.olays.fgpt.clear()
+        self.olays.bgpt.clear()
+
+        return self
 
     # .................................................................................................................
 
@@ -404,7 +409,7 @@ class PromptUIControl(BaseUIControl):
                 self.elems.olays.fgpt.add_points(hover_xy_event.xy_norm)
 
         # Add hover points (if any) as foreground prompts
-        fg_xy_norm_list = [*fg_xy_norm_list, *hover_xy_norm_list]
+        fg_xy_norm_list = tuple([*fg_xy_norm_list, *hover_xy_norm_list])
 
         # Toggle back to hover in case where an fg point is removed and no other points remain
         if fg_prompt_changed:

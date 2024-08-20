@@ -5,9 +5,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-from collections import deque
-from dataclasses import dataclass
-
 import torch
 import torch.nn as nn
 
@@ -298,5 +295,11 @@ class SAMV2Model(nn.Module):
     def get_best_mask_index(self, iou_predictions: Tensor) -> int:
         """Returns the index of the highest IoU prediction score"""
         return self.mask_decoder.get_best_mask_index(iou_predictions)
+
+    # .................................................................................................................
+
+    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+        """Helper used to check if there are any prompts"""
+        return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     # .................................................................................................................
