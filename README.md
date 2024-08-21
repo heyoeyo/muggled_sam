@@ -106,12 +106,12 @@ The `run_image.py` script will run the segment-anything model on a single image 
 python run_image.py
 ```
 
-You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. One especially interesting flag is `-b`, which allows for processing images at different resolutions and `-ar` for processing images at their original aspect ratio.
+You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. One especially interesting flag is `-b`, which allows for processing images at different resolutions and `-ar` for processing images at their original aspect ratio (SAMv1 has better support for this than SAMv2!).
 
 If you don't provide an image path (using the `-i` flag), then you will be asked to provide one when you run the script, likewise for a path to the model weights. Afterwards, a window will pop-up, with options for how to 'prompt' the model (e.g. bounding boxes or clicking to add points) along the top and various sliders to alter the segmentation results at the bottom. Results can be saved by pressing the `s` key.
 
 
-## Run Video
+## Run Video (or webcam)
 
 The `run_video.py` script allows for segmentation of videos based on prompts on paused frames of the video using an interactive UI running locally. However, it only works with SAMv2 models!
 To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
@@ -119,7 +119,7 @@ To use the script, make sure you've activated the virtual environment (from the 
 python run_video.py
 ```
 
-As with the image script, you can add `--help` to the end of this command to see a list of additional flags.
+As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed.
 
 This script is a messy work-in-progress for now, more features & stability updates to come!
 

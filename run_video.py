@@ -17,7 +17,7 @@ from lib.make_sam import make_sam_from_state_dict
 from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
-from lib.demo_helpers.ui.window import DisplayWindow
+from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
 from lib.demo_helpers.ui.layout import HStack, VStack
 from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton, force_same_button_width
@@ -120,6 +120,13 @@ parser.add_argument(
     action="store_true",
     help="Hide text info elements from UI",
 )
+parser.add_argument(
+    "-cam",
+    "--use_webcam",
+    default=False,
+    action="store_true",
+    help="Use a webcam as the video input, instead of a file",
+)
 
 # For convenience
 args = parser.parse_args()
@@ -136,6 +143,7 @@ max_prompt_history = args.max_prompts
 discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
 show_info = not args.hide_info
+use_webcam = args.use_webcam
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -146,11 +154,14 @@ _, history_vidpath = history.read("video_path")
 _, history_modelpath = history.read("model_path")
 
 # Get pathing to resources, if not provided already
-video_path = ask_for_path_if_missing(arg_image_path, "video", history_vidpath)
+video_path = ask_for_path_if_missing(arg_image_path, "video", history_vidpath) if not use_webcam else 0
 model_path = ask_for_model_path_if_missing(__file__, arg_model_path, history_modelpath)
 
-# Store history for use on reload
-history.store(video_path=video_path, model_path=model_path)
+# Store history for use on reload (but don't save video path when using webcam)
+if use_webcam:
+    history.store(model_path=model_path)
+else:
+    history.store(video_path=video_path, model_path=model_path)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -221,28 +232,33 @@ objscore_text = ValueBlock("Score: ", None, max_characters=3)
 num_prompts_text = ValueBlock("Prompts: ", "0", max_characters=2)
 num_history_text = ValueBlock("History: ", "0", max_characters=2)
 
+
 # Set up button controls
 show_preview_btn = ToggleButton("Preview")
 track_btn = ToggleButton("Track", on_color=(30, 140, 30))
-store_prompt_btn = ImmediateButton("Store Prompt", color=(145, 160, 40), text_scale=0.35)
+store_prompt_btn = ImmediateButton("Store Prompt", text_scale=0.35, color=(145, 160, 40))
 clear_prompts_btn = ImmediateButton("Clear Prompts", text_scale=0.35, color=(80, 110, 230))
+enable_history_btn = ToggleButton("Enable History", default_state=True, text_scale=0.35, on_color=(90, 85, 115))
 clear_history_btn = ImmediateButton("Clear History", text_scale=0.35, color=(130, 60, 90))
-enable_history_btn = ToggleButton("Enable History", default_state=True, text_scale=0.35, on_color=(75, 70, 90))
 force_same_button_width(store_prompt_btn, clear_prompts_btn, enable_history_btn, clear_history_btn)
 
 # Set up info header
 device_dtype_str = f"{model_device}/{model_dtype}"
-header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str, space_equally=True)
+header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str)
+footer_msgbar = StaticMessageBar(
+    "[space] Play/Pause", "[tab] Track", "[p] Preview", text_scale=0.35, space_equally=True, bar_height=30
+)
 
 # Set up full display layout
 show_info = True
 disp_layout = VStack(
     header_msgbar if show_info else None,
     ui_elems.layout,
-    playback_slider,
+    playback_slider if not use_webcam else None,
     HStack(vram_text, objscore_text),
-    HStack(store_prompt_btn, clear_prompts_btn, enable_history_btn, clear_history_btn),
     HStack(num_prompts_text, track_btn, num_history_text),
+    HStack(store_prompt_btn, clear_prompts_btn, enable_history_btn, clear_history_btn),
+    footer_msgbar if show_info else None,
 ).set_debug_name("DisplayLayout")
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
@@ -263,7 +279,7 @@ window.attach_keypress_callback(" ", vreader.pause)
 # Change tools/masks on arrow keys
 uictrl.attach_arrowkey_callbacks(window)
 window.attach_keypress_callback("p", show_preview_btn.toggle)
-window.attach_keypress_callback("t", track_btn.toggle)
+window.attach_keypress_callback(KEY.TAB, track_btn.toggle)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
@@ -491,9 +507,16 @@ try:
         # Update the main display image in the UI
         uictrl.update_main_display_image(frame, mask_uint8, mask_contours_norm, show_mask_preview)
 
+        # Switch 'refresh rate' depending on state
+        frame_delay_ms = None
+        if is_paused:
+            frame_delay_ms = 20
+        elif is_tracking:
+            frame_delay_ms = 1
+
         # Display final image
         display_image = disp_layout.render(**render_limit_dict)
-        req_break, keypress = window.show(display_image, 20 if is_paused else None)
+        req_break, keypress = window.show(display_image, frame_delay_ms)
         if req_break:
             break
 
