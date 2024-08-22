@@ -85,7 +85,7 @@ class HStack(BaseCallback):
 
             # Provide callback region to child item
             x1, y1 = x_stack + lpad, y_stack + tpad
-            x2, y2 = x1 + orig_frame_w - 1, y1 + orig_frame_h - 1
+            x2, y2 = x1 + orig_frame_w, y1 + orig_frame_h
             child._cb_region.update(x1, y1, x2, y2)
 
             # Update stacking point for next child
@@ -249,7 +249,7 @@ class VStack(BaseCallback):
 
             # Provide callback region to child item
             x1, y1 = x_stack + lpad, y_stack + tpad
-            x2, y2 = x1 + orig_frame_w - 1, y1 + orig_frame_h - 1
+            x2, y2 = x1 + orig_frame_w, y1 + orig_frame_h
             child._cb_region.update(x1, y1, x2, y2)
 
             # Update stacking point for next child
