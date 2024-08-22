@@ -35,7 +35,9 @@ def save_segmentation_results(
     full_mask_1ch = cv2.fillPoly(full_mask_1ch, mask_contours_px, 255, cv2.LINE_AA)
 
     # Make full sized image, with mask transparency
-    full_transparent = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2BGRA)
+    full_mask_3ch = cv2.cvtColor(full_mask_1ch, cv2.COLOR_GRAY2BGR)
+    full_transparent = cv2.bitwise_and(image_bgr, full_mask_3ch)
+    full_transparent = cv2.cvtColor(full_transparent, cv2.COLOR_BGR2BGRA)
     full_transparent[:, :, -1] = full_mask_1ch
 
     # Find bounding coordinates of mask contours
@@ -55,7 +57,7 @@ def save_segmentation_results(
     padded_tl_xy_px = np.clip(tl_xy_px - pad_amount, 0, max_xy)
     padded_br_xy_px = np.clip(br_xy_px + pad_amount, 0, max_xy)
     (x1, y1), (x2, y2) = padded_tl_xy_px, padded_br_xy_px
-    cropped_color = full_transparent[y1:y2, x1:x2, 0:3]
+    cropped_color = image_bgr[y1:y2, x1:x2]
 
     # Bundle results for saving
     name_to_image_lut = {
