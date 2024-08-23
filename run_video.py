@@ -700,7 +700,8 @@ try:
         if buffer_save_btn.read():
             png_per_frame_dict = savebuffers_list[buffer_select_idx].png_per_frame_dict
             save_path, save_num_frames = save_video_frames(video_path, buffer_select_idx, png_per_frame_dict)
-            print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
+            if save_num_frames > 0:
+                print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
             buffer_clear_btn.click()
 
         # Wipe out save data if needed
@@ -723,6 +724,7 @@ finally:
     for objidx, savebuffer in enumerate(savebuffers_list):
         png_per_frame_dict = savebuffer.png_per_frame_dict
         save_path, save_num_frames = save_video_frames(video_path, objidx, png_per_frame_dict)
-        print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
+        if save_num_frames > 0:
+            print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
 
     pass

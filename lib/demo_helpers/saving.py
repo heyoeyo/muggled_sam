@@ -107,7 +107,7 @@ def save_video_frames(video_path, object_index, save_frames_dict, base_save_fold
     # Bail if we don't get any frames to save
     num_frames = len(save_frames_dict.keys())
     if num_frames == 0:
-        return
+        return None, num_frames
 
     # Figure out save folder pathing
     video_name_no_ext, _ = os.path.splitext(os.path.basename(video_path))
