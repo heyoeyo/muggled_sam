@@ -113,6 +113,12 @@ If you don't provide an image path (using the `-i` flag), then you will be asked
 
 ## Run Video (or webcam)
 
+
+<p align="center">
+  <img src=".readme_assets/run_video_anim.gif">
+</p>
+
+
 The `run_video.py` script allows for segmentation of videos based on prompts on paused frames of the video using an interactive UI running locally. However, it only works with SAMv2 models!
 To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
 ```bash
