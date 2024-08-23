@@ -261,8 +261,10 @@ class MaskResults:
         return self
 
     def update(self, mask_predictions, mask_index, object_score=None):
-        self.preds = mask_predictions
-        self.idx = mask_index
+        if mask_predictions is not None:
+            self.preds = mask_predictions
+        if mask_index is not None:
+            self.idx = mask_index
         if object_score is not None:
             self.objscore = object_score
         return self
@@ -579,8 +581,7 @@ try:
                 ui_elems.clear_prompts()
 
             # Store user-interaction results for selected object while paused
-            if paused_mask_preds is not None:
-                maskresults_list[buffer_select_idx].update(paused_mask_preds, paused_mask_idx, paused_obj_score)
+            maskresults_list[buffer_select_idx].update(paused_mask_preds, paused_mask_idx, paused_obj_score)
 
         elif curr_state == STATES.TRACKING:
 
