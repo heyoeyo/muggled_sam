@@ -115,3 +115,7 @@ class SAM2VideoObjectResults:
         num_prevframe_pointers = len(self.prevframe_buffer.pointer_history)
 
         return num_prompt_pointers, num_prevframe_pointers
+
+    def check_has_prompts(self):
+        """Helper used to check if there is any stored prompt memory"""
+        return len(self.prompts_buffer.memory_history) > 0

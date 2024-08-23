@@ -68,21 +68,29 @@ class LoopingVideoReader:
 
     # .................................................................................................................
 
-    def scale_to_display_wh(self, image):
+    def scale_to_display_wh(self, image) -> ndarray:
+        """Helper used to scale a given image to a target display size (if configured)"""
         return cv2.resize(image, dsize=self.disp_wh)
 
     def release(self):
+        """Close access to video source"""
         self._vcap.release()
         return self
 
-    def pause(self, set_is_paused: bool | None = None):
-        """Toggle pause state (or set specific state if provided)"""
-        self._is_paused = not self._is_paused if set_is_paused is None else set_is_paused
+    def pause(self, set_is_paused=True) -> bool:
+        """Pause/unpause the video"""
+        self._is_paused = set_is_paused
         return self._is_paused
+
+    def toggle_pause(self) -> bool:
+        """Helper used to toggle pause state (meant for keypress events)"""
+        new_pause_state = not self._is_paused
+        self._is_paused = new_pause_state
+        return new_pause_state
 
     # .................................................................................................................
 
-    def get_sample_frame(self):
+    def get_sample_frame(self) -> ndarray:
         """Helper used to retrieve a sample frame (the first frame), most likely for init use-cases"""
         return self.sample_frame.copy()
 
@@ -94,7 +102,8 @@ class LoopingVideoReader:
 
     # .................................................................................................................
 
-    def get_frame_delay_ms(self, max_allowable_ms=1000):
+    def get_frame_delay_ms(self, max_allowable_ms=1000) -> int:
+        """Returns a frame delay (in milliseconds) according to the video's reported framerate"""
         frame_delay_ms = 1000.0 / self._fps
         return int(min(max_allowable_ms, frame_delay_ms))
 
@@ -166,6 +175,17 @@ class LoopingVideoReader:
 
 
 class LoopingVideoPlaybackSlider(BaseCallback):
+    """
+    Implements a 'playback slider' UI element that is specific to working with videos.
+    After initializing with a reference to the video reader whose playback is to be controlled,
+    the playback slider only needs a single call (inside of the video loop) to work:
+        slider.update(frame_index)
+
+    This will update the slider position indicator (according to the given frame index) as well
+    as internally keep track of changes to the slider (i.e. user adjustments).
+    To check if the user is actively adjusting playback, use:
+        slider.is_adjusting()
+    """
 
     # .................................................................................................................
 
@@ -202,7 +222,7 @@ class LoopingVideoPlaybackSlider(BaseCallback):
 
     # .................................................................................................................
 
-    def is_active(self):
+    def is_adjusting(self):
         return self._is_pressed
 
     # .................................................................................................................
@@ -269,7 +289,7 @@ class LoopingVideoPlaybackSlider(BaseCallback):
         # Prevent video playback while adjusting slider
         self._is_pressed = True
         self._reader_pause_state = self._vreader.get_pause_state()
-        self._vreader.pause(True)
+        self._vreader.pause()
 
         # Record changes
         x_px = cbxy.xy_px[0]
@@ -289,7 +309,7 @@ class LoopingVideoPlaybackSlider(BaseCallback):
 
         # Adjust pause state after user stops interacting with slider
         if self._stay_paused_on_change:
-            self._reader_pause_state = self._vreader.pause(True)
+            self._reader_pause_state = self._vreader.pause()
         else:
             # Restore pause state (prior to modifying slider)
             # -> If the video was paused, this will keep it paused, otherwise unpause it
@@ -300,7 +320,7 @@ class LoopingVideoPlaybackSlider(BaseCallback):
     def on_right_click(self, cbxy, cbflags) -> None:
 
         # Toggle pause when right clicked
-        self._vreader.pause()
+        self._vreader.toggle_pause()
 
         return
 

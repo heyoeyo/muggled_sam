@@ -86,11 +86,11 @@ fg_xys = [(0.5, 0.5)]
 bg_xys = []
 
 # Load image & model
-img_bgr = cv2.imread("/path/to/image.jpg")
-model_config_dict, model = make_sam_from_state_dict("/path/to/model.pth")
+image_bgr = cv2.imread("/path/to/image.jpg")
+_, model = make_sam_from_state_dict("/path/to/model.pth")
 
 # Process data
-encoded_img, _, _ = model.encode_image(img_bgr)
+encoded_img, _, _ = model.encode_image(image_bgr)
 encoded_prompts = model.encode_prompts(box_tlbrs, fg_xys, bg_xys)
 mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
 ```
@@ -154,5 +154,5 @@ The code in this repo is entirely based off the original segment-anything github
 - Clean up code base (especially the image encoder, which is unfinished)
 - Add interactive script replicating the original 'automatic mask geneartor'
 - Add model structure documentation
-- Add various experiment scripts
+- Add various experiment scripts (onnx export, block norm vis, mask prompts, imgenc size effect etc.)
 - Inevitable bugfixes

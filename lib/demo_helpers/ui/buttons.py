@@ -7,7 +7,7 @@
 
 import cv2
 
-from .base import BaseCallback
+from .base import BaseCallback, force_same_min_width
 from .images import ExpandingImage
 from .helpers.text import TextDrawer
 from .helpers.images import blank_image, draw_box_outline, convert_color
@@ -151,7 +151,7 @@ class ToggleButton(Toggleable):
         off_color=None,
         button_height=40,
         text_scale=0.75,
-        force_same_width=True,
+        all_same_width=True,
     ):
         """Helper used to create multiple toggle buttons of the same style, all at once"""
 
@@ -160,8 +160,8 @@ class ToggleButton(Toggleable):
 
         # Create toggle buttons, but force buttons to have same width (matched to max size)
         btns = [cls(label, default_state, on_color, off_color, button_height, text_scale) for label in labels]
-        if force_same_width:
-            force_same_button_width(*btns)
+        if all_same_width:
+            force_same_min_width(*btns)
 
         return btns
 
@@ -347,7 +347,7 @@ class ImmediateButton(BaseCallback):
     # .................................................................................................................
 
     @classmethod
-    def many(cls, *labels: list[str], color=(70, 120, 140), button_height=40, text_scale=0.75, force_same_width=True):
+    def many(cls, *labels: list[str], color=(70, 120, 140), button_height=40, text_scale=0.75, all_same_width=True):
         """Helper used to create multiple immediate buttons of the same style, all at once"""
 
         # Make sure labels iterable is held as a list of strings
@@ -355,8 +355,8 @@ class ImmediateButton(BaseCallback):
 
         # Create buttons, but force them to have same width (matched to largest button)
         btns = [cls(label, color, button_height, text_scale) for label in labels]
-        if force_same_width:
-            force_same_button_width(*btns)
+        if all_same_width:
+            force_same_min_width(*btns)
 
         return btns
 
@@ -526,23 +526,3 @@ class RadioConstraint:
         return self
 
     # .................................................................................................................
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# %% Functions
-
-
-def force_same_button_width(*buttons, target_width=None):
-    """
-    Helper used to force all buttons to the same width.
-    If a target width isn't given, then the largest width
-    of the given buttons will be used
-    """
-
-    if target_width is None:
-        target_width = max(btn._rdr.limits.min_w for btn in buttons)
-
-    for btn in buttons:
-        btn._rdr.limits.update(min_w=target_width)
-
-    return target_width

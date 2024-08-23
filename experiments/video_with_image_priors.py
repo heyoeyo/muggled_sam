@@ -59,7 +59,7 @@ default_max_pointer_history = 15
 default_show_iou_preds = False
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
+parser = argparse.ArgumentParser(description="Run SAMV2 video segmentation with prompting from a separate image")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")
 parser.add_argument(
@@ -447,7 +447,7 @@ vidseg_layout = VStack(
 cv2.destroyAllWindows()
 window = DisplayWindow("Video Segmentation - q to quit", display_fps=1000 // vreader.get_frame_delay_ms())
 window.attach_mouse_callbacks(vidseg_layout)
-window.attach_keypress_callback(" ", vreader.pause)
+window.attach_keypress_callback(" ", vreader.toggle_pause)
 window.attach_keypress_callback("p", show_preview_btn.toggle)
 window.move(200, 50)
 
@@ -481,7 +481,7 @@ try:
             mask_contours_norm = None
 
         # Only run segmentation on unseen frames
-        if enable_segmentation and is_new_frame and (not playback_slider.is_active()):
+        if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
             encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
             obj_score, best_mask_idx, video_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
                 encoded_imgs_list, **objbuffer.to_dict()

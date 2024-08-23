@@ -349,6 +349,18 @@ class OverlayStack(BaseCallback):
 
     # .................................................................................................................
 
+    def add_overlays(self, *overlay_items):
+        """Function used to add overlays (after init)"""
+
+        olays_list = list(self._overlay_items)
+        olays_list.extend(overlay_items)
+        self._overlay_items = tuple(olays_list)
+        self.append_children(*overlay_items)
+
+        return self
+
+    # .................................................................................................................
+
     def __repr__(self):
         base_name = self._base_item._debug_name
         olay_names = [str(olay._debug_name) for olay in self._overlay_items]

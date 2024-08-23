@@ -12,6 +12,7 @@ from .ui.layout import HStack, VStack, OverlayStack
 from .ui.buttons import ToggleButton, ToggleImage, ImmediateButton, RadioConstraint
 from .ui.overlays import HoverOverlay, BoxSelectOverlay, PointSelectOverlay, DrawPolygonsOverlay
 from .ui.images import ExpandingImage
+from .ui.base import force_same_max_height, force_same_min_height
 
 from .ui.helpers.images import CheckerPattern, blank_mask
 
@@ -67,12 +68,6 @@ class OverlayGroup:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Builder functions
-
-
-def build_basic_overlay() -> OverlayGroup:
-    """Helper used to build the basic polygon/segmentation overlay UI element"""
-    polygon_olay = DrawPolygonsOverlay((100, 10, 255), bg_color=(0, 0, 0))
-    return OverlayGroup(polygon_olay, None, None, None, None)
 
 
 def build_tool_overlays() -> OverlayGroup:
@@ -140,7 +135,7 @@ class PromptUI:
 
     # .................................................................................................................
 
-    def __init__(self, full_image_bgr: ndarray, mask_predictions: Tensor):
+    def __init__(self, full_image_bgr: ndarray, mask_predictions: Tensor, target_aspect_ratio=2.0):
 
         # Build out UI component pieces
         self.olays = build_tool_overlays()
@@ -148,12 +143,16 @@ class PromptUI:
         self.mask_btns, self.masks_constraint = build_mask_preview_buttons(mask_predictions)
 
         # Build main layout!
-        self.image, self.display_block = self._build_display_block(full_image_bgr, mask_predictions)
+        self.image, self.overlay_img, self.display_block = self._build_display_block(
+            full_image_bgr, mask_predictions, target_aspect_ratio
+        )
         self.layout = self._build_ui_layout()
 
     # .................................................................................................................
 
-    def _build_display_block(self, image_bgr: ndarray, mask_preds: Tensor) -> tuple[ExpandingImage, HStack]:
+    def _build_display_block(
+        self, image_bgr: ndarray, mask_preds: Tensor, target_ar: float
+    ) -> tuple[ExpandingImage, HStack]:
         """Function used to build out the centrl display block, containing image & mask previews"""
 
         # For convenience
@@ -167,7 +166,7 @@ class PromptUI:
 
         # Set up mask previews, which are oriented/arranged based on display aspect ratio
         mask_btns = self.mask_btns
-        side_str, stack_order_str = find_best_display_arrangement(img_shape, mask_hw)
+        side_str, stack_order_str = find_best_display_arrangement(img_shape, mask_hw, target_ar)
         order_lut = {
             "grid": VStack(HStack(*mask_btns[:2]), HStack(*mask_btns[2:])),
             "vertical": VStack(*mask_btns),
@@ -186,7 +185,7 @@ class PromptUI:
         main_display_block = item_stack(*item_order)
         main_display_block.set_debug_name("MainDisplayBlock")
 
-        return main_display_image, main_display_block
+        return main_display_image, imgoverlay_cb, main_display_block
 
     # .................................................................................................................
 

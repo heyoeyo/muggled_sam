@@ -8,6 +8,8 @@
 import os
 import os.path as osp
 import json
+import tarfile
+from io import BytesIO
 
 import cv2
 import numpy as np
@@ -22,7 +24,7 @@ from .contours import pixelize_contours
 def save_segmentation_results(
     image_path, display_image, mask_contours_norm, raw_result_uint8, all_prompts_dict, base_save_folder=None
 ):
-    """Helper used to handle saving of segmentation results"""
+    """Helper used to handle saving of image segmentation results"""
 
     # Load copy of original image for saving results
     image_bgr = cv2.imread(image_path)
@@ -97,3 +99,42 @@ def save_segmentation_results(
         json.dump(all_prompts_dict, outfile, indent=2)
 
     return save_folder, save_idx
+
+
+def save_video_frames(video_path, object_index, save_frames_dict, base_save_folder=None):
+    """Helper used to handle saving of video segmentation results"""
+
+    # Bail if we don't get any frames to save
+    num_frames = len(save_frames_dict.keys())
+    if num_frames == 0:
+        return
+
+    # Figure out save folder pathing
+    video_name_no_ext, _ = os.path.splitext(os.path.basename(video_path))
+    save_folder = osp.join("saved_images", "video", video_name_no_ext)
+    if base_save_folder is not None:
+        save_folder = osp.join(base_save_folder, save_folder)
+    os.makedirs(save_folder, exist_ok=True)
+
+    # Figure out the file indexing (used to avoid assigning the same name to every saved file)
+    file_idx = 0
+    existing_files_list = os.listdir(save_folder)
+    all_prefixes = [str(name).split("_")[0] for name in existing_files_list if len(str(name).split("_")) > 0]
+    all_idxs = [int(prefix) for prefix in all_prefixes if prefix.isnumeric()]
+    file_idx = 1 + max(all_idxs) if len(all_idxs) > 0 else 0
+
+    # Get frame index range for file name
+    all_frame_idxs = list(save_frames_dict.keys())
+    min_frame_idx, max_frame_idx = min(all_frame_idxs), max(all_frame_idxs)
+
+    # Save tarfile containing all frames
+    file_idx_str = str(file_idx).zfill(3)
+    file_name = f"{file_idx_str}_obj{1+object_index}_{min_frame_idx}_to_{max_frame_idx}_frames.tar"
+    save_path = os.path.join(save_folder, file_name)
+    with tarfile.open(save_path, "w") as tar:
+        for frame_idx, png_encoding in save_frames_dict.items():
+            tarinfo = tarfile.TarInfo(name=f"{frame_idx:0>8}.png")
+            tarinfo.size = len(png_encoding)
+            tar.addfile(tarinfo, BytesIO(png_encoding.tobytes()))
+
+    return save_path, num_frames

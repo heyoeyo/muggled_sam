@@ -9,7 +9,7 @@ import cv2
 
 from .base import BaseCallback
 from .helpers.text import TextDrawer
-from .helpers.images import blank_image, convert_color, draw_box_outline, get_image_hw_to_fill
+from .helpers.images import blank_image, draw_box_outline
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -42,6 +42,12 @@ class TitledTextBlock(BaseCallback):
         super().__init__(min_h, txt_w, expand_h=False, expand_w=False)
         self._title_h = title_txt_h
         self._value_h = value_txt_h
+
+    # .................................................................................................................
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        return f"{class_name}({self._text_title}: {self._text_value})"
 
     # .................................................................................................................
 
@@ -100,6 +106,12 @@ class TextBlock(BaseCallback):
 
     # .................................................................................................................
 
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        return f"{class_name}({self._text_value})"
+
+    # .................................................................................................................
+
     def set_text(self, text):
         self._text_value = str(text)
         return self
@@ -152,6 +164,12 @@ class ValueBlock(TextBlock):
         # Inherit from parent
         max_all_characters = len(self._prefix) + len(self._suffix) + max_characters
         super().__init__(self._text_value, block_height, bg_color, text_scale, max_all_characters)
+
+    # .................................................................................................................
+
+    def __repr__(self):
+        class_name = self.__class__.__name__
+        return f"{class_name}({self._text_value})"
 
     # .................................................................................................................
 

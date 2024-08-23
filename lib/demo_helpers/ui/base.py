@@ -475,3 +475,74 @@ class BaseOverlay(BaseCallback):
         return frame
 
     # .................................................................................................................
+
+
+# %% Functions
+
+
+def force_same_min_width(*items, min_w=None) -> int:
+    """
+    Helper used to force all items to the same minimum width.
+    If a target width isn't given, then the largest minimum width
+    of the given items will be used.
+    Returns the min width setting
+    """
+
+    if min_w is None:
+        min_w = max(item._rdr.limits.min_w for item in items)
+
+    for item in items:
+        item._rdr.limits.update(min_w=min_w)
+
+    return min_w
+
+
+def force_same_max_width(*items, max_w=None) -> int:
+    """
+    Helper used to force all items to the same maximum width.
+    If a width isn't given, then the largest maximum width
+    of the given items will be used.
+    Returns the max width setting
+    """
+
+    if max_w is None:
+        max_w = max(item._rdr.limits.max_w for item in items)
+
+    for item in items:
+        item._rdr.limits.update(max_w=max_w)
+
+    return max_w
+
+
+def force_same_min_height(*items, min_h=None) -> int:
+    """
+    Helper used to force all items to the same minimum height.
+    If a height isn't given, then the largest minimum height
+    of the given items will be used
+    Returns the min height setting
+    """
+
+    if min_h is None:
+        min_h = max(item._rdr.limits.min_h for item in items)
+
+    for item in items:
+        item._rdr.limits.update(min_h=min_h)
+
+    return min_h
+
+
+def force_same_max_height(*items, max_h=None) -> int:
+    """
+    Helper used to force all items to the same maximum height.
+    If a height isn't given, then the largest maximum height
+    of the given items will be used
+    Returns the max height setting
+    """
+
+    if max_h is None:
+        max_h = max(item._rdr.limits.max_h for item in items)
+
+    for item in items:
+        item._rdr.limits.update(max_h=max_h)
+
+    return max_h

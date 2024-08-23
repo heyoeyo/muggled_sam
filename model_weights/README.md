@@ -10,7 +10,7 @@ Select model file:
 
 Enter selection: 
 ```
-Entering an index (e.g. 1) will select that model from the menu. Alternatively, partial model names can also be entered (e.g 'vit_l"). If a model has been loaded previously, it will be marked as 'default' and enter nothing will result in the default being chosen. A full path to a model file can also be provided here, if loading a model that isn't available in the list.
+Entering an index (e.g. 1) will select that model from the menu. Alternatively, partial model names can also be entered (e.g 'vit_l"). If a model has been loaded previously, it will be marked as 'default' and entering nothing will result in the default being chosen. A full path to a model file can also be provided here, if loading a model that isn't available in the list.
 
 Files in this folder can also be be referenced by partial name when using script flags. For example if you place model files: `sam_base.pth`, `sam_large.pth` and `sam_huge.pth` in this folder, you can reference a specific model when launching the `run_image.py` script using something like:
 
@@ -20,4 +20,4 @@ python run_image.py -m large
 
 This will skip the menu selection and load the `sam_large.pth` file, since it contains 'large' in the filename.
 
-You can download model files from the original [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) repo.
+You can download model files from the original [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) or [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2) repos.
