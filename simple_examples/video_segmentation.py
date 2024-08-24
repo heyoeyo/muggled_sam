@@ -32,6 +32,7 @@ if torch.cuda.is_available():
 boxes_tlbr_norm_list = []  # Example:  [[(0.25, 0.25), (0.75, 0.75)]]
 fg_xy_norm_list = [(0.5, 0.5)]
 bg_xy_norm_list = []
+imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 
 # Read first frame
 vcap = cv2.VideoCapture(video_path)
@@ -45,7 +46,7 @@ model_config_dict, sammodel = make_samv2_from_original_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = sammodel.encode_image(first_frame)
+init_encoded_img, _, _ = sammodel.encode_image(first_frame, **imgenc_config_dict)
 init_mask, init_mem, init_ptr = sammodel.initialize_video_masking(
     init_encoded_img, boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
 )
@@ -69,8 +70,8 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame)
-        obj_score, mask_pred, mem_enc, obj_ptr = sammodel.step_video_masking(
+        encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
         t2 = perf_counter()
@@ -84,7 +85,7 @@ try:
 
         # Create mask for display
         dispres_mask = torch.nn.functional.interpolate(
-            mask_pred,
+            mask_preds[:, best_mask_idx, :, :],
             size=frame.shape[0:2],
             mode="bilinear",
             align_corners=False,
