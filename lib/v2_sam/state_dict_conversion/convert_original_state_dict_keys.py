@@ -392,7 +392,7 @@ def _convert_memfusion_keys(key: str) -> None | str:
 
     # Rename frame position offset embedding
     if key == "maskmem_tpos_enc":
-        return "memposenc.base_memposenc_offsets"
+        return "memconcat.memposenc.base_memposenc_offsets"
 
     # Remove model name prefix
     if key.startswith("memory_attention"):

@@ -38,8 +38,9 @@ class SAMV2MemoryFusion(nn.Module):
     The original memory-attention model code can be found here:
     https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/memory_attention.py
 
-    This implementation differs significantly from the original. Much of the model code comes from
-    the 'prepare_memory_conditioned_features' method of the 'sam2_base' model found here:
+    This implementation differs significantly from the original. In addition to the original
+    memory_attention model, some parts of this implementation are derived from the 'sam2_base' model,
+    especially the 'prepare_memory_conditioned_features' function:
     https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/sam2_base.py
     """
 
@@ -63,9 +64,9 @@ class SAMV2MemoryFusion(nn.Module):
         # Embedding added to encoded image features when not using memory encoding
         self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, features_per_image_token))
 
-        # Set up positional encoding helpers
-        self.memposenc = FusionPositionOffset(features_per_memory_token, max_memory_history)
-        self.imgposenc = PositionEmbeddingSine(features_per_image_token)
+        # Create models used to help prepare data for transformer layers
+        self.memconcat = MemoryConcatenator(features_per_image_token, features_per_memory_token, max_memory_history)
+        self.imgposenc = ImageTokenPositionEncoder(features_per_image_token)
 
         # Build transformer layers
         layers_list = []
@@ -94,14 +95,81 @@ class SAMV2MemoryFusion(nn.Module):
             fused_tokens = lowres_image_tokens + no_mem_bchw
             return fused_tokens
 
+        # Merge all prior memory data into a single set oftokens
+        memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
+            prompt_memory_encodings,
+            prompt_object_pointers,
+            previous_memory_encodings,
+            previous_object_pointers,
+            history_is_recent_first,
+        )
+
+        # Get input shape so we can restore it on output
+        b, _, h, w = lowres_image_tokens.shape
+        patch_hw = (h, w)
+
+        # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
+        image_posenc_tokens = self.imgposenc(lowres_image_tokens)
+        flat_imgtokens_bnc = image_posenc_tokens.flatten(2).permute(0, 2, 1)
+
+        # Run transformer layers to fuse memory results with image tokens
+        for layer in self.layers:
+            flat_imgtokens_bnc = layer(patch_hw, flat_imgtokens_bnc, memory_tokens, memory_posenc, num_ptr_tokens)
+
+        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
+        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
+        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(b, -1, h, w)
+
+    # .................................................................................................................
+
+
+class MemoryConcatenator(nn.Module):
+    """
+    Model used to prepare prior memory encodings & object pointers for
+    use within the memory fusion model. The model primarily just
+    concatenates all memory data together, but also handles positional
+    encoding of memory data (which follows somewhat complicate rules!).
+
+    This model does not exist in the original implementation. In fact,
+    the original functionality exists across many different parts of
+    the model and may not be fully represented in this implementation!
+
+    Although this model doesn't entirely match anything from the original
+    code base, the closest reference would be the 'prepare_memory_conditioned_features' function:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/sam2_base.py#L493
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_image_token=256, features_per_memory_token=64, max_memory_history=6):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store sizing config for re-use
+        self.features_per_memory_token = features_per_memory_token
+        self._num_tokens_per_pointer = features_per_image_token // features_per_memory_token
+        self._max_mempos_idx = max_memory_history
+
+        # Learned embeddings per 'relative position in time', applied to memory encodings
+        self.memposenc = FusionPositionOffset(features_per_memory_token, max_memory_history)
+
+    # .................................................................................................................
+
+    def forward(
+        self,
+        prompt_memory_encodings: list[Tensor],
+        prompt_object_pointers: list[Tensor],
+        previous_frame_memory_encodings: list[Tensor],
+        previous_frame_object_pointers: list[Tensor],
+        history_is_recent_first=True,
+    ) -> tuple[Tensor, Tensor, int]:
+
         # Allocate storage for all memory encodings and positional encodings
         memory_list = []
         posenc_list = []
 
         # Build memory encoding input
-        # num_mem_idx = self.base_memposenc_offsets.shape[0]
-        num_mem_idx = 7
-        max_pos_idx = num_mem_idx - 1
         for init_memenc in prompt_memory_encodings:
 
             # Convert from BxCxHxW to BxNxC
@@ -111,13 +179,13 @@ class SAMV2MemoryFusion(nn.Module):
             posenc_list.append(maskmem_pos)
 
         # Combine memory encodings from past frames
-        for buffer_idx, memenc in enumerate(previous_memory_encodings):
+        for buffer_idx, memenc in enumerate(previous_frame_memory_encodings):
 
             # Get index representing how 'far away' each item is from current frame
             # -> Assumes buffer is built with 'appendleft' (i.e. 0th index is closest in time)
-            pos_idx = min(buffer_idx + 1, max_pos_idx)
+            pos_idx = min(buffer_idx + 1, self._max_mempos_idx)
             if not history_is_recent_first:
-                pos_idx = num_mem_idx - pos_idx - 1
+                pos_idx = self._max_mempos_idx - pos_idx
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
@@ -128,7 +196,7 @@ class SAMV2MemoryFusion(nn.Module):
         # Build object pointer input
         num_ptr_tokens = 0
         ptrs_list = [ptr for ptr in prompt_object_pointers]
-        ptrs_list += [ptr for ptr in previous_object_pointers]
+        ptrs_list += [ptr for ptr in previous_frame_object_pointers]
         if len(ptrs_list) > 0:
 
             # Combine all pointers and figure out token shaping
@@ -147,31 +215,49 @@ class SAMV2MemoryFusion(nn.Module):
             posenc_list.append(ptr_pos)
 
         # Stack memory & object pointer tokens (and positional encodings) into large BxNxC tensor
-        memory_tensor = torch.cat(memory_list, dim=1)
-        memory_posenc_tensor = torch.cat(posenc_list, dim=1)
+        memory_tokens = torch.cat(memory_list, dim=1)
+        memory_posenc = torch.cat(posenc_list, dim=1)
 
-        # ----------------------------------------------------------------
+        return memory_tokens, memory_posenc, num_ptr_tokens
 
-        # Get input shape so we can restore it on output
-        b, _, h, w = lowres_image_tokens.shape
-        patch_hw = (h, w)
+    # .................................................................................................................
 
-        # Flatten to rows-of-tokens format, shape: BxNxC
-        img_posenc = self.imgposenc(b, h, w)
-        flat_imgtokens_bnc = lowres_image_tokens.flatten(2).permute(0, 2, 1)
-        flat_imgposenc_bnc = img_posenc.flatten(2).permute(0, 2, 1)
 
-        # Odd detail from original implementation... doesn't have a significant impact on results
-        flat_imgtokens_bnc = flat_imgtokens_bnc + 0.1 * flat_imgposenc_bnc
+class ImageTokenPositionEncoder(nn.Module):
+    """
+    Simple helper used to handle the addition of position encodings
+    to image tokens within the memory fusion model. This module does
+    not exist in the original implementation, but is separated in
+    this repo for the sake of clarity.
 
-        # Run transformer layers to fuse memory results with image tokens
-        for layer in self.layers:
-            flat_imgtokens_bnc = layer(
-                patch_hw, flat_imgtokens_bnc, memory_tensor, memory_posenc_tensor, num_ptr_tokens
-            )
+    This functionality seems like an odd implementation detail from the
+    original code base, and is the only place where image position encodings
+    are actually used (with default the configs at least), it can be found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/memory_attention.py#L141
 
-        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
-        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
-        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(b, -1, h, w)
+    Removing this behavior (by not running the model or having a weight of 0.0),
+    has very little effect on the output!
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_image_token=256, position_encoding_weight=0.1):
+        super().__init__()
+        self.posenc = PositionEmbeddingSine(features_per_image_token)
+        self._posenc_weight = position_encoding_weight
+
+    def forward(self, image_tokens_bchw: Tensor) -> Tensor:
+        """
+        Applies (additive) position encoding to image tokens
+        Returns:
+            encoded_image_tokens_bchw (same shape as input)
+        """
+
+        # For clarity
+        b, _, h, w = image_tokens_bchw.shape
+
+        # Create position encoding matching image shape and add to original tokens
+        img_posenc = self.posenc(b, h, w) * self._posenc_weight
+        return image_tokens_bchw + img_posenc
 
     # .................................................................................................................

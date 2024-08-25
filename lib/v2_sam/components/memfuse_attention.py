@@ -232,8 +232,9 @@ class RPEComplexEncoder(nn.Module):
         """
 
         # For clarity
-        bq, sq, nq, dq = q.shape
-        bk, sk, nk, dk = k.shape
+        # -> Tokens assumed to have shape: Batch, Heads, NumTokens, Features/channels
+        bq, hq, nq, cq = q.shape
+        bk, hk, nk, ck = k.shape
         n_mat = self.rotvectors.shape[2]
 
         # Re-build rotation vectors if needed
@@ -241,11 +242,11 @@ class RPEComplexEncoder(nn.Module):
             self.rotvectors = self.get_rotation_vectors(q_tokens_hw)
 
         # Convert each consecutive feature value pair into 'xy' format and rotate
-        q_as_xy = torch.view_as_complex(q.float().reshape(bq, sq, nq, dq // 2, 2))
+        q_as_xy = torch.view_as_complex(q.float().reshape(bq, hq, nq, cq // 2, 2))
         q_out = torch.view_as_real(q_as_xy * self.rotvectors)
 
         # Same for key tokens, but must handle potential mismatching number of q vs k tokens
-        k_as_xy = torch.view_as_complex(k.float().reshape(bk, sk, nk, dk // 2, 2))
+        k_as_xy = torch.view_as_complex(k.float().reshape(bk, hk, nk, ck // 2, 2))
         k_rot_amt = self.rotvectors if nk == nq else self.rotvectors.repeat(1, 1, nk // nq, 1)
         k_out = torch.view_as_real(k_as_xy * k_rot_amt)
 
@@ -333,20 +334,20 @@ class RPERotmatEncoder(nn.Module):
         """
 
         # For clarity
-        bq, sq, nq, dq = q.shape
-        bk, sk, nk, dk = k.shape
+        bq, hq, nq, cq = q.shape
+        bk, hk, nk, ck = k.shape
         n_mat = self.rotmats.shape[2]
 
         # Re-build rotation matrix if needed
         if n_mat != nq:
-            self.rotmats = self.get_rpe_rotation_matrices(q_tokens_hw)
+            self.rotmats = self.get_rotation_matrices(q_tokens_hw)
 
         # Convert each consecutive feature value pair into 'xy' format and rotate
-        q_out = torch.matmul(self.rotmats, q.reshape(bq, sq, nq, dq // 2, 2, 1))
+        q_out = torch.matmul(self.rotmats, q.reshape(bq, hq, nq, cq // 2, 2, 1))
 
         # Convert key tokens and handle potential mismatched q vs. k sizing
         k_rotmat = self.rotmats if nk == nq else self.rotmats.repeat(1, 1, nk // nq, 1, 1, 1)
-        k_out = torch.matmul(k_rotmat, k.reshape(bk, sk, nk, dk // 2, 2, 1))
+        k_out = torch.matmul(k_rotmat, k.reshape(bk, hk, nk, ck // 2, 2, 1))
 
         # Convert back to non-paired format for output
         q_out = q_out.flatten(3)
@@ -355,7 +356,7 @@ class RPERotmatEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def get_rpe_rotation_matrices(self, tokens_hw: tuple[int, int]) -> Tensor:
+    def get_rotation_matrices(self, tokens_hw: tuple[int, int]) -> Tensor:
         """
         This function is equivalent to a function called 'compute_axial_cis' from the original implementation:
         https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/position_encoding.py#L174
