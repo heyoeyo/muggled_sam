@@ -275,13 +275,13 @@ class RPEComplexEncoder(nn.Module):
         device, dtype = self.base_angles.device, self.base_angles.dtype
 
         # Calculate multiples of base angles
-        # -> Where sequence of multiples looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for end_x=3, end_y=4)
+        # -> Where sequence of multiples looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for w=3, h=4)
         x_mults = torch.arange(w, device=device, dtype=dtype).repeat(h)
         angles_x = torch.outer(x_mults, self.base_angles).float()
         rotvectors_x = torch.polar(torch.ones_like(angles_x), angles_x)
 
         # Calculate multiples of base angles
-        # -> Where sequence of multiples looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for end_x=3, end_y=4)
+        # -> Where sequence of multiples looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for w=3, h=4)
         y_mults = torch.arange(h, device=device, dtype=dtype).repeat_interleave(w)
         angles_y = torch.outer(y_mults, self.base_angles).float()
         rotvectors_y = torch.polar(torch.ones_like(angles_y), angles_y)
@@ -374,13 +374,13 @@ class RPERotmatEncoder(nn.Module):
         device, dtype = self.base_angles.device, self.base_angles.dtype
 
         # Calculate rotation matrix using multiples of base angles
-        # -> Where sequence of multiples looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for end_x=3, end_y=4)
+        # -> Where sequence of multiples looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for w=3, h=4)
         x_mults = torch.arange(w, device=device, dtype=dtype).repeat(h)
         angles_x = torch.outer(x_mults, self.base_angles)
         rotmat_x = self.make_rotation_matrix(angles_x)
 
         # Calculate rotation matrix using multiples of base angles
-        # -> Where sequence of multiples looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for end_x=3, end_y=4)
+        # -> Where sequence of multiples looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for w=3, h=4)
         y_mults = torch.arange(h, device=device, dtype=dtype).repeat_interleave(w)
         angles_y = torch.outer(y_mults, self.base_angles)
         rotmat_y = self.make_rotation_matrix(angles_y)

@@ -80,19 +80,36 @@ class SAMV2MemoryFusion(nn.Module):
 
     def forward(
         self,
-        lowres_image_tokens: Tensor,
+        lowres_image_tokens_bchw: Tensor,
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
-        history_is_recent_first=True,
+        previous_is_recent_first=True,
         is_prompt_frame=False,
-    ):
+    ) -> Tensor:
+        """
+        Fuses prior memory encodings & object pointers into (low-res) image tokens
+        Expects lists of all prior memory encodings & object pointers.
+
+        Prior memory encodings come from the memory encoder model, while object pointers
+        come from the mask decoder. Encodings/pointers that come from prompted
+        frames are handled separately from non-prompted encodings/pointers
+        (which are assumed to be coming from running on previous frames with no prompts).
+
+        If 'previous_is_recent_first' is True, then the first-most (i.e. 0th-index)
+        entry of the 'previous' lists are assumed to be the most recent entry
+        (this comes from using '.appendleft' on deque data types), otherwise
+        assumes the last-most entry is most recent (i.e. using .append on a list).
+
+        Returns:
+            memory_fused_image_tokens (same shape as input image tokens)
+        """
 
         # If we're prompting or there is no memory data, do simpler fuse
         if is_prompt_frame or len(prompt_memory_encodings) == 0:
             no_mem_bchw = self.no_mem_embed.squeeze(0).unsqueeze(-1).unsqueeze(-1)
-            fused_tokens = lowres_image_tokens + no_mem_bchw
+            fused_tokens = lowres_image_tokens_bchw + no_mem_bchw
             return fused_tokens
 
         # Merge all prior memory data into a single set oftokens
@@ -101,15 +118,15 @@ class SAMV2MemoryFusion(nn.Module):
             prompt_object_pointers,
             previous_memory_encodings,
             previous_object_pointers,
-            history_is_recent_first,
+            previous_is_recent_first,
         )
 
         # Get input shape so we can restore it on output
-        b, _, h, w = lowres_image_tokens.shape
+        b, _, h, w = lowres_image_tokens_bchw.shape
         patch_hw = (h, w)
 
         # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
-        image_posenc_tokens = self.imgposenc(lowres_image_tokens)
+        image_posenc_tokens = self.imgposenc(lowres_image_tokens_bchw)
         flat_imgtokens_bnc = image_posenc_tokens.flatten(2).permute(0, 2, 1)
 
         # Run transformer layers to fuse memory results with image tokens
@@ -162,7 +179,7 @@ class MemoryConcatenator(nn.Module):
         prompt_object_pointers: list[Tensor],
         previous_frame_memory_encodings: list[Tensor],
         previous_frame_object_pointers: list[Tensor],
-        history_is_recent_first=True,
+        previous_is_recent_first=True,
     ) -> tuple[Tensor, Tensor, int]:
 
         # Allocate storage for all memory encodings and positional encodings
@@ -184,7 +201,7 @@ class MemoryConcatenator(nn.Module):
             # Get index representing how 'far away' each item is from current frame
             # -> Assumes buffer is built with 'appendleft' (i.e. 0th index is closest in time)
             pos_idx = min(buffer_idx + 1, self._max_mempos_idx)
-            if not history_is_recent_first:
+            if not previous_is_recent_first:
                 pos_idx = self._max_mempos_idx - pos_idx
 
             # Convert from BxCxHxW to BxNxC
