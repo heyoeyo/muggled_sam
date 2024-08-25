@@ -11,7 +11,6 @@ import torch.nn as nn
 from .components.memfuse_components import MemoryFusionTransformerLayer, FusionPositionOffset
 from .components.posenc_sine import PositionEmbeddingSine
 
-
 # For type hints
 from torch import Tensor
 
@@ -155,6 +154,7 @@ class SAMV2MemoryFusion(nn.Module):
 
         # Get input shape so we can restore it on output
         b, _, h, w = lowres_image_tokens.shape
+        patch_hw = (h, w)
 
         # Flatten to rows-of-tokens format, shape: BxNxC
         img_posenc = self.imgposenc(b, h, w)
@@ -167,11 +167,7 @@ class SAMV2MemoryFusion(nn.Module):
         # Run transformer layers to fuse memory results with image tokens
         for layer in self.layers:
             flat_imgtokens_bnc = layer(
-                tgt=flat_imgtokens_bnc,
-                memory=memory_tensor,
-                pos=memory_posenc_tensor,
-                query_pos=flat_imgposenc_bnc,
-                num_k_exclude_rope=num_ptr_tokens,
+                patch_hw, flat_imgtokens_bnc, memory_tensor, memory_posenc_tensor, num_ptr_tokens
             )
 
         # Convert back to image-like shape, from: BxNxC -> BxCxHxW

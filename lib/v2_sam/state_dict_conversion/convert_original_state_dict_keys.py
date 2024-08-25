@@ -404,6 +404,22 @@ def _convert_memfusion_keys(key: str) -> None | str:
         if new_key.startswith("norm"):
             new_key = new_key.replace("norm", "out_norm")
 
+        if new_key.startswith("layers"):
+
+            # Handle re-structuring of the fusion transformer layers
+            find_and_replace_lut = {
+                "norm1": "image_selfattn.norm",
+                "norm2": "image_crossattn.norm",
+                "self_attn": "image_selfattn.attn",
+                "cross_attn_image": "image_crossattn.attn",
+                "norm3": "image_mlp.mlp.0",
+                "linear1": "image_mlp.mlp.1",
+                "linear2": "image_mlp.mlp.3",
+            }
+            has_attn_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+            if has_attn_match:
+                return new_key.replace(targ_str, match_str)
+
         return new_key
 
     return None
