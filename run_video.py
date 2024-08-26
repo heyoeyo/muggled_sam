@@ -309,6 +309,7 @@ vram_text = ValueBlock("VRAM: ", "-", "MB", max_characters=5)
 objscore_text = ValueBlock("Score: ", None, max_characters=3)
 num_prompts_text = ValueBlock("Prompts: ", "0", max_characters=2)
 num_history_text = ValueBlock("History: ", "0", max_characters=2)
+force_same_min_width(vram_text, objscore_text)
 
 # Set up button controls
 show_preview_btn = ToggleButton("Preview", default_state=False)

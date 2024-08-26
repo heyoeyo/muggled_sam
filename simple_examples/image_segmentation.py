@@ -30,6 +30,7 @@ if torch.cuda.is_available():
 box_tlbr_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy), (bottom-right xy)]
 fg_xy_norm_list = []  # Example: [(0.5, 0.5)]
 bg_xy_norm_list = []
+mask_hint = None  # Example: torch.randn((1, 1, 256, 256)).to(device=device, dtype=dtype)
 
 # Load image
 img_bgr = cv2.imread(image_path)
@@ -45,7 +46,7 @@ sammodel.to(device=device, dtype=dtype)
 print("Generating masks...")
 encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(img_bgr, max_side_length=1024, use_square_sizing=True)
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
 # Feedback
 print("")
