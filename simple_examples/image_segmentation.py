@@ -30,7 +30,7 @@ if torch.cuda.is_available():
 box_tlbr_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy), (bottom-right xy)]
 fg_xy_norm_list = []  # Example: [(0.5, 0.5)]
 bg_xy_norm_list = []
-mask_hint = None  # Example: torch.randn((1, 1, 256, 256)).to(device=device, dtype=dtype)
+mask_hint = None  # Example: torch.randn((1, 1, 256, 256))
 
 # Load image
 img_bgr = cv2.imread(image_path)

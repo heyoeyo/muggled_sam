@@ -181,6 +181,32 @@ class MemoryConcatenator(nn.Module):
         previous_frame_object_pointers: list[Tensor],
         previous_is_recent_first=True,
     ) -> tuple[Tensor, Tensor, int]:
+        """
+        Helps to combine all prompt & previous frame memory data into
+        a single tensor, along with a corresponding positional encoding
+        tensor. The output can be thought of as a 'rows-of-tokens' formatted
+        tensor, where the tokens are prior (image-like) memory encodings
+        as well as prior (token-like) object pointers, both of which are
+        meant to be representations of the object that is being segmented.
+        These are used to 'find' the same object in future frames.
+
+        Inputs should be provided as lists of prior memory/pointers. If
+        'previous_is_recent_first' is True, then this is meant to imply that
+        index-0 of each 'previous_frame' list represents the most recent data.
+        If False, then the index-0 entry is interpreted as the oldest data.
+
+        The difference between 'prompt' and 'previous_frame' inputs is that
+        the prompt inputs are those used to initialize tracking. They come
+        from a user directly prompting the model. The previous_frame inputs
+        are meant to come from the model running on it's own (without prompting).
+
+        Returns:
+            memory_tokens, memory_posenc, num_object_pointer_tokens
+            -> Memory tokens have shape: BxNxF (B batch size, N number of tokens, F features, 64 by default)
+            -> Memory position encoding has shape: BxNxF (matching tokens shape)
+            -> Number of object pointer tokens is very small compared to the number of memory tokens!
+               The object pointer tokens are stored at the end of the memory tokens tensor.
+        """
 
         # Allocate storage for all memory encodings and positional encodings
         memory_list = []

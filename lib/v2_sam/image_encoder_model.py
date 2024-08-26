@@ -34,14 +34,24 @@ class SAMV2ImageEncoder(nn.Module):
         Piotr Dollár, Christoph Feichtenhofer
         @ https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/
 
-    The original code can be found here:
-    https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/backbones/image_encoder.py
+    This model is responsible for encoding image data into a more 'meaningful' representation
+    for follow-up processing steps (i.e. generating segmentation masks). It uses
+    a hierarchical vision transformer called (fittingly) 'Hiera' which produces multiple
+    encoded features maps at varying resolutions. The Heira model is originally from:
+        "Hiera: A Hierarchical Vision Transformer without the Bells-and-Whistles"
+        By: Chaitanya Ryali, Yuan-Ting Hu, Daniel Bolya, Chen Wei, Haoqi Fan, Po-Yao Huang, Vaibhav Aggarwal,
+        Arkabandhu Chowdhury, Omid Poursaeed, Judy Hoffman, Jitendra Malik, Yanghao Li, Christoph Feichtenhofer
+        @ https://arxiv.org/abs/2306.00989
 
     This implementation re-arranges various components and formats it's outputs differently compared
     to the original code. There is also far less flexibility in configuration here
     (only supporting final SAMV2 configs).
+
+    The original code can be found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/backbones/image_encoder.py
     """
 
+    # Input image RGB normalization factors (for 0-255 pixel values)
     rgb_offset = [123.675, 116.28, 103.53]
     rgb_stdev = [58.395, 57.12, 57.375]
 
@@ -93,42 +103,38 @@ class SAMV2ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, image_tensor_bchw: Tensor) -> tuple[list[Tensor], list[Tensor]]:
+    def forward(self, image_tensor_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
-        Encodes an image into multi-resolution feature maps, and also produces
-        a corresponding set of positional embedding maps.
+        Encodes an image into 3 (multi-resolution) feature maps.
+        The lowest-resolution feature map will be 16x smaller in both
+        height and width compared to the input image. The 2nd and 3rd
+        feature maps (i.e. index-1 and index-2 of the output) are 8x
+        and 4x smaller, respectively, but have their channels reduced
+        compared to the lowres map by a factor of 4x and 8x respectively.
+
+        For example, for an input image that is 1x3x1024x1024, outputs:
+          -> (lowres) index-0 shape: 1x256x64x64
+          ->          index-1 shape: 1x64x128x128
+          ->          index-2 shape: 1x32x256x256
 
         Returns:
-            [lowres_features, features_x2, features_x4], [lowres_posenc, posenc_x2, posenc_x4]
+            [lowres_features, features_x2, features_x4]
         """
 
         # Prepare image tokens for transformer
         patch_tokens_bhwc = self.patch_embed(image_tensor_bchw)
         patch_tokens_bhwc = self.posenc(patch_tokens_bhwc)
 
-        # Forward through backbone
+        # Encode patches using transformer, then project down to 3 feature maps
         multires_tokens_list = self.trunk(patch_tokens_bhwc)
         features_list = self.output_projection(multires_tokens_list)
 
-        # For clarity
-        lowres_features, hires_features_x2, hires_features_x4 = features_list
-
         # Further process high-res features
+        lowres_features, hires_features_x2, hires_features_x4 = features_list
         hires_features_x4 = self.proj_x4(hires_features_x4)
         hires_features_x2 = self.proj_x2(hires_features_x2)
 
-        # Re-bundle features for easier handling (note, this is reversed order from original!)
-        features_list = [lowres_features, hires_features_x2, hires_features_x4]
-
-        # Skipping '_prepare_backbone_features' step from original code, see:
-        # https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/sam2_base.py#L477C9-L477C35
-
-        # Skipping a strange looking step (maybe important?), see:
-        # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/sam2_image_predictor.py#L146-L149
-        # -> Seems to just be re-arranging features back into image-like shape, after earlier flatten
-        # -> Flatten step seems to be done just for adding no_mem_embed?
-
-        return features_list
+        return lowres_features, hires_features_x2, hires_features_x4
 
     # .................................................................................................................
 
@@ -136,7 +142,7 @@ class SAMV2ImageEncoder(nn.Module):
         self,
         image_bgr: ndarray,
         max_side_length=1024,
-        use_square_sizing=False,
+        use_square_sizing=True,
         pad_to_square=False,
     ) -> Tensor:
         """

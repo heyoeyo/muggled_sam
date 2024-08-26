@@ -154,6 +154,24 @@ class SAMV2Model(nn.Module):
         max_side_length=1024,
         use_square_sizing=True,
     ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
+        """
+        Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
+        The max_side_length setting is used to set the size at which the image is processed,
+        while the use_square_sizing determines whether the image is scaled to a square resolution
+        or scaled (to the max_side_length) based on it's original aspect ratio.
+
+        Returns:
+            encoded_images_list, patch_grid_hw, preencoded_image_hw
+            -> Encoded images list contains 3 multi-resolution feature maps
+               they have shapes: Bx256x64x64, Bx64x128x128, Bx32x256x256
+               (using default settings). The first-most feature map is
+               the 'low-res' map needed by several other parts of the model
+            -> The patch_grid_hw contains the height & width of the low-res
+               feature map (64x64 with default 1024x1024 input sizing)
+            -> The preencoded_image_hw contains the height & width of the
+               input image after pre-processing, just before being encoded
+               by default it would be 1024x1024
+        """
 
         with torch.inference_mode():
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
@@ -174,6 +192,26 @@ class SAMV2Model(nn.Module):
         mask_hint: Tensor | int | None = None,
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
+        """
+        Function used to generate segmentation masks given an image encoding,
+        as well as a prompt encoding and potentiall a mask hint/prompt. These
+        input encodings are expected to come from other model components.
+
+        The mask hint can either be None (no mask input), an integer or a
+        tensor. If an integer is given, this is interpreted to mean that the
+        model should run twice, once to get a set of mask predictions and then
+        a second time, where the mask_hint (as integer) mask is chosen to be
+        used as a mask hint for a second run of the model. The idea being to
+        use the models own mask output to refine itself. If a tensor is given,
+        it is assumed to be a mask itself. It should be shaped to match the
+        model's own output masks for the given input image size, by default
+        this would be a shape of: Bx1x256x256
+
+        Returns:
+            mask_predictions, iou_predictions
+            -> Masks have shape: Bx4xHxW (HxW is 256x256 using default settings)
+            -> iou_predictions have shape: Bx4
+        """
 
         # Get sizing of the lowest-resolution image encoding
         patch_grid_hw = encoded_image_features_list[0].shape[2:]
@@ -249,7 +287,26 @@ class SAMV2Model(nn.Module):
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """
+        Function which makes segmentation predictions for consecutive frames of
+        an input video. It takes in the encoded video frame data along with prior
+        prompt/previous frame memory data, in order to automatically continue
+        segmenting some existing object (i.e. without requiring user prompts).
+
+        Returns:
+            object_score, best_mask_index, mask_predictions, memory_encoding, best_object_pointer
+            -> object_score score is an indicator of whether an object is present
+               values below 0 indicate lost tracking. Has shape: Bx1
+            -> best_mask_index is the index of the highest iou score. Has shape: B (one index for each batch)
+            -> mask_predictions are the same as with image segmentation, has shape: Bx4xHxW
+            -> memory_encoding should be passed back in on future frames, has shape: BxFxH'xW'
+            -> best_object_pointer should be passed back in on future frames, has shape: Bx1xF'
+
+            The HxW of masks will be 1/4 of the input height and width (256x256 for default 1024 sizing).
+            The memory encoding H'xW' is 4 times smaller than the mask sizing (64x64 by default).
+            The memory & pointer features F & F' are model configs (64, 256 respectively, by default)
+        """
 
         with torch.inference_mode():
 
@@ -298,7 +355,7 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
-    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
         """Helper used to check if there are any prompts"""
         return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
