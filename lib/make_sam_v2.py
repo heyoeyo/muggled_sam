@@ -101,7 +101,7 @@ def make_sam_v2(
     num_decoder_heads=8,
     num_output_mask_tokens=4,
     num_memory_downsample_layers=4,
-    num_memory_encoder_layers=2,
+    num_memory_encoder_mixer_layers=2,
     num_memory_fusion_layers=4,
 ) -> SAMV2Model:
     """
@@ -152,7 +152,7 @@ def make_sam_v2(
         features_per_prompt_token,
         features_per_memory_token,
         num_downsample_layers=num_memory_downsample_layers,
-        num_fuse_layers=num_memory_encoder_layers,
+        num_mixer_layers=num_memory_encoder_mixer_layers,
     )
     memfuse_model = SAMV2MemoryFusion(
         features_per_prompt_token, features_per_memory_token, num_layers=num_memory_fusion_layers

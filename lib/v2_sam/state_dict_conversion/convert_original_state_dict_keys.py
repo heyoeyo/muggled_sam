@@ -86,9 +86,21 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         if found_key(new_key):
 
             # Correct layernorm2d weight shapes
-            layernorm_key_hints = [f"mask_downsampler.{idx}." for idx in (1, 4, 7, 10)]
-            layernorm_key_hints.extend(["fuser.0.norm", "fuser.1.norm"])
+            layernorm_key_hints = [f"mask_downsampler.downsample.{idx}." for idx in (1, 4, 7, 10)]
+            layernorm_key_hints.extend(["channel_mixer.0.norm", "channel_mixer.1.norm"])
             mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
+
+            # Convert linear 'point-wise' weights to 1x1 convolution shapes
+            # -> Original shape is: DxC (D output channels, C input channels)
+            # -> Want 1x1 conv shape: DxCx1x1
+            if "inverted_bottleneck" in new_key and "weight" in new_key:
+                mod_data = mod_data.unsqueeze(-1).unsqueeze(-1)
+
+            # Add broadcasting dimensions to channel scaling term to match BxCxHxW shape
+            # -> Original assumed shape: BxHxWxC, so didn't need broadcast dimensions
+            # -> This is required due to changing to 1x1 convolutions!
+            if "per_channel_scale" in new_key:
+                mod_data = mod_data.reshape(1, -1, 1, 1)
 
             memencoder_sd[new_key] = mod_data
             continue
@@ -368,11 +380,38 @@ def _convert_memencoder_keys(key: str) -> None | str:
 
     # Update mask downsampler to sequential indexing scheme
     if key.startswith("memory_encoder.mask_downsampler.encoder"):
-        return key.replace("memory_encoder.mask_downsampler.encoder", "mask_downsampler")
+
+        # Rename downsampler layers
+        new_key = key.replace("memory_encoder.mask_downsampler.encoder", "mask_downsampler.downsample")
+
+        # Special renaming of final 'downsample' layer, which is actually a projection layer
+        if "downsample.12" in new_key:
+            return new_key.replace("downsample.12", "out_proj")
+
+        return new_key
+
+    # Rename the image projection layer
+    if key.startswith("memory_encoder.pix_feat_proj"):
+        return key.replace("memory_encoder.pix_feat_proj", "image_proj")
 
     # Update fuser layers to sequential indexing scheme
     if key.startswith("memory_encoder.fuser.layers"):
-        return key.replace("memory_encoder.fuser.layers", "fuser")
+
+        # Rename prefix
+        new_key = key.replace("memory_encoder.fuser.layers", "channel_mixer")
+
+        # All transformer key changes are handled using find-and-replace lookup
+        find_and_replace_lut = {
+            "dwconv": "per_channel_conv",
+            "gamma": "per_channel_scale",
+            "pwconv1": "inverted_bottleneck.0",
+            "pwconv2": "inverted_bottleneck.2",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+        return new_key
 
     # Remove model name prefix
     if key.startswith("memory_encoder"):

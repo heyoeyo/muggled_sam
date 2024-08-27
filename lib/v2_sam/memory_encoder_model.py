@@ -5,11 +5,10 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-
-import torch
 import torch.nn as nn
 
-from .components.memenc_components import MaskDownSampler, CXBlock
+from .components.memenc_components import MaskDownsampler, ConvNeXtBlock
+from .components.shared import Conv1x1Layer
 
 # For type hints
 from torch import Tensor
@@ -21,44 +20,80 @@ from torch import Tensor
 
 class SAMV2MemoryEncoder(nn.Module):
     """
-    WIP - Intending to simplify/document
-    Taken from:
-    https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/memory_encoder.py
+    Slightly modified implementation of the 'memory encoder' from:
+        "SAM 2: Segment Anything in Images and Videos"
+        By: Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma,
+        Haitham Khedr, Roman Rädle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan,
+        Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick,
+        Piotr Dollár, Christoph Feichtenhofer
+        @ https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/
+
+    This implementation has only minor changes compared to the original model, primarily
+    in the form of renamed layers. It also features a slightly different call signature
+    due to using a more heavily modified mask downsampler and doesn't compute positional
+    encodings for the memory encodings it outputs.
+    (this has been moved to another model, where the encoding are used)
+
+    The original code can be found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/memory_encoder.py#L138
     """
 
     # .................................................................................................................
 
-    def __init__(self, in_dim=256, out_dim=64, num_downsample_layers=4, num_fuse_layers=2):
+    def __init__(
+        self,
+        features_per_image_token=256,
+        features_per_memory_token=64,
+        num_downsample_layers=4,
+        num_mixer_layers=2,
+    ):
 
         # Inherit from parent
         super().__init__()
 
-        self.mask_downsampler = MaskDownSampler(in_dim, num_downsample_layers)
-        self.pix_feat_proj = nn.Conv2d(in_dim, in_dim, kernel_size=1)
-        self.fuser = nn.Sequential(*(CXBlock(in_dim) for _ in range(num_fuse_layers)))
-        self.out_proj = nn.Conv2d(in_dim, out_dim, kernel_size=1)
+        # Define layers used to pre-process mask & image data prior to fusing
+        self.mask_downsampler = MaskDownsampler(features_per_image_token, num_downsample_layers)
+        self.image_proj = Conv1x1Layer(features_per_image_token)
 
-        # Store upsampling config for restoring proper mask shape during forward pass
-        self._upsample_factor = int(2**num_downsample_layers)
+        # Define layers used to post-process fused mask + image result
+        self.channel_mixer = nn.Sequential(*(ConvNeXtBlock(features_per_image_token) for _ in range(num_mixer_layers)))
+        self.out_proj = Conv1x1Layer(features_per_image_token, features_per_memory_token)
 
     # .................................................................................................................
 
-    def forward(self, lowres_image_encoding: Tensor, lowres_mask: Tensor, is_prompt_encoding=False) -> Tensor:
+    def forward(self, lowres_image_encoding: Tensor, mask_prediction: Tensor, is_prompt_encoding=False) -> Tensor:
+        """
+        Takes the lowest-resolution image encoding of SAMv2 and combines it
+        with a mask prediction to form a 'fused' encoding, which can act
+        a bit like a prompt to re-segment an object on future frames.
+        (without requiring any other prompts)
 
-        # Scale mask up, so that downsample result matches the lowres image encoding
-        img_hw = lowres_image_encoding.shape[2:]
-        hires_hw = [size * self._upsample_factor for size in img_hw]
-        hires_mask = nn.functional.interpolate(lowres_mask, size=hires_hw, mode="bilinear", align_corners=False)
+        The input image encoding is expected to have shape BxCxHxW, the mask
+        prediction should have a shape of Bx1x(4H)x(4W).
 
-        # Prepare mask
-        mask_for_mem = (hires_mask > 0.0).to(hires_mask.dtype) if is_prompt_encoding else torch.sigmoid(hires_mask)
-        mask_for_mem = mask_for_mem * 20.0 - 10.0
-        mask_for_mem = self.mask_downsampler(mask_for_mem)
+        The 'is_prompt_encoding' flag should only be True if the given mask
+        prediction was the result of a user-made prompt (e.g. box or points),
+        if the mask comes from running on video frames, without user prompts,
+        then 'is_prompt_encoding' should be False. This slightly modifies
+        how the input mask is processed, but has a surprising impact on
+        the quality of segmentation results over long time periods!
 
-        ## Fuse pix_feats and downsampled masks
-        x = self.pix_feat_proj(lowres_image_encoding)
-        x = x + mask_for_mem
-        x = self.fuser(x)
-        x = self.out_proj(x)
+        Returns:
+            fused_image_and_mask_encodings
+            -> Has shape: Bx(C/4)xHxW
+            -> B is the batch size
+            -> Output has 1/4 number of channels, C, as input image encoding
+            -> Output height & width match (low-res) image encoding
+        """
 
-        return x
+        # Prepare mask & image data for fusion
+        target_hw = lowres_image_encoding.shape[2:]
+        encoded_mask = self.mask_downsampler(mask_prediction, target_hw, is_prompt_encoding)
+        encoded_image = self.image_proj(lowres_image_encoding)
+
+        # Add encoded mask & image data together and mix channels to 'fuse' information
+        fused_mask_and_img = encoded_mask + encoded_image
+        fused_mask_and_img = self.channel_mixer(fused_mask_and_img)
+        fused_mask_and_img = self.out_proj(fused_mask_and_img)
+
+        return fused_mask_and_img
