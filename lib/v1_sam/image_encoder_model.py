@@ -129,7 +129,7 @@ class SAMV1ImageEncoder(nn.Module):
         self,
         image_bgr: ndarray,
         max_side_length=1024,
-        use_square_sizing=False,
+        use_square_sizing=True,
         pad_to_square=False,
     ) -> Tensor:
 
@@ -138,13 +138,14 @@ class SAMV1ImageEncoder(nn.Module):
         largest_side = max(img_h, img_w)
         scale_factor = max_side_length / largest_side
 
-        # Force sizing to multiples of patch size
+        # Force sizing to multiples of a specific tiling size
+        tiling_size = self.get_image_tiling_size_constraint()
         if use_square_sizing:
-            scaled_side = int(np.ceil(largest_side * scale_factor / self._patch_size_px)) * self._patch_size_px
+            scaled_side = int(np.ceil(largest_side * scale_factor / tiling_size)) * tiling_size
             scaled_h = scaled_w = scaled_side
         else:
-            scaled_h = int(np.ceil(img_h * scale_factor / self._patch_size_px)) * self._patch_size_px
-            scaled_w = int(np.ceil(img_w * scale_factor / self._patch_size_px)) * self._patch_size_px
+            scaled_h = int(np.ceil(img_h * scale_factor / tiling_size)) * tiling_size
+            scaled_w = int(np.ceil(img_w * scale_factor / tiling_size)) * tiling_size
 
         # Scale RGB image to correct size and re-order from HWC to BCHW (with batch of 1)
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -184,6 +185,18 @@ class SAMV1ImageEncoder(nn.Module):
             self._window_size_override = window_size
 
         return self
+
+    # .................................................................................................................
+
+    def get_image_tiling_size_constraint(self) -> int:
+        """
+        This function is mostly used for compatibility with the V2 model, which
+        has a more complex requirement on input image sizing. For the V1 model,
+        the only constraint is that images must be sized to an integer number
+        of the patch sizing.
+        """
+
+        return self._patch_size_px
 
     # .................................................................................................................
 

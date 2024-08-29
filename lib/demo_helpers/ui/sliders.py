@@ -134,6 +134,7 @@ class HSlider(BaseCallback):
         new_value = max(self._slider_min, min(self._slider_max, slider_value))
         if use_as_default_value:
             self._initial_value = new_value
+        self._is_changed |= new_value != self._slider_value
         self._slider_value = new_value
         return self
 

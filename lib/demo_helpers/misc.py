@@ -65,3 +65,10 @@ def make_device_config(device_str, use_float32, use_channels_last=True, prefer_b
     memory_format = torch.channels_last if use_channels_last else None
 
     return {"device": device_str, "dtype": dtype, "memory_format": memory_format}
+
+
+def normalize_to_npuint8(tensor_data):
+    """Function used to normalize tensor data to a 0-255 numpy uint8 format, meant for displaying as image data!"""
+    min_val, max_val = tensor_data.min(), tensor_data.max()
+    data_norm = (tensor_data - min_val) / (max_val - min_val)
+    return (data_norm * 255).byte().cpu().numpy()
