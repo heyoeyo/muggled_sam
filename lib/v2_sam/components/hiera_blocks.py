@@ -59,6 +59,12 @@ class TransformerBlock(nn.Module):
 
     # .................................................................................................................
 
+    def set_window_size(self, window_size: int | None):
+        """This block does not use windowing, so do nothing. This is included for compatibility with window blocks"""
+        return self
+
+    # .................................................................................................................
+
 
 class WindowedBlock(nn.Module):
     """
@@ -79,7 +85,8 @@ class WindowedBlock(nn.Module):
         super().__init__()
 
         # Store config for handling windowing operation
-        self._winsize = window_size
+        self._init_window_size = window_size
+        self._window_size = window_size
 
         # Attention components
         self.norm_preattn = nn.LayerNorm(features_per_token, eps=1e-6)
@@ -101,9 +108,9 @@ class WindowedBlock(nn.Module):
         # Windowed attention
         orig_shape = imagelike_bhwc.shape
         attn = self.norm_preattn(imagelike_bhwc)
-        attn_windows, num_windows_xy = window_partition(attn, self._winsize)
+        attn_windows, num_windows_xy = window_partition(attn, self._window_size)
         attn_windows = self.attn(attn_windows)
-        attn = window_unpartition(attn_windows, orig_shape, self._winsize, num_windows_xy)
+        attn = window_unpartition(attn_windows, orig_shape, self._window_size, num_windows_xy)
         attn = attn + imagelike_bhwc
 
         # MLP
@@ -111,6 +118,20 @@ class WindowedBlock(nn.Module):
         output = self.mlp(output) + attn
 
         return output
+
+    # .................................................................................................................
+
+    def set_window_size(self, window_size: int | None):
+        """
+        Modifies the window size used by this transformer block. This
+        is meant for experimental use only. If the size is given as
+        None, then the block will reset to it's initial config sizing.
+        """
+
+        # If given None, use the default/initial config size
+        self._window_size = self._init_window_size if window_size is None else max(1, window_size)
+
+        return self
 
     # .................................................................................................................
 
@@ -136,8 +157,9 @@ class PooledWindowedBlock(nn.Module):
         super().__init__()
 
         # Store config for handling windowing operation
-        self._winsize = window_size
-        self._pool_winsize = window_size // 2
+        self._init_window_size = window_size
+        self._window_size = window_size
+        self._pool_window_size = window_size // 2
 
         # Compute number of features we need so that we get target ouput features,
         # assuming we double feature count due to pooling
@@ -169,7 +191,7 @@ class PooledWindowedBlock(nn.Module):
         # Windowed attention (with pooling)
         # -> The attention calculation includes it's own pooling! So result shape is different from input
         imagelike_bhwc = self.norm_preattn(imagelike_bhwc)
-        attn_windows, num_windows_xy = window_partition(imagelike_bhwc, self._winsize)
+        attn_windows, num_windows_xy = window_partition(imagelike_bhwc, self._window_size)
         attn_windows = self.attn(attn_windows)
 
         # Create pooled 'residual' for adding to attention result
@@ -177,7 +199,7 @@ class PooledWindowedBlock(nn.Module):
         pool_shape = pooled_imagelike_bhwc.shape
 
         # Reverse windowing but accounting for internal pooling on attention result
-        attn = window_unpartition(attn_windows, pool_shape, self._pool_winsize, num_windows_xy)
+        attn = window_unpartition(attn_windows, pool_shape, self._pool_window_size, num_windows_xy)
         attn = attn + pooled_imagelike_bhwc
 
         # MLP
@@ -185,6 +207,33 @@ class PooledWindowedBlock(nn.Module):
         output = self.mlp(output) + attn
 
         return output
+
+    # .................................................................................................................
+
+    def set_window_size(self, window_size: int | None):
+        """
+        Modifies the window size used by this transformer block. This
+        is meant for experimental use only. If the size is given as
+        None, then the block will reset to it's initial config sizing.
+
+        Note that windows sizes will be forced to even multiples in order
+        to maintain proper support for pooling!
+        """
+
+        # If not given a size, fallback to initial config
+        if window_size is None:
+            self._window_size = self._init_window_size
+
+        else:
+            # Make sure we use a window size that divides evenly by two, for compatibility with pooling
+            window_size = max(2, window_size)
+            safe_window_size = (window_size // 2) * 2
+            self._window_size = safe_window_size
+
+        # Pooling always halves windows
+        self._pool_window_size = self._window_size // 2
+
+        return self
 
     # .................................................................................................................
 

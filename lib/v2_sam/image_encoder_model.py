@@ -215,3 +215,24 @@ class SAMV2ImageEncoder(nn.Module):
         return int(to_multiples_requirement)
 
     # .................................................................................................................
+
+    def set_window_sizes(self, window_size_per_stage: list[int | None]):
+        """
+        Allows for updating per-stage window sizing. This is primarily
+        meant for experimental purposes. The window sizing should not
+        need to be altered under normal use of the model.
+
+        Window sizes should be provided as a list of integers or None,
+        where None indicates that the original window size config should
+        be used. For example:
+            window_size_per_stage = [2, 4, None, 16]
+        """
+
+        if window_size_per_stage is None:
+            window_size_per_stage = [None] * 4
+
+        self.trunk.set_window_sizes(window_size_per_stage)
+
+        return self
+
+    # .................................................................................................................

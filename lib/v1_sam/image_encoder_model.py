@@ -70,9 +70,6 @@ class SAMV1ImageEncoder(nn.Module):
         # Inherit from parent
         super().__init__()
 
-        # Storage for window size override
-        self._window_size_override = None
-
         # Create patch embedding to create patch tokens along with positional encoder
         self._patch_size_px = patch_size_px
         self.patch_embed = PatchEmbed(features_per_token, patch_size_px)
@@ -86,7 +83,7 @@ class SAMV1ImageEncoder(nn.Module):
                 features_per_token, num_blocks_per_stage, num_heads, window_size, base_patch_grid_hw
             )
             stages_list.append(new_stage)
-        self.stages = nn.ModuleList(stages_list)
+        self.stages = nn.Sequential(*stages_list)
 
         # Create layers used to project to target number of output channels
         self.output_projection = nn.Sequential(
@@ -118,9 +115,9 @@ class SAMV1ImageEncoder(nn.Module):
         patch_tokens_bhwc = self.posenc(patch_tokens_bhwc)
 
         # Run transformer layers
-        for stage in self.stages:
-            patch_tokens_bhwc = stage(patch_tokens_bhwc, self._window_size_override)
+        patch_tokens_bhwc = self.stages(patch_tokens_bhwc)
 
+        # Run final projection to standard channel size and convert to bchw shape
         return self.output_projection(patch_tokens_bhwc.permute(0, 3, 1, 2))
 
     # .................................................................................................................
@@ -169,25 +166,6 @@ class SAMV1ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def set_window_size(self, window_size: int | None):
-        """
-        Function used to adjust the window sizing used when encoding image data
-        Setting a value of None will cause the model to fall back to a default value
-        (default is 14 if using original SAM v1 model)
-        """
-
-        # Window sizing is square, so if given something like a (h,w) sizing, just take the first value
-        if isinstance(window_size, (tuple, list)):
-            window_size = window_size[0]
-
-        # Only update the size if it is an integer value or None (None forces a fallback to a default size)
-        if isinstance(window_size, int) or (window_size is None):
-            self._window_size_override = window_size
-
-        return self
-
-    # .................................................................................................................
-
     def get_image_tiling_size_constraint(self) -> int:
         """
         This function is mostly used for compatibility with the V2 model, which
@@ -197,6 +175,32 @@ class SAMV1ImageEncoder(nn.Module):
         """
 
         return self._patch_size_px
+
+    # .................................................................................................................
+
+    def set_window_sizes(self, window_size_per_stage: list[int | None]):
+        """
+        Allows for updating per-stage window sizing. This is primarily
+        meant for experimental purposes. The window sizing should not
+        need to be altered under normal use of the model.
+
+        Window sizes should be provided as a list of integers or None,
+        where None indicates that the original window size config should
+        be used. For example:
+            window_size_per_stage = [2, 4, None, 16]
+        """
+
+        # Force window sizing to be at least 4 entries long, to match stages
+        num_sizes = len(window_size_per_stage)
+        num_stages = len(self.stages)
+        if num_sizes < num_stages:
+            window_size_per_stage = [*window_size_per_stage].extend([None] * (num_stages - num_sizes))
+
+        # Have each stage update it's blocks
+        for stage, winsize in zip(self.stages, window_size_per_stage):
+            stage.set_window_size(winsize)
+
+        return self
 
     # .................................................................................................................
 
@@ -220,8 +224,8 @@ class TransformerStage(nn.Module):
 
         # Create sequence of windowed attention blocks
         num_win_blocks = max(0, num_blocks - 1)
-        self.windowed_attn_blocks = nn.ModuleList(
-            WindowedAttentionBlock(features_per_token, num_heads, base_window_size) for _ in range(num_win_blocks)
+        self.windowed_attn_blocks = nn.Sequential(
+            *(WindowedAttentionBlock(features_per_token, num_heads, base_window_size) for _ in range(num_win_blocks))
         )
 
         # Create single global attention as final output 'layer' of a single stage
@@ -229,16 +233,23 @@ class TransformerStage(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, patch_tokens: Tensor, window_size: int | None = None) -> Tensor:
+    def forward(self, patch_tokens: Tensor):
+        """Encodes patch tokens using sequence of windowed-attention blocks followed by global attention"""
+        patch_tokens = self.windowed_attn_blocks(patch_tokens)
+        return self.global_attn_block(patch_tokens)
 
-        # Default to base sizing if not given size explicitly
-        if window_size is None:
-            window_size = self.base_window_size
+    # .................................................................................................................
+
+    def set_window_size(self, window_size: int | None = None):
+        """
+        Update all windowed-attention blocks to use a new window size.
+        Set size to None to reset to initial configuration
+        """
 
         for block in self.windowed_attn_blocks:
-            patch_tokens = block(patch_tokens, window_size)
+            block.set_window_size(window_size)
 
-        return self.global_attn_block(patch_tokens)
+        return self
 
     # .................................................................................................................
 

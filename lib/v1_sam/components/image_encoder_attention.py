@@ -49,6 +49,12 @@ class GlobalAttentionBlock(nn.Module):
 
     # .................................................................................................................
 
+    def set_window_size(self, window_size: int | None):
+        """This block does not use windowing, so do nothing. This is included for compatibility with window blocks"""
+        return self
+
+    # .................................................................................................................
+
 
 class WindowedAttentionBlock(GlobalAttentionBlock):
     """
@@ -69,29 +75,43 @@ class WindowedAttentionBlock(GlobalAttentionBlock):
         window_grid_hw = (base_window_size, base_window_size)
         super().__init__(features_per_token, num_heads, window_grid_hw)
 
+        # Store window size (+ backup of initial size, in case we change and need a reset!)
+        self._init_window_size = base_window_size
+        self._window_size = base_window_size
+
     # .................................................................................................................
 
-    def forward(self, x_in: Tensor, window_size: int) -> Tensor:
-
-        # Fallback to default window size
-        if window_size is None:
-            window_size = self.base_window_size
+    def forward(self, x_in: Tensor) -> Tensor:
 
         x = self.norm1(x_in)
 
         # Window partition
         hw_in = (x.shape[1], x.shape[2])
-        x, pad_hw = window_partition(x, window_size)
+        x, pad_hw = window_partition(x, self._window_size)
 
         x = self.attn(x)
 
         # Reverse window partition
-        x = window_unpartition(x, window_size, pad_hw, hw_in)
+        x = window_unpartition(x, self._window_size, pad_hw, hw_in)
 
         x = x_in + x
         x = x + self.mlp(self.norm2(x))
 
         return x
+
+    # .................................................................................................................
+
+    def set_window_size(self, window_size: int | None):
+        """
+        Modifies the window size used by this transformer block. This
+        is meant for experimental use only. If the size is given as
+        None, then the block will reset to it's initial config sizing.
+        """
+
+        # If given None, use the default/initial config size
+        self._window_size = self._init_window_size if window_size is None else max(1, window_size)
+
+        return self
 
     # .................................................................................................................
 

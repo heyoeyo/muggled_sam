@@ -105,6 +105,36 @@ class HieraModel(nn.Module):
 
     # .................................................................................................................
 
+    def set_window_sizes(self, window_size_per_stage: list[int | None]):
+        """
+        Updates the window size of each stage of the model. This is
+        meant for experimental purposes.
+
+        Window sizes should be provided as a list of integers or None,
+        where None indicates that the original window size config should
+        be used. For example:
+            window_size_per_stage = [2, 4, None, 16]
+
+        Note that the first block of each stage will share it's window
+        size with the prior stage, in accordance with the original
+        configuration structure of the model.
+        """
+
+        # Force window sizing to have as many entries as we have stages
+        num_sizes = len(window_size_per_stage)
+        num_stages = len(self.stages)
+        if num_sizes < num_stages:
+            window_size_per_stage = [*window_size_per_stage].extend([None] * (num_stages - num_sizes))
+
+        # Have each stage update it's blocks
+        first_layer_sizes = [window_size_per_stage[0], *window_size_per_stage[:-1]]
+        for stage, winsize_1st_layer, winsize in zip(self.stages, first_layer_sizes, window_size_per_stage):
+            stage.set_window_size(winsize_1st_layer, winsize)
+
+        return self
+
+    # .................................................................................................................
+
 
 class HieraStage(nn.Sequential):
     """
@@ -158,5 +188,23 @@ class HieraStage(nn.Sequential):
 
         # Inherit from parent
         super().__init__(*blocks_list)
+
+    # .................................................................................................................
+
+    def set_window_size(self, window_size_1st_layer: int | None = None, window_size: int | None = None):
+        """
+        Update all blocks to use a new window size. A different
+        size can be provided for the first layer, to mirror the
+        original structuring of the model, where the first layer
+        shares the window sizing of the previous layer.
+        Set size to None to reset to initial configuration
+        """
+
+        # Tell blocks to update to target window size
+        for idx, block in enumerate(self):
+            block_winsize = window_size_1st_layer if idx == 0 else window_size
+            block.set_window_size(block_winsize)
+
+        return self
 
     # .................................................................................................................

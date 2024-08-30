@@ -50,20 +50,6 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def set_window_size(self, window_size: int | None):
-        """
-        Function used to adjust the window sizing of the SAMV1 image encoder. If set to
-        None, then the encoder will fall back to a default value (14 in original SAM model).
-        Larger window sizes can provide improved masking details, at the expense of higher
-        computational cost.
-        """
-
-        self.image_encoder.set_window_size(window_size)
-
-        return self
-
-    # .................................................................................................................
-
     def forward(
         self,
         image_rgb_normalized_bchw: Tensor,

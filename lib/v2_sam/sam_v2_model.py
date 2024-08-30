@@ -60,18 +60,6 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
-    def set_window_size(self, window_size: int | None):
-        """
-        Function used to adjust image encoder window sizing.
-        This function doesn't do anything for SAM v2, which has varying
-        window sizes per hierarchical stage. It is just here for compatibility
-        with the V1 model, which does support dynamic size adjustments
-        """
-
-        return self
-
-    # .................................................................................................................
-
     def forward(
         self,
         image_rgb_normalized_bchw: Tensor,
