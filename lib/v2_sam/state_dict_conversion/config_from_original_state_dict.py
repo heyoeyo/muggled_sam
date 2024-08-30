@@ -92,9 +92,9 @@ def get_window_size_per_stage(total_block_count):
     # -> Isn't part of model weights
     # -> Doesn't seem to follow a clear pattern...
     window_sizes_per_stage_by_blockcount_lut = {
-        12: (8, 4, 14, 17),
-        16: (8, 4, 14, 17),
-        24: (8, 4, 14, 17),
+        12: (8, 4, 14, 7),
+        16: (8, 4, 14, 7),
+        24: (8, 4, 14, 7),
         48: (8, 4, 16, 8),
     }
 
