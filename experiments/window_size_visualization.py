@@ -178,13 +178,10 @@ if full_image_bgr is None:
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Initial model run
 
-# Set up shared image encoder settings (needs to be consistent across image/video frame encodings)
-imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": use_square_sizing}
-
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -194,8 +191,8 @@ print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 # Run model without prompts as sanity check. Also gives initial result values
 box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
-mask_uint8 = normalize_to_npuint8(mask_preds[0, 0, :, :])
+init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -212,12 +209,11 @@ print(
     flush=True,
 )
 
-# Figure out initial window sizing
-init_winsize_per_stage = None
+# Figure out initial window sizing settings
+# -> Note: v1 model uses a single shared window size for all stages, so we duplicate it 4 times for controls
+init_winsize_per_stage = [model_config_dict.get("base_window_size", None)] * 4
 if is_v2_model:
     init_winsize_per_stage = model_config_dict.get("imgencoder_window_size_per_stage", (8, 4, 14, 7))
-else:
-    init_winsize_per_stage = [model_config_dict["base_window_size"]] * 4
 
 # Figure out window sizing limits. Needed to stop crashing due to pytorch 'scaled_dot_product_attention'
 # -> Crash seems to occur when providing tensors with size >2^16 (i.e. 65536 or higher)
@@ -233,8 +229,19 @@ if is_v2_model:
 # %% Set up the UI
 
 # Set up shared UI elements & control logic
-ui_elems = PromptUI(full_image_bgr, mask_preds)
+ui_elems = PromptUI(full_image_bgr, init_mask_preds)
 uictrl = PromptUIControl(ui_elems)
+
+# Set up slider for adjusting image encoding size
+sidelength_slider = HSlider(
+    "Encoding Side Length",
+    initial_value=imgenc_base_size,
+    min_value=32,
+    max_value=max(2 * imgenc_base_size, 1024),
+    step_size=32,
+    marker_steps=8,
+    bar_bg_color=(35, 55, 60),
+)
 
 # Set up window size sliders
 win_sliders = []
@@ -248,7 +255,6 @@ for idx in range(4):
         marker_steps=8,
     )
     win_sliders.append(slider)
-slider_block = VStack(*win_sliders)
 
 # Set up control buttons
 show_preds_btn = ToggleButton("Show Prediction", on_color=(160, 180, 65), default_state=False, text_scale=0.5)
@@ -273,7 +279,8 @@ disp_layout = VStack(
     cmap_bar,
     ui_elems.layout,
     button_bar,
-    slider_block,
+    sidelength_slider,
+    *win_sliders,
     footer_msgbar if show_info else None,
 )
 
@@ -303,6 +310,11 @@ KEY_ZOOM_OUT, KEY_ZOOM_IN = ord("-"), ord("=")
 # Set up helper object for re-using an image scaled to match display sizing
 base_img_maker = ReusableBaseImage(full_image_bgr)
 
+# Set up separate 'preview' copies of masks, used to maintain a fixed preview display sizing!
+init_preds_hw = init_mask_preds.shape[2:]
+preview_preds = init_mask_preds
+mask_preds = init_mask_preds
+
 # *** Main display loop ***
 try:
     while True:
@@ -314,11 +326,12 @@ try:
         # Read controls
         _, show_preds_as_display = show_preds_btn.read()
         _, show_preds_as_binary = show_binary_btn.read()
+        is_length_changed, max_side_length = sidelength_slider.read()
         is_winsizes_changed, win_sizes = zip(*[slider.read() for slider in win_sliders])
 
         # Re-encode image if window sizing changes
-        winsize_changed = any(is_winsizes_changed)
-        if winsize_changed:
+        need_image_encode = any(is_winsizes_changed) or is_length_changed
+        if need_image_encode:
 
             # Force display back to mask view if image encoding is changing
             show_preds_btn.toggle(True)
@@ -326,7 +339,7 @@ try:
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
             sammodel.image_encoder.set_window_sizes(win_sizes)
             t1 = perf_counter()
-            encoded_img, _, _ = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
+            encoded_img, _, _ = sammodel.encode_image(full_image_bgr, max_side_length, use_square_sizing)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             t2 = perf_counter()
@@ -335,12 +348,18 @@ try:
             infer_time_block.set_value(round(1000 * (t2 - t1), 1))
 
         # Update masking result if window or prompts are changed
-        if winsize_changed or need_prompt_encode:
+        if need_image_encode or need_prompt_encode:
             encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+
+            # Make scaled copy of predictions for preview when sizing changes
+            # (if we don't do this, the UI will jitter due to layout sizing changes!)
+            preview_preds = mask_preds
+            if max_side_length != imgenc_base_size:
+                preview_preds = torch.nn.functional.interpolate(mask_preds, size=init_preds_hw)
 
         # Update display of mask previews
-        uictrl.update_mask_previews(mask_preds, mselect_idx, mask_threshold=0.0, invert_mask=False)
+        uictrl.update_mask_previews(preview_preds, mselect_idx, mask_threshold=0.0, invert_mask=False)
         if show_iou_preds:
             uictrl.draw_iou_predictions(iou_preds)
 
@@ -351,11 +370,12 @@ try:
         if show_preds_as_display:
 
             # Scale selected mask to match display sizing
+            use_smooth_interpolation = show_preds_as_binary
             mask_scaled = torch.nn.functional.interpolate(
                 mask_preds[:, mselect_idx, :, :].unsqueeze(1),
                 size=display_hw,
-                mode="bilinear",
-                align_corners=False,
+                mode="bilinear" if use_smooth_interpolation else "nearest-exact",
+                align_corners=False if use_smooth_interpolation else None,
             ).squeeze(dim=(0, 1))
 
             # Convert mask to displayable image
