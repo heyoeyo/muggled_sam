@@ -121,12 +121,6 @@ parser.add_argument(
     action="store_true",
     help="Hide text info elements from UI",
 )
-parser.add_argument(
-    "--hide_norm",
-    default=False,
-    action="store_true",
-    help="Hide the L2 norm display image from the UI",
-)
 
 # For convenience
 args = parser.parse_args()
@@ -141,7 +135,6 @@ imgenc_base_size = args.base_size_px
 max_window_size = args.max_window_size
 show_iou_preds = args.quality_estimate
 show_info = not args.hide_info
-show_l2_norm = not args.hide_norm
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -260,7 +253,7 @@ slider_block = VStack(*win_sliders)
 # Set up control buttons
 show_preds_btn = ToggleButton("Show Prediction", on_color=(160, 180, 65), default_state=False, text_scale=0.5)
 show_binary_btn = ToggleButton("Show Binary", on_color=(75, 45, 90), default_state=False, text_scale=0.5)
-infer_time_block = ValueBlock("Time: ", init_time_taken_ms, "ms", max_characters=5)
+infer_time_block = ValueBlock("Inference: ", init_time_taken_ms, " ms", max_characters=5)
 button_bar = HStack(infer_time_block, show_preds_btn, show_binary_btn)
 force_same_min_width(infer_time_block, show_preds_btn, show_binary_btn)
 
@@ -268,7 +261,7 @@ force_same_min_width(infer_time_block, show_preds_btn, show_binary_btn)
 device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str, space_equally=True)
 footer_msgbar = StaticMessageBar(
-    "[tab] Prediction view", "[b] Binary view", "[Right-click] Reset sliders", text_scale=0.35, space_equally=True
+    "[Right-click] Reset sliders", "[tab] Prediction view", "[b] Binary view", text_scale=0.35, space_equally=True
 )
 
 # Create bar of colormaps for adjusting display style
@@ -276,12 +269,12 @@ cmap_bar = HColormapsBar(make_spectral_colormap(), cv2.COLORMAP_VIRIDIS, cv2.COL
 
 # Set up full display layout
 disp_layout = VStack(
+    header_msgbar if show_info else None,
     cmap_bar,
-    header_msgbar,
     ui_elems.layout,
     button_bar,
     slider_block,
-    footer_msgbar,
+    footer_msgbar if show_info else None,
 )
 
 # Load initial prompts, if provided
