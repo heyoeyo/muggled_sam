@@ -38,6 +38,8 @@ from lib.demo_helpers.ui.text import ValueBlock
 from lib.demo_helpers.ui.colormaps import HColormapsBar, make_spectral_colormap
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
 
+from lib.demo_helpers.contours import get_contours_from_mask
+
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from lib.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
@@ -121,6 +123,12 @@ parser.add_argument(
     action="store_true",
     help="Hide text info elements from UI",
 )
+parser.add_argument(
+    "--disable_auto_toggle",
+    default=False,
+    action="store_true",
+    help="If set, adjustments affecting image encodings will not auto-toggle into displaying mask predictions",
+)
 
 # For convenience
 args = parser.parse_args()
@@ -135,6 +143,7 @@ imgenc_base_size = args.base_size_px
 max_window_size = args.max_window_size
 show_iou_preds = args.quality_estimate
 show_info = not args.hide_info
+auto_toggle_to_predictions = not args.disable_auto_toggle
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -308,12 +317,13 @@ window.attach_keypress_callback("b", show_binary_btn.toggle)
 KEY_ZOOM_OUT, KEY_ZOOM_IN = ord("-"), ord("=")
 
 # Set up helper object for re-using an image scaled to match display sizing
-base_img_maker = ReusableBaseImage(full_image_bgr)
+img_bgr_cache = ReusableBaseImage(full_image_bgr)
 
-# Set up separate 'preview' copies of masks, used to maintain a fixed preview display sizing!
+# Set up copies of variables that need to exist before first run
 init_preds_hw = init_mask_preds.shape[2:]
 preview_preds = init_mask_preds
 mask_preds = init_mask_preds
+mask_contours_norm = None
 
 # *** Main display loop ***
 try:
@@ -325,16 +335,21 @@ try:
 
         # Read controls
         _, show_preds_as_display = show_preds_btn.read()
-        _, show_preds_as_binary = show_binary_btn.read()
+        is_binary_changed, show_preds_as_binary = show_binary_btn.read()
         is_length_changed, max_side_length = sidelength_slider.read()
         is_winsizes_changed, win_sizes = zip(*[slider.read() for slider in win_sliders])
+
+        # Switch to show binary mask when toggled on
+        if is_binary_changed and show_preds_as_binary and auto_toggle_to_predictions:
+            show_preds_btn.toggle(True)
 
         # Re-encode image if window sizing changes
         need_image_encode = any(is_winsizes_changed) or is_length_changed
         if need_image_encode:
 
             # Force display back to mask view if image encoding is changing
-            show_preds_btn.toggle(True)
+            if auto_toggle_to_predictions:
+                show_preds_btn.toggle(True)
 
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
             sammodel.image_encoder.set_window_sizes(win_sizes)
@@ -363,29 +378,36 @@ try:
         if show_iou_preds:
             uictrl.draw_iou_predictions(iou_preds)
 
-        # Re-generate display image at required display size
-        # -> Not strictly needed, but can avoid constant re-sizing of base image (helpful for large images)
+        # Scale selected mask to match display sizing
         display_hw = ui_elems.image.get_render_hw()
-        disp_img = base_img_maker.regenerate(display_hw)
-        if show_preds_as_display:
+        mask_select = mask_preds[:, mselect_idx, :, :].unsqueeze(1)
+        use_nearest_interpolation = show_preds_as_display and (not show_preds_as_binary)
+        mask_scaled = torch.nn.functional.interpolate(
+            mask_select,
+            size=display_hw,
+            mode="nearest-exact" if use_nearest_interpolation else "bilinear",
+            align_corners=None if use_nearest_interpolation else False,
+        ).squeeze(dim=(0, 1))
 
-            # Scale selected mask to match display sizing
-            use_smooth_interpolation = show_preds_as_binary
-            mask_scaled = torch.nn.functional.interpolate(
-                mask_preds[:, mselect_idx, :, :].unsqueeze(1),
-                size=display_hw,
-                mode="bilinear" if use_smooth_interpolation else "nearest-exact",
-                align_corners=False if use_smooth_interpolation else None,
-            ).squeeze(dim=(0, 1))
+        # Handle display output, based on UI state
+        if show_preds_as_binary and show_preds_as_display:
+            disp_img = ((mask_scaled > 0.0).byte() * 255).cpu().numpy()
 
-            # Convert mask to displayable image
-            if show_preds_as_binary:
-                disp_img = ((mask_scaled > 0.0).byte() * 255).cpu().numpy()
-            else:
-                mask_uint8 = normalize_to_npuint8(mask_scaled)
-                disp_img = cmap_bar.apply_colormap(mask_uint8)
+        elif show_preds_as_display:
+            # Show colormapped mask result
+            mask_uint8 = normalize_to_npuint8(mask_scaled)
+            disp_img = cmap_bar.apply_colormap(mask_uint8)
+
+        else:
+            # Show original image (scaled to display size & cached)
+            disp_img = img_bgr_cache.regenerate(display_hw)
+
+            # Process contour data for overlay
+            mask_uint8 = ((mask_scaled > 0.0).byte() * 255).cpu().numpy()
+            ok_contours, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
 
         # Render final output
+        ui_elems.olays.polygon.set_polygons(None if show_preds_as_display else mask_contours_norm)
         ui_elems.image.set_image(disp_img)
         display_image = disp_layout.render(h=display_size_px)
         req_break, keypress = window.show(display_image)

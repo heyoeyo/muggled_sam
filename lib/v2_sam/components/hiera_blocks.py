@@ -21,8 +21,9 @@ class TransformerBlock(nn.Module):
     Wrapper around self-attention block which adds layernorms & MLP on output.
     This is a standard vision-transformer-encoder with GELU (MLP) activations.
 
-    This implementation corresponds to a specific configuration of what was
-    called a 'MultiScaleBlock' in the original implementation.
+    This implementation corresponds to a specific configuration (window_size=0)
+    of what was called a 'MultiScaleBlock' in the original implementation. See:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/backbones/hieradet.py#L82
     """
 
     # .................................................................................................................
@@ -74,7 +75,8 @@ class WindowedBlock(nn.Module):
     ability to encode data about long-range pairings of image tokens.
 
     This implementation corresponds to a specific configuration of what was
-    called a 'MultiScaleBlock' in the original implementation.
+    called a 'MultiScaleBlock' in the original implementation. See:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/backbones/hieradet.py#L82
     """
 
     # .................................................................................................................
@@ -303,8 +305,9 @@ class PooledSelfAttention(nn.Module):
     and supports different feature sizes for input/outputs.
 
     The original implementation does not have this module, instead
-    it uses flags to toggle the pooling functionality on/off at runtime
-    from a single (shared) self-attention module called 'MultiScaleAttention'.
+    it uses flags to toggle the pooling functionality on/off at runtime from
+    a single (shared) self-attention module called 'MultiScaleAttention', see:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/backbones/hieradet.py#L37
     """
 
     # .................................................................................................................

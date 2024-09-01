@@ -27,9 +27,12 @@ class HieraModel(nn.Module):
         Piotr Dollár, Christoph Feichtenhofer
         @ https://ai.meta.com/research/publications/sam-2-segment-anything-in-images-and-videos/
 
-    This model is a multi-stage vision-transformer which uses windowed attention on most blocks.
+    This model is a fairly complex, multi-stage, multi-resolution vision-transformer which uses
+    windowed attention on most blocks. This implementation (for SAMv2) is expected to have 4 stages.
     At each stage (except the first) inputs are pooled, which results in spatial downsampling of
-    processed image tokens. Some stages include equally spaced non-windowed attention blocks.
+    processed image tokens. The third stage includes equally spaced non-windowed attention blocks.
+    The spacing of the non-windowed attention blocks as well as the window sizes per (windowed)
+    block are set by external configs and do not follow an intuitive pattern.
 
     The output of the model is a list of encoded image tokens output from each of the
     stages of the model. Each set of tokens is progressively halved in width & height,
@@ -138,18 +141,25 @@ class HieraModel(nn.Module):
 
 class HieraStage(nn.Sequential):
     """
-    Represents a single stage of the hierarchical image encoder (Hiera) from SAMV2
+    Represents a single stage of the hierarchical image encoder (Hiera) from SAMV2.
 
-    Each stage consists of a sequence of transformer blocks for encoding image patch tokens.
-    Except for the first stage (generally?) each stage begins with a 2x2 max-pooling, which
-    reduces the spatial size of tokens which doubling the features per token.
+    Each stage consists of a sequence of (mostly) windowed transformer blocks for
+    encoding image patch tokens. Except for the first stage, each stage begins with
+    a 2x2 max-pooling, which reduces the spatial size of tokens while doubling the
+    features per token. The window sizing varies per stage according to external
+    configs, though the first block of each stage can use a different window size
+    (usually matched to the stage before it).
 
-    Within the 3rd stage of the model, there are always (so far?) 3 blocks which use global
-    attention (i.e. not windowed), which are all equally spaced starting from the final
-    block of the stage. This pattern is hard-coded into this implementation.
+    Within the 3rd stage of the model, there are always (at least for SAMv2) 3 blocks
+    which use global attention (i.e. not windowed). The final block of stage 3 is
+    always a global block, with the remaining two blocks spaced 'N' and '2N' blocks
+    earlier in the sequence, where the global block spacing 'N' is given by an
+    external config (i.e. the blocks aren't evenly spaced across the stage itself).
 
     Note: This module is not present in the original implementation. Instead all blocks are
     configured as a single sequence, with per-stage configurations handled on init.
+    The equivalent original code can be found here:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/backbones/hieradet.py#L232
     """
 
     # .................................................................................................................

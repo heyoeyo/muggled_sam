@@ -6,14 +6,14 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
   <img src=".readme_assets/demo_anim.gif">
 </p>
 
-While the focus of this implementation is on interactivity and readability of the code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases.
+While the focus of this implementation is on interactivity and readability of the model code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
 > [!Note]
 > This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
 
 ## Getting started
 
-This repo includes two demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) and [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) (along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples)). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
+This repo includes two demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) and [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) (along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) and [experiments](https://github.com/heyoeyo/muggled_sam/tree/main/experiments)). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
 
 ### Install
 First create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
@@ -125,9 +125,9 @@ To use the script, make sure you've activated the virtual environment (from the 
 python run_video.py
 ```
 
-As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed.
+As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` and `-ar` can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!).
 
-This script is a messy work-in-progress for now, more features & stability updates to come!
+This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
 
 # Acknowledgements
