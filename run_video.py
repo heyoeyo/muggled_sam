@@ -20,7 +20,7 @@ from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
-from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
+from lib.demo_helpers.ui.video import ReversibleLoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
 from lib.demo_helpers.ui.layout import HStack, VStack
 from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton, RadioConstraint
 from lib.demo_helpers.ui.static import StaticMessageBar
@@ -201,7 +201,7 @@ assert isinstance(sammodel, SAMV2Model), "Only SAMv2 models are supported for vi
 sammodel.to(**device_config_dict)
 
 # Set up access to video
-vreader = LoopingVideoReader(video_path).release()
+vreader = ReversibleLoopingVideoReader(video_path).release()
 sample_frame = vreader.get_sample_frame()
 
 # Initial model run to make sure everything succeeds
@@ -315,11 +315,13 @@ force_same_min_width(vram_text, objscore_text)
 show_preview_btn = ToggleButton("Preview", default_state=False)
 invert_mask_btn = ToggleButton("Invert", default_state=False)
 track_btn = ToggleButton("Track", on_color=(30, 140, 30))
+reversal_btn = ToggleButton("Reverse", default_state=False, text_scale=0.35)
 store_prompt_btn = ImmediateButton("Store Prompt", text_scale=0.35, color=(145, 160, 40))
 clear_prompts_btn = ImmediateButton("Clear Prompts", text_scale=0.35, color=(80, 110, 230))
 enable_history_btn = ToggleButton("Enable History", default_state=True, text_scale=0.35, on_color=(90, 85, 115))
 clear_history_btn = ImmediateButton("Clear History", text_scale=0.35, color=(130, 60, 90))
 force_same_min_width(store_prompt_btn, clear_prompts_btn, enable_history_btn, clear_history_btn)
+
 
 # Create save UI
 enable_record_btn = ToggleButton("Enable Recording", default_state=False, on_color=(0, 15, 255), button_height=60)
@@ -359,7 +361,7 @@ disp_layout = VStack(
     playback_slider if not use_webcam else None,
     HStack(vram_text, objscore_text),
     HStack(num_prompts_text, track_btn, num_history_text),
-    HStack(store_prompt_btn, clear_prompts_btn, enable_history_btn, clear_history_btn),
+    HStack(store_prompt_btn, clear_prompts_btn, reversal_btn, enable_history_btn, clear_history_btn),
     footer_msgbar if show_info else None,
 ).set_debug_name("DisplayLayout")
 
@@ -385,6 +387,7 @@ window.attach_keypress_callback("i", invert_mask_btn.toggle)
 window.attach_keypress_callback("b", buffer_btn_constraint.next)
 window.attach_keypress_callback("v", buffer_btn_constraint.previous)
 window.attach_keypress_callback(KEY.TAB, store_prompt_btn.click)
+window.attach_keypress_callback("r", reversal_btn.toggle)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
@@ -415,6 +418,11 @@ tran_state = STATES.NO_TRANSISTION
 try:
 
     for is_paused, frame_idx, frame in vreader:
+
+        # Change playback direction, if needed
+        is_reversed_changed, reverse_video = reversal_btn.read()
+        if is_reversed_changed:
+            vreader.toggle_reverse_state(reverse_video)
 
         # Read controls
         is_changed_pause_state = pause_keeper.is_changed(is_paused)
