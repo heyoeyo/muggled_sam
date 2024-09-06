@@ -6,6 +6,7 @@
 # %% Imports
 
 import cv2
+import numpy as np
 
 from typing import TypeAlias
 
@@ -171,13 +172,40 @@ class TextDrawer:
 
     # .................................................................................................................
 
-    def draw_to_box_px(self, image, text, xy1_px, xy2_px, fill_box=False):
-        raise NotImplementedError()
+    def draw_to_box_norm(
+        self,
+        image,
+        text,
+        xy1_norm=(0.0, 0.0),
+        xy2_norm=(1.0, 1.0),
+        margin_xy_px=(0, 0),
+        scale_step_size=0.05,
+    ):
+        """
+        Function used to draw text in order to 'fill' a given box region in the image.
 
-    # .................................................................................................................
+        The scale of the text will be chosen so that the text fits into the
+        box given by the top-left/bottom-right coords. (xy1, xy2), minus any
+        margin specified and with a scaling limited to multiples of the
+        given scale step size (rendering can be cleaner with certain multiples).
+        """
 
-    def draw_to_box_norm(self, image, text, xy1_norm, xy2_norm, fill_box=False):
-        raise NotImplementedError()
+        # Figure out how large of a drawing area we have
+        img_h, img_w = image.shape[0:2]
+        (x1, y1), (x2, y2) = xy1_norm, xy2_norm
+        target_h = max(1, (abs(y2 - y1) * img_h) - margin_xy_px[1])
+        target_w = max(1, (abs(x2 - x1) * img_w) - margin_xy_px[0])
+
+        # Figure out how much to adjust scale to fit target size
+        base_scale = 1
+        txt_w, txt_h, _ = self.get_text_size(text, base_scale)
+        h_scale, w_scale = target_h / txt_h, target_w / txt_w
+        scale_adjust = min(h_scale, w_scale)
+
+        # Draw text to new scale (with step size limiting)
+        xy_mid = tuple((a + b) / 2 for a, b in zip(xy1_norm, xy2_norm))
+        new_scale = np.floor((base_scale * scale_adjust) / scale_step_size) * scale_step_size
+        return self.xy_norm(image, text, xy_mid, anchor_xy_norm=(0.5, 0.5), scale=new_scale)
 
     # .................................................................................................................
 
@@ -214,7 +242,6 @@ class TextDrawer:
 
 
 if __name__ == "__main__":
-    import numpy as np
 
     txt1 = TextDrawer()
     txt2 = TextDrawer(2, 2, color=(0, 0, 255))

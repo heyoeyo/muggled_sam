@@ -3,6 +3,17 @@
 This folder contains random experiments using the SAM models, mostly out of curiosity. These scripts have configurable options which can be viewed by running the scripts with the `--help` flag.
 
 
+## Block Norm Visualization
+
+This script is a companion to an earlier [block norm visualization](https://github.com/heyoeyo/muggled_dpt/tree/main/experiments#block-norm-visualization) script for depth-prediction models. The display shows the 'block norms' of the image features at every layer of the model (SAMv1 or v2), alongside a per-channel visualization. A paper titled [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588) suggests that vision transformers (like the image encoder inside the SAM models) will end up with tokens that have unusually high value norms if they don't include 'register' tokens (neither version of SAM includes these). This script can help detect these artifacts in both SAMv1 or v2 as well as any fine-tuned variants.
+
+<p align="center">
+  <img src=".readme_assets/blocknorm_example.webp" alt="">
+</p>
+
+Interestingly, while the base+ and large SAMv2 models _do_ have these high-norm tokens as expected (see the blacked-out tiles in the example image above), the SAMv1 models **do not**! There are other interesting patterns as well, for example, the high-norm blocks of SAMv2 seem to exclusive appear in stage 3. Additionally, the tokens for the v1 models show surprisingly little differences from one block to another (vaguely suggesting that the models could make due with far fewer blocks?), while the v2 models show similarly small differences between blocks within each stage, but drastic differences between stages (likely due to pooling).
+
+
 ## Video with Image Priors
 
 This experimental script is a follow-up to a [post on the SAMv2 issues board (#210)](https://github.com/facebookresearch/segment-anything-2/issues/210), where the idea of re-using the SAMv2 memory bank across videos/images was suggested. This script begins by having the user 'record' prompts from a loaded image and then uses these prompts as the initial memory (with no other prompts) to run segmentation on a separate (potentially unrelated) video:

@@ -332,6 +332,314 @@ class VStack(BaseCallback):
     # .................................................................................................................
 
 
+class GridStack(BaseCallback):
+    """
+    Layout which combines elements into a grid with a specified number of rows and columns
+    Items should be given in 'row-first' format (i.e. items fill out grid row-by-row)
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, *items, num_rows=None, num_columns=None, target_aspect_ratio=1):
+
+        super().__init__(128, 128)
+        self.append_children(*items)
+
+        # Fill in missing row/column counts
+        num_items = len(items)
+        if num_rows is None and num_columns is None:
+            num_rows, num_columns = self.get_row_column_by_aspect_ratio(num_items, target_aspect_ratio)
+        elif num_rows is None:
+            num_rows = int(np.ceil(num_items / num_columns))
+        elif num_columns is None:
+            num_columns = int(np.ceil(num_items / num_rows))
+        self._num_rows = num_rows
+        self._num_cols = num_columns
+
+        # Update stack sizing based on children
+        min_h_per_row = []
+        for _, child_per_row in self.row_iter():
+            min_h_per_row.append(max(child._rdr.limits.min_h for child in child_per_row))
+        min_w_per_col = []
+        for _, child_per_col in self.column_iter():
+            min_w_per_col.append(max(child._rdr.limits.min_w for child in child_per_col))
+        total_min_h = sum(min_h_per_row)
+        total_min_w = sum(min_w_per_col)
+        self._rdr.limits.update(min_h=total_min_h, min_w=total_min_w, expand_h=True, expand_w=True)
+
+    # .................................................................................................................
+
+    def __repr__(self):
+        child_names = [str(child._debug_name) for child in self]
+        return f"{self._debug_name} [{', '.join(child_names)}]"
+
+    # .................................................................................................................
+
+    def get_row_columns(self) -> tuple[int, int]:
+        """Get current row/column count of the grid layout"""
+        return (self._num_rows, self._num_cols)
+
+    # .................................................................................................................
+
+    def transpose(self):
+        """Flip number of rows & columns"""
+        self._num_rows, self._num_cols = self._num_cols, self._num_rows
+        return self
+
+    # .................................................................................................................
+
+    def row_iter(self):
+        """
+        Iterator over items per row. Example:
+            for row_idx, items_in_row in grid.row_iter():
+                # ... Do something with each row ...
+
+                for col_idx, item for enumerate(items_in_row):
+                    # ... Do something with each item ...
+                    pass
+                pass
+        """
+
+        for row_idx in range(self._num_rows):
+            idx1 = row_idx * self._num_cols
+            idx2 = idx1 + self._num_cols
+            items_in_row = self[idx1:idx2]
+            if len(items_in_row) == 0:
+                break
+            yield row_idx, tuple(items_in_row)
+
+        return
+
+    # .................................................................................................................
+
+    def column_iter(self):
+        """
+        Iterator over items per column. Example:
+            for col_idx, items_in_column in grid.column_iter():
+                # ... Do something with each column ...
+
+                for row_idx, item for enumerate(items_in_column):
+                    # ... Do something with each item ...
+                    pass
+                pass
+        """
+
+        num_items = len(self)
+        for col_idx in range(self._num_cols):
+            item_idxs = [col_idx + row_idx * self._num_cols for row_idx in range(self._num_rows)]
+            items_in_column = tuple(self[item_idx] for item_idx in item_idxs if item_idx < num_items)
+            if len(items_in_column) == 0:
+                break
+            yield col_idx, items_in_column
+
+        return
+
+    # .................................................................................................................
+
+    def grid_iter(self):
+        """
+        Iterator over all items while returning row/column index. Example:
+            for row_idx, col_idx, item in grid.grid_iter():
+                # ... Do something with each item ...
+                pass
+        """
+
+        for item_idx, item in enumerate(self):
+            row_idx = item_idx // self._num_cols
+            col_idx = item_idx % self._num_cols
+            yield row_idx, col_idx, item
+
+        return
+
+    # .................................................................................................................
+
+    def _render_up_to_size(self, h, w):
+
+        # Set up starting stack point, used to keep track of child callback regions
+        x_stack = self._cb_region.x1
+        y_stack = self._cb_region.y1
+
+        # Figure out how tall each row should be
+        ideal_h_per_row = h // self._num_rows
+        h_gap = h % self._num_rows
+        h_per_row = [ideal_h_per_row + int(idx < h_gap) for idx in range(self._num_rows)]
+
+        # Figure out how wide each column should be
+        ideal_w_per_col = w // self._num_cols
+        w_gap = w % self._num_cols
+        w_per_col = [ideal_w_per_col + int(idx < w_gap) for idx in range(self._num_cols)]
+
+        # Render all child items to target sizing
+        row_images_list = []
+        for row_idx, children_per_row in self.row_iter():
+
+            row_height = h_per_row[row_idx]
+            col_images_list = []
+            for col_idx, child in enumerate(children_per_row):
+                col_width = w_per_col[col_idx]
+                frame = child._render_up_to_size(row_height, col_width)
+                orig_frame_h, orig_frame_w = frame.shape[0:2]
+
+                # Adjust frame width if needed
+                tpad, bpad, lpad, rpad = 0, 0, 0, 0
+                if (orig_frame_h < row_height) or (orig_frame_w < col_width):
+                    available_h, available_w = row_height - orig_frame_h, col_width - orig_frame_w
+                    lpad = available_w // 2
+                    rpad = available_w - lpad
+                    tpad = available_h // 2
+                    bpad = available_h - tpad
+                    ptype = child._rdr.pad.style
+                    pcolor = child._rdr.pad.color
+                    frame = cv2.copyMakeBorder(frame, tpad, bpad, lpad, rpad, ptype, value=pcolor)
+
+                # Crop oversized heights
+                if orig_frame_h > row_height:
+                    print(
+                        f"Render sizing error! ({child._debug_name})",
+                        f"  Expecting height: {h}, got {orig_frame_h}",
+                        "-> Will crop!",
+                        sep="\n",
+                    )
+                    frame = frame[:row_height, :, :]
+                    orig_frame_h = row_height
+
+                # Crop oversized widths
+                if orig_frame_w > col_width:
+                    print(
+                        f"Render sizing error! ({child._debug_name})",
+                        f"  Expecting width: {w}, got {orig_frame_w}",
+                        "-> Will crop!",
+                        sep="\n",
+                    )
+                    frame = frame[:, :col_width, :]
+                    orig_frame_w = col_width
+
+                # Store image for forming row-images
+                col_images_list.append(frame)
+
+                # Provide callback region to child item
+                x1, y1 = x_stack + lpad, y_stack + tpad
+                x2, y2 = x1 + orig_frame_w, y1 + orig_frame_h
+                child._cb_region.update(x1, y1, x2, y2)
+
+                # Update x-stacking point for each column
+                x_stack = x2 + rpad
+
+            # Combine all column images to form one row image, padding if needed
+            one_row_image = np.hstack(col_images_list)
+            _, one_row_w = one_row_image.shape[0:2]
+            if one_row_w < w:
+                pad_w = w - one_row_w
+                ptype = self._rdr.pad.style
+                pcolor = self._rdr.pad.color
+                one_row_image = cv2.copyMakeBorder(one_row_image, 0, 0, 0, pad_w, ptype, value=pcolor)
+            row_images_list.append(one_row_image)
+
+            # Reset x-stacking point & update y-stacking point, for each completed row
+            x_stack = self._cb_region.x1
+            y_stack = y_stack + row_height
+
+        return np.vstack(row_images_list)
+
+    # .................................................................................................................
+
+    def _get_height_and_width_without_hint(self) -> [int, int]:
+        """Set height to the total of largest heights per row, width to the total largest widths per column"""
+
+        # Set height based on largest heights per row
+        max_h_per_row = []
+        for _, items_per_row in self.row_iter():
+            max_h_per_row.append(max(item._rdr.limits.min_h for item in items_per_row))
+        height = sum(max_h_per_row)
+
+        # Set width based on largest widths per column
+        max_w_per_col = []
+        for _, items_per_col in self.column_iter():
+            max_w_per_col.append(max(item._rdr.limits.min_w for item in items_per_col))
+        width = sum(max_w_per_col)
+
+        return height, width
+
+    def _get_height_given_width(self, w) -> int:
+        """Set height to the sum of the tallest elements per row"""
+
+        # Figure out width of each column (assuming equal assignment)
+        ideal_w_per_col = w // self._num_cols
+        w_gap = w % self._num_cols
+        w_per_col = [ideal_w_per_col + int(idx < w_gap) for idx in range(self._num_cols)]
+
+        # Sum up all widths per row
+        heights_per_row = [[] for _ in range(self._num_rows)]
+        for row_idx, col_idx, child in self.grid_iter():
+            heights_per_row[row_idx].append(child._update_render_sizing(w=w_per_col[col_idx]).h)
+
+        # Set height to the total height based on tallest item per row stacked together
+        max_height_per_row = [max(row_heights) for row_heights in heights_per_row]
+        return sum(max_height_per_row)
+
+    def _get_width_given_height(self, h) -> int:
+        """Set width to the widest row"""
+
+        # Figure out height of each row (assuming equal assignment)
+        ideal_h_per_row = h // self._num_rows
+        h_gap = h % self._num_rows
+        h_per_row = [ideal_h_per_row + int(idx < h_gap) for idx in range(self._num_rows)]
+
+        # Sum up all widths per row
+        total_w_per_row = [0] * self._num_rows
+        for row_idx, col_idx, child in self.grid_iter():
+            total_w_per_row[row_idx] += child._update_render_sizing(h=h_per_row[row_idx]).w
+
+        # Set width to the widest row
+        return max(total_w_per_row)
+
+    # .................................................................................................................
+
+    @staticmethod
+    def get_row_column_options(num_items) -> list[tuple[int, int]]:
+        """
+        Helper used to get all possible neatly divisible combinations of (num_rows, num_columns)
+        for a given number of items, in order of fewest rows -to- most rows.
+        For example for num_items = 6, returns:
+            ((1, 6), (2, 3), (3, 2), (6, 1))
+            -> This is meant to be interpreted as:
+                (1 row, 6 columns) OR (2 rows, 3 columns) OR (3 rows, 2 columns) OR (6 rows, 1 column)
+
+        As another example, for num_items = 12, returns:
+            ((1, 12), (2, 6), (3, 4), (4, 3), (6, 2), (12, 1))
+        """
+        return tuple((k, num_items // k) for k in range(1, 1 + num_items) if (num_items % k) == 0)
+
+    # .................................................................................................................
+
+    @staticmethod
+    def get_aspect_ratio_similarity(row_column_options, target_aspect_ratio) -> list[float]:
+        """
+        Compute similarity score (0 to 1) indicating how close of match
+        each row/column option is to the target aspect ratio.
+        """
+        target_theta, pi_over_2 = np.arctan(target_aspect_ratio), np.pi / 2
+        difference_scores = (abs(np.arctan(col / row) - target_theta) for row, col in row_column_options)
+        return tuple(float(1.0 - (diff / pi_over_2)) for diff in difference_scores)
+
+    # .................................................................................................................
+
+    @classmethod
+    def get_row_column_by_aspect_ratio(cls, num_items, target_aspect_ratio=1.0) -> tuple[int, int]:
+        """
+        Helper used to choose the number of rows & columns to best match a target aspect ratio
+        Returns: (num_rows, num_columns)
+        """
+
+        rc_options = cls.get_row_column_options(num_items)
+        ar_similarity = cls.get_aspect_ratio_similarity(rc_options, target_aspect_ratio)
+        best_match_idx = np.argmax(ar_similarity)
+
+        return rc_options[best_match_idx]
+
+    # .................................................................................................................
+
+
 class OverlayStack(BaseCallback):
 
     # .................................................................................................................
