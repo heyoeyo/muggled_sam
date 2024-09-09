@@ -232,7 +232,7 @@ class MemoryConcatenator(nn.Module):
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(init_memenc.shape, -1).flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(init_memenc.shape, pos_idx).flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
 
