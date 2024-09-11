@@ -299,8 +299,8 @@ footer_msgbar = StaticMessageBar(
 # Form final display layout
 heading_bg_color = (0, 0, 0)
 disp_layout = VStack(
-    cmap_bar,
     header_msgbar if show_info else None,
+    cmap_bar,
     HStack(
         VStack(StaticMessageBar("Channel Features", bar_bg_color=heading_bg_color), result_img, text_row),
         HSeparator(8),
@@ -322,6 +322,13 @@ window.attach_keypress_callback("g", norm_grid.transpose)
 # For clarity, some additional keypress codes for controlling display size
 KEY_ZOOM_IN = ord("=")
 KEY_ZOOM_OUT = ord("-")
+
+# Set up values that may not be set until hitting conditionals otherwise
+channel_idx = 0
+result_select = captures[0]
+num_channels = result_select.shape[3]
+max_allowable_channel_idx = num_channels - 1
+result_uint8 = normalize_to_npuint8(result_select[0, :, :, channel_idx])
 
 try:
     while True:
@@ -349,7 +356,8 @@ try:
 
             # Get new channel/norm data for display
             result_select = captures[block_idx]
-            max_allowable_channel_idx = result_select.shape[3] - 1
+            num_channels = result_select.shape[3]
+            max_allowable_channel_idx = num_channels - 1
             channel_idx = round(channel_select_0to1 * max_allowable_channel_idx)
             if show_norm_img:
                 result_tensor = result_select.squeeze(0).norm(dim=-1)
@@ -381,11 +389,11 @@ try:
         #    increment the slider by an amount that will increment/decrement the channel index,
         #    regardless of the total number of channels on the current block layer!
         if keypress == KEY.LEFT_ARROW:
-            prev_channel_idx = max(channel_idx - 1, 0)
+            prev_channel_idx = (channel_idx - 1) % num_channels
             channel_as_0to1 = prev_channel_idx / max_allowable_channel_idx
             channel_slider.set(channel_as_0to1, use_as_default_value=False)
         elif keypress == KEY.RIGHT_ARROW:
-            next_channel_idx = min(channel_idx + 1, max_allowable_channel_idx)
+            next_channel_idx = (channel_idx + 1) % num_channels
             channel_as_0to1 = next_channel_idx / max_allowable_channel_idx
             channel_slider.set(channel_as_0to1, use_as_default_value=False)
 
