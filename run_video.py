@@ -18,7 +18,6 @@ import numpy as np
 from lib.make_sam import make_sam_from_state_dict
 from lib.v2_sam.sam_v2_model import SAMV2Model
 
-from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.video import ReversibleLoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
 from lib.demo_helpers.ui.layout import HStack, VStack
@@ -27,6 +26,9 @@ from lib.demo_helpers.ui.static import StaticMessageBar
 from lib.demo_helpers.ui.text import ValueBlock, TextBlock
 from lib.demo_helpers.ui.base import force_same_min_width
 from lib.demo_helpers.ui.overlays import DrawPolygonsOverlay
+
+from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
+from lib.demo_helpers.crop_ui import run_crop_ui
 
 from lib.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
 from lib.demo_helpers.history_keeper import HistoryKeeper
@@ -147,6 +149,12 @@ parser.add_argument(
     action="store_true",
     help="If set, this simplifies the UI by hiding the element associated with saving",
 )
+parser.add_argument(
+    "--crop",
+    default=False,
+    action="store_true",
+    help="If set, a cropping UI will appear on start-up to allow for the image to be cropped prior to processing",
+)
 
 # For convenience
 args = parser.parse_args()
@@ -166,6 +174,7 @@ discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
 show_info = not args.hide_info
 use_webcam = args.use_webcam
+enable_crop_ui = args.crop
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -203,6 +212,10 @@ sammodel.to(**device_config_dict)
 # Set up access to video
 vreader = ReversibleLoopingVideoReader(video_path).release()
 sample_frame = vreader.get_sample_frame()
+if enable_crop_ui:
+    print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
+    x_crop, y_crop = run_crop_ui(sample_frame, display_size_px)
+    sample_frame = sample_frame[y_crop, x_crop, :]
 
 # Initial model run to make sure everything succeeds
 print("", "Encoding image data...", sep="\n", flush=True)
@@ -418,6 +431,10 @@ tran_state = STATES.NO_TRANSISTION
 try:
 
     for is_paused, frame_idx, frame in vreader:
+
+        # Crop incoming frames if needed
+        if enable_crop_ui:
+            frame = frame[y_crop, x_crop, :]
 
         # Change playback direction, if needed
         is_reversed_changed, reverse_video = reversal_btn.read()

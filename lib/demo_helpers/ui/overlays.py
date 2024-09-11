@@ -539,3 +539,286 @@ class BoxSelectOverlay(BaseOverlay):
         return is_valid, new_tlbr
 
     # .................................................................................................................
+
+
+class CropBoxOverlay(BaseOverlay):
+    """
+    Overlay used to provide a 'crop-box' or similar UI
+    The idea being to have a single box that can be modified
+    by clicking and dragging the corners or sides, or otherwise
+    fully re-drawn by clicking far enough away from the box.
+    It is always assumed that there is 1 box!
+
+    This differs from the regular 'box select overlay' which
+    re-draws boxes on every click and supports multiple boxes
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        color=(0, 255, 255),
+        thickness=1,
+        bg_color=(0, 0, 0),
+        indicator_base_radius=6,
+        interaction_distance_px=100,
+        minimum_box_area_norm=5e-5,
+    ):
+        # Inherit from parent
+        super().__init__()
+
+        # Store box points in format that supports 'mid points'
+        self._x_norms = np.float32([0.0, 0.5, 1.0])
+        self._y_norms = np.float32([0.0, 0.5, 1.0])
+        self._prev_xy_norms = (self._x_norms, self._y_norms)
+        self._is_changed = False
+
+        # Store indexing used to specify which of the box points is being modified, if any
+        self._is_modifying = False
+        self._xy_modify_idx = (2, 2)
+        self._mouse_xy_norm = (0.0, 0.0)
+
+        # Store thresholding settings
+        self._minimum_area_norm = minimum_box_area_norm
+        self._interact_dist_px_threshold = interaction_distance_px
+
+        # Store display config
+        self._fg_color = color
+        self._bg_color = bg_color
+        self._fg_thick = thickness
+        self._bg_thick = thickness + 1
+        self._ltype = cv2.LINE_4
+        self._ind_base_radius = indicator_base_radius
+        self._ind_fg_radius = self._ind_base_radius + self._fg_thick
+        self._ind_bg_radius = self._ind_fg_radius + (self._bg_thick - self._fg_thick)
+        self._ind_ltype = cv2.LINE_AA
+
+    # .................................................................................................................
+
+    def style(self, color=None, thickness=None, bg_color=None, bg_thickness=None):
+        """Update box styling. Any settings given as None will remain unchanged"""
+
+        if color is not None:
+            self._fg_color = color
+        if thickness is not None:
+            self._fg_thick = thickness
+            self._ind_fg_radius = self._ind_base_radius + self._fg_thick
+        if bg_color is not None:
+            self._bg_color = bg_color if bg_color != -1 else None
+        if bg_thickness is not None:
+            self._bg_thick = bg_thickness
+            self._ind_bg_radius = self._ind_fg_radius + (self._bg_thick - self._fg_thick)
+
+        return self
+
+    # .................................................................................................................
+
+    def clear(self):
+        """Reset box back to entire frame size"""
+        self._x_norms = np.float32([0.0, 0.5, 1.0])
+        self._y_norms = np.float32([0.0, 0.5, 1.0])
+        self._is_changed = True
+        self._is_modifying = False
+        return self
+
+    # .................................................................................................................
+
+    def read(self) -> tuple[bool, bool, tuple[tuple[float, float], tuple[float, float]]]:
+        """
+        Read current box state
+        Returns:
+            is_changed, is_valid, box_tlbr_norm
+            -> 'is_box_valid' is based on the minimum box area setting
+            -> box_tlbr_norm is in format: ((x1, y1), (x2, y2))
+        """
+
+        # Toggle change state, if needed
+        is_changed = self._is_changed
+        self._is_changed = False
+
+        # Get top-left/bottom-right output if it exists
+        x1, _, x2 = sorted(self._x_norms.tolist())
+        y1, _, y2 = sorted(self._y_norms.tolist())
+        box_tlbr_norm = ((x1, y1), (x2, y2))
+        is_valid = ((x2 - x1) * abs(y2 - y1)) > self._minimum_area_norm
+
+        return is_changed, is_valid, box_tlbr_norm
+
+    # .................................................................................................................
+
+    def set_box(self, tlbr_norm: tuple[tuple[float, float], tuple[float, float]]):
+        """
+        Update box coordinates. Input is expected in top-left/bottom-right format:
+            ((x1, y1), (x2, y2))
+        """
+
+        (x1, y1), (x2, y2) = tlbr_norm
+        x_mid, y_mid = (x1 + x2) * 0.5, (y1 + y2) * 0.5
+        self._x_norms = np.float32((x1, x_mid, x2))
+        self._y_norms = np.float32((y1, y_mid, y2))
+        self._is_changed = True
+        self._is_modifying = False
+
+        return self
+
+    # .................................................................................................................
+
+    def on_move(self, cbxy, cbflags):
+
+        # Record mouse position for rendering 'closest point' indicator on hover
+        self._mouse_xy_norm = cbxy.xy_norm
+
+        return
+
+    def on_left_down(self, cbxy, cbflags):
+        """Create a new box or modify exist box based on left-click position"""
+
+        # Ignore clicks outside of region
+        if not cbxy.is_in_region:
+            return
+
+        # Record 'previous' box, in case we need to reset (happens if user draws invalid box)
+        self._prev_xy_norms = (self._x_norms, self._y_norms)
+
+        # Figure out if we're 'modifying' the box or drawing a new one
+        xy_idx, xy_dist = self._check_xy_interaction(cbxy.xy_norm, cbxy.hw_px)
+        is_center_closest = all(idx == 1 for idx in xy_idx)
+        is_new_click = max(xy_dist) > self._interact_dist_px_threshold or is_center_closest
+
+        # Either modify an existing point or reset/re-draw the box if clicking away from existing points
+        self._xy_modify_idx = xy_idx
+        if is_new_click:
+            # We modify the 'last' xy coord on new boxes, by convention
+            self._xy_modify_idx = (2, 2)
+            new_x, new_y = cbxy.xy_norm
+            self._x_norms = np.float32((new_x, new_x, new_x))
+            self._y_norms = np.float32((new_y, new_y, new_y))
+
+        self._is_modifying = True
+        self._is_changed = True
+
+        return
+
+    def on_drag(self, cbxy, cbflags):
+        """Modify box corner or midpoint when dragging"""
+
+        # Bail if no points are being modified (shouldn't happen...?)
+        if not self._is_modifying:
+            return
+
+        # Don't allow dragging out-of-bounds!
+        new_x, new_y = np.clip(cbxy.xy_norm, 0.0, 1.0)
+
+        # Update corner points (if they're the ones being modified) and re-compute mid-points
+        x_mod_idx, y_mod_idx = self._xy_modify_idx
+        if x_mod_idx != 1:
+            self._x_norms[x_mod_idx] = new_x
+            self._x_norms[1] = (self._x_norms[0] + self._x_norms[2]) * 0.5
+        if y_mod_idx != 1:
+            self._y_norms[y_mod_idx] = new_y
+            self._y_norms[1] = (self._y_norms[0] + self._y_norms[2]) * 0.5
+
+        # Assume box is changed by dragging update
+        self._is_changed = True
+
+        return
+
+    def on_left_up(self, cbxy, cbflags):
+        """Stop modifying box on left up"""
+
+        # Reset modifier indexing
+        self._is_modifying = False
+
+        # Reset if the resulting box is too small
+        h_px, w_px = cbxy.hw_px
+        box_w = int(np.abs(self._x_norms[0] - self._x_norms[2]) * (h_px - 1))
+        box_h = int(np.abs(self._y_norms[0] - self._y_norms[1]) * (w_px - 1))
+        box_area_norm = (box_h * box_w) / (h_px * w_px)
+        if box_area_norm < self._minimum_area_norm:
+            self._x_norms, self._y_norms = self._prev_xy_norms
+            self._is_changed = True
+
+        return
+
+    def on_right_click(self, cbxy, cbflags):
+        self.clear()
+        return
+
+    # .................................................................................................................
+
+    def _check_xy_interaction(self, target_xy_norm, frame_hw=None):
+        """
+        Helper used to check which of the box points (corners or midpoints)
+        are closest to given target xy coordinate, and what the x/y distance
+        ('manhattan distance') is to the closest point. Used to determine
+        which points may be interacted with for dragging/modifying the box.
+
+        Returns:
+            closest_xy_index, closest_xy_distance_px
+            -> Indexing is with respect to self._x_norms & self._y_norms
+        """
+
+        # Default to 'fake' pixel count if not given (so we can re-use the same calculations)
+        if frame_hw is None:
+            frame_hw = (2.0, 2.0)
+        h_scale, w_scale = tuple(float(size - 1.0) for size in frame_hw)
+        target_x, target_y = target_xy_norm
+
+        # Find closest x point on box
+        x_dists = np.abs(self._x_norms - target_x)
+        closest_x_index = np.argmin(x_dists)
+        closest_x_dist_px = x_dists[closest_x_index] * w_scale
+
+        # Find closest y point on box
+        y_dists = np.abs(self._y_norms - target_y)
+        closest_y_index = np.argmin(y_dists)
+        closest_y_dist_px = y_dists[closest_y_index] * h_scale
+
+        return (closest_x_index, closest_y_index), (closest_x_dist_px, closest_y_dist_px)
+
+    # .................................................................................................................
+
+    def _render_overlay(self, frame):
+
+        # Get sizing info
+        frame_hw = frame.shape[0:2]
+        h_scale, w_scale = tuple(float(size - 1.0) for size in frame_hw)
+        all_x_px = tuple(int(x * w_scale) for x in self._x_norms)
+        all_y_px = tuple(int(y * h_scale) for y in self._y_norms)
+        xy1_px, xy2_px = (all_x_px[0], all_y_px[0]), (all_x_px[-1], all_y_px[-1])
+
+        # Figure out whether we should draw interaction indicator & where
+        need_draw_indicator = True
+        if self._is_modifying:
+            # If user if modifying the box, choose the modified point for drawing
+            # -> We want to always draw the indicator for the point being dragged, even if
+            #    the mouse is closer to some other point (can happen when dragging mid points)
+            close_x_px = all_x_px[self._xy_modify_idx[0]]
+            close_y_px = all_y_px[self._xy_modify_idx[1]]
+
+        else:
+            # If user isn't already interacting, we'll draw an indicator if the mouse is
+            # close enough to a corner or mid point on the box. But we have to figure
+            # out which point that would be every time we re-render, in case the mouse moved!
+            (x_idx, y_idx), xy_dist = self._check_xy_interaction(self._mouse_xy_norm, frame_hw)
+            close_x_px = all_x_px[x_idx]
+            close_y_px = all_y_px[y_idx]
+            is_center_point = (x_idx == 1) and (y_idx == 1)
+            is_close_enough = all(dist < self._interact_dist_px_threshold for dist in xy_dist)
+            need_draw_indicator = is_close_enough and not is_center_point
+        closest_xy_px = (close_x_px, close_y_px)
+
+        # Draw all background coloring first, so it appears entirely 'behind' the foreground
+        if self._bg_color is not None:
+            if need_draw_indicator:
+                cv2.circle(frame, closest_xy_px, self._ind_bg_radius, self._bg_color, -1, self._ind_ltype)
+            cv2.rectangle(frame, xy1_px, xy2_px, self._bg_color, self._bg_thick, self._ltype)
+
+        # Draw box + interaction indicator circle in foreground color
+        if need_draw_indicator:
+            cv2.circle(frame, closest_xy_px, self._ind_fg_radius, self._fg_color, -1, self._ind_ltype)
+        cv2.rectangle(frame, xy1_px, xy2_px, self._fg_color, self._fg_thick, self._ltype)
+
+        return frame
+
+    # .................................................................................................................
