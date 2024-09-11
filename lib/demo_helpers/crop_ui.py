@@ -11,9 +11,11 @@ import numpy as np
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.layout import HStack, VStack, OverlayStack
 from lib.demo_helpers.ui.sliders import HSlider
-from lib.demo_helpers.ui.static import HSeparator, VSeparator
+from lib.demo_helpers.ui.static import HSeparator, VSeparator, StaticMessageBar
 from lib.demo_helpers.ui.images import ExpandingImage
+from lib.demo_helpers.ui.buttons import ImmediateButton
 from lib.demo_helpers.ui.overlays import CropBoxOverlay, HoverOverlay, DrawPolygonsOverlay
+from lib.demo_helpers.ui.text import ValueBlock
 
 from lib.demo_helpers.ui.helpers.images import get_image_hw_to_fill
 
@@ -34,21 +36,47 @@ def make_crop_ui(image_bgr, fg_line_color=(0, 255, 0)):
     # Set up interactive elements for user interactions
     zoom_olay = HoverOverlay()
     zoom_slider = HSlider("Zoom Factor", 0.5, 0, 1, step_size=0.05, marker_steps=5, enable_value_display=False)
-    crop_olay = CropBoxOverlay(fg_line_color, 2).set_box([(0.25, 0.25), (0.75, 0.75)])
+    crop_olay = CropBoxOverlay(image_bgr.shape, fg_line_color, 2).set_box([(0.25, 0.25), (0.75, 0.75)])
+
+    # Set up text blocks for feedback
+    xy1_txt = ValueBlock("Crop XY1: ", "(0,0)")
+    crop_wh_txt = ValueBlock("Crop WH: ", "(1,1)")
+    xy2_txt = ValueBlock("Crop XY2: ", "(1,1)")
+    done_btn = ImmediateButton("Done", color=(125, 185, 0))
 
     # Bundle all the ui elements
-    crop_ui = HStack(
-        OverlayStack(main_disp, zoom_olay, crop_olay),
-        HSeparator(8, color=(40, 40, 40)),
-        VStack(
-            OverlayStack(zoom_disp, zoom_poly_olay),
-            zoom_slider,
-            VSeparator(8, color=(40, 40, 40)),
-            crop_disp,
+    img_h, img_w = image_bgr.shape[0:2]
+    crop_ui = VStack(
+        StaticMessageBar(
+            f"Original: {img_w} x {img_h} px",
+        ),
+        HStack(
+            OverlayStack(main_disp, zoom_olay, crop_olay),
+            HSeparator(8, color=(40, 40, 40)),
+            VStack(
+                OverlayStack(zoom_disp, zoom_poly_olay),
+                zoom_slider,
+                VSeparator(8, color=(40, 40, 40)),
+                crop_disp,
+                done_btn,
+            ),
+        ),
+        HStack(xy1_txt, crop_wh_txt, xy2_txt),
+        StaticMessageBar(
+            "Click & drag to adjust crop boundaries",
+            "Arrow keys for fine adjustments",
+            "Use ] or [ keys to zoom",
+            text_scale=0.35,
+            space_equally=True,
         ),
     )
 
-    return crop_ui, (zoom_olay, zoom_slider, crop_olay), (main_disp, zoom_disp, zoom_poly_olay, crop_disp)
+    return (
+        crop_ui,
+        (zoom_olay, zoom_slider, crop_olay),
+        (main_disp, zoom_disp, zoom_poly_olay, crop_disp, done_btn),
+        (xy1_txt, crop_wh_txt, xy2_txt),
+    )
 
 
 # .....................................................................................................................
@@ -74,13 +102,24 @@ def run_crop_ui(
     """
 
     # Create & unpack ui elements
-    crop_ui, ui_interact, ui_displays = make_crop_ui(image_bgr, fg_line_color)
+    crop_ui, ui_interact, ui_displays, ui_text = make_crop_ui(image_bgr, fg_line_color)
     zoom_olay, zoom_slider, crop_olay = ui_interact
-    main_disp, zoom_disp, zoom_poly_olay, crop_disp = ui_displays
+    main_disp, zoom_disp, zoom_poly_olay, crop_disp, done_btn = ui_displays
+    crop_xy1_txt, crop_wh_txt, crop_xy2_txt = ui_text
 
     # Set up window for display
     window = DisplayWindow(window_title)
     window.attach_mouse_callbacks(crop_ui)
+    window.attach_keypress_callback("[", zoom_slider.decrement)
+    window.attach_keypress_callback("]", zoom_slider.increment)
+    window.attach_keypress_callback("w", lambda: crop_olay.nudge(up=1))
+    window.attach_keypress_callback("s", lambda: crop_olay.nudge(down=1))
+    window.attach_keypress_callback("a", lambda: crop_olay.nudge(left=1))
+    window.attach_keypress_callback("d", lambda: crop_olay.nudge(right=1))
+    window.attach_keypress_callback(KEY.UP_ARROW, lambda: crop_olay.nudge(up=1))
+    window.attach_keypress_callback(KEY.DOWN_ARROW, lambda: crop_olay.nudge(down=1))
+    window.attach_keypress_callback(KEY.LEFT_ARROW, lambda: crop_olay.nudge(left=1))
+    window.attach_keypress_callback(KEY.RIGHT_ARROW, lambda: crop_olay.nudge(right=1))
 
     # Get scaling factors
     full_h, full_w = image_bgr.shape[0:2]
@@ -129,6 +168,7 @@ def run_crop_ui(
 
                 # Crop the image!
                 crop_image = image_bgr[crop_y1:crop_y2, crop_x1:crop_x2, :]
+                crop_w, crop_h = crop_image.shape[0:2]
 
                 # Resize crop to fit into display area
                 dispcrop_hw = crop_disp.get_render_hw()
@@ -143,8 +183,13 @@ def run_crop_ui(
                 crop_image = cv2.copyMakeBorder(crop_image, pad_t, pad_b, pad_l, pad_r, cv2.BORDER_CONSTANT)
                 crop_disp.set_image(crop_image)
 
+                # Update text indicators
+                crop_xy1_txt.set_value(f"({crop_x1}, {crop_y1})")
+                crop_xy2_txt.set_value(f"({crop_x2}, {crop_y2})")
+                crop_wh_txt.set_value(f"({crop_w}, {crop_h})")
+
             # Update zoom display when hover point changes
-            if is_zoom_changed:
+            if is_zoom_changed or is_zoom_slider_changed or is_crop_changed:
 
                 # Calculate zoom region, taking into account frame boundaries
                 zoom_xy_cen = np.int32(np.round(zoom_event_xy.xy_norm * max_wh_float))
@@ -177,6 +222,11 @@ def run_crop_ui(
 
             # Finish if user hits enter key (or q or esc)
             if keypress == KEY.ENTER:
+                break
+
+            # Finish when done is clicked
+            is_done = done_btn.read()
+            if is_done:
                 break
 
     except KeyboardInterrupt:

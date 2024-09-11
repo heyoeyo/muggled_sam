@@ -557,6 +557,7 @@ class CropBoxOverlay(BaseOverlay):
 
     def __init__(
         self,
+        frame_shape=None,
         color=(0, 255, 255),
         thickness=1,
         bg_color=(0, 0, 0),
@@ -577,6 +578,9 @@ class CropBoxOverlay(BaseOverlay):
         self._is_modifying = False
         self._xy_modify_idx = (2, 2)
         self._mouse_xy_norm = (0.0, 0.0)
+
+        # Store sizing of frame being cropped, only use when 'nudging' the crop box
+        self._full_frame_hw = frame_shape[0:2] if frame_shape is not None else (100, 100)
 
         # Store thresholding settings
         self._minimum_area_norm = minimum_box_area_norm
@@ -681,9 +685,9 @@ class CropBoxOverlay(BaseOverlay):
         self._prev_xy_norms = (self._x_norms, self._y_norms)
 
         # Figure out if we're 'modifying' the box or drawing a new one
-        xy_idx, xy_dist = self._check_xy_interaction(cbxy.xy_norm, cbxy.hw_px)
+        xy_idx, _, is_interactive_dist = self._check_xy_interaction(cbxy.xy_norm, cbxy.hw_px)
         is_center_closest = all(idx == 1 for idx in xy_idx)
-        is_new_click = max(xy_dist) > self._interact_dist_px_threshold or is_center_closest
+        is_new_click = not is_interactive_dist or is_center_closest
 
         # Either modify an existing point or reset/re-draw the box if clicking away from existing points
         self._xy_modify_idx = xy_idx
@@ -746,7 +750,7 @@ class CropBoxOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def _check_xy_interaction(self, target_xy_norm, frame_hw=None):
+    def _check_xy_interaction(self, target_xy_norm, frame_hw=None) -> tuple[tuple[int, int], tuple[float, float], bool]:
         """
         Helper used to check which of the box points (corners or midpoints)
         are closest to given target xy coordinate, and what the x/y distance
@@ -754,7 +758,7 @@ class CropBoxOverlay(BaseOverlay):
         which points may be interacted with for dragging/modifying the box.
 
         Returns:
-            closest_xy_index, closest_xy_distance_px
+            closest_xy_index, closest_xy_distance_px, is_interactive_distance
             -> Indexing is with respect to self._x_norms & self._y_norms
         """
 
@@ -774,7 +778,11 @@ class CropBoxOverlay(BaseOverlay):
         closest_y_index = np.argmin(y_dists)
         closest_y_dist_px = y_dists[closest_y_index] * h_scale
 
-        return (closest_x_index, closest_y_index), (closest_x_dist_px, closest_y_dist_px)
+        # Check if the point is within interaction distance
+        closest_xy_dist = (closest_x_dist_px, closest_y_dist_px)
+        is_interactive = all(dist < self._interact_dist_px_threshold for dist in closest_xy_dist)
+
+        return (closest_x_index, closest_y_index), closest_xy_dist, is_interactive
 
     # .................................................................................................................
 
@@ -800,12 +808,12 @@ class CropBoxOverlay(BaseOverlay):
             # If user isn't already interacting, we'll draw an indicator if the mouse is
             # close enough to a corner or mid point on the box. But we have to figure
             # out which point that would be every time we re-render, in case the mouse moved!
-            (x_idx, y_idx), xy_dist = self._check_xy_interaction(self._mouse_xy_norm, frame_hw)
+            (x_idx, y_idx), _, is_interactive_dist = self._check_xy_interaction(self._mouse_xy_norm, frame_hw)
             close_x_px = all_x_px[x_idx]
             close_y_px = all_y_px[y_idx]
             is_center_point = (x_idx == 1) and (y_idx == 1)
-            is_close_enough = all(dist < self._interact_dist_px_threshold for dist in xy_dist)
-            need_draw_indicator = is_close_enough and not is_center_point
+            is_inbounds = np.min(self._mouse_xy_norm) > 0.0 and np.max(self._mouse_xy_norm) < 1.0
+            need_draw_indicator = is_interactive_dist and is_inbounds and not is_center_point
         closest_xy_px = (close_x_px, close_y_px)
 
         # Draw all background coloring first, so it appears entirely 'behind' the foreground
@@ -820,5 +828,48 @@ class CropBoxOverlay(BaseOverlay):
         cv2.rectangle(frame, xy1_px, xy2_px, self._fg_color, self._fg_thick, self._ltype)
 
         return frame
+
+    # .................................................................................................................
+
+    def nudge(self, left=0, right=0, up=0, down=0):
+        """Helper used to move the position of a point (nearest to the mouse) by some number of pixels"""
+
+        # Figure out which point to nudge
+        (x_idx, y_idx), _, _ = self._check_xy_interaction(self._mouse_xy_norm, self._full_frame_hw)
+
+        # Handle left/right nudge
+        is_leftright_nudgable = x_idx != 1
+        leftright_nudge = right - left
+        if is_leftright_nudgable and leftright_nudge != 0:
+            _, w_px = self._full_frame_hw
+            old_x_norm = self._x_norms[x_idx]
+            old_x_px = old_x_norm * (w_px - 1)
+            new_x_px = old_x_px + leftright_nudge
+            new_x_norm = new_x_px / (w_px - 1)
+            new_x_norm = np.clip(new_x_norm, 0.0, 1.0)
+
+            # Update target x coord and re-compute midpoint
+            self._x_norms[x_idx] = new_x_norm
+            self._x_norms[1] = (self._x_norms[0] + self._x_norms[-1]) * 0.5
+
+        # Handle up/down nudge
+        is_updown_nudgable = y_idx != 1
+        updown_nudge = down - up
+        if is_updown_nudgable and updown_nudge != 0:
+            h_px, _ = self._full_frame_hw
+            old_y_norm = self._y_norms[y_idx]
+            old_y_px = old_y_norm * (h_px - 1)
+            new_y_px = old_y_px + updown_nudge
+            new_y_norm = new_y_px / (h_px - 1)
+            new_y_norm = np.clip(new_y_norm, 0.0, 1.0)
+
+            # Update target x coord and re-compute midpoint
+            self._y_norms[y_idx] = new_y_norm
+            self._y_norms[1] = (self._y_norms[0] + self._y_norms[-1]) * 0.5
+
+        # Assume we've changed the box
+        self._is_changed = True
+
+        return self
 
     # .................................................................................................................
