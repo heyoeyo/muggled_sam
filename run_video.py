@@ -88,7 +88,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help="Override base model size (default: {default_base_size})",
+    help=f"Override base model size (default: {default_base_size})",
 )
 parser.add_argument(
     "-n",
@@ -101,19 +101,19 @@ parser.add_argument(
     "--max_memories",
     default=default_max_memory_history,
     type=int,
-    help="Maximum number of previous-frame memory encodings to store (default: {default_max_memory_history})",
+    help=f"Maximum number of previous-frame memory encodings to store (default: {default_max_memory_history})",
 )
 parser.add_argument(
     "--max_pointers",
     default=default_max_pointer_history,
     type=int,
-    help="Maximum number of previous-frame object pointers to store (default: {default_max_pointer_history})",
+    help=f"Maximum number of previous-frame object pointers to store (default: {default_max_pointer_history})",
 )
 parser.add_argument(
     "--max_prompts",
     default=default_max_prompt_history,
     type=int,
-    help="Maximum number of prompts to store for video segmentation (default: {default_max_prompt_history})",
+    help=f"Maximum number of prompts to store for video segmentation (default: {default_max_prompt_history})",
 )
 parser.add_argument(
     "--keep_bad_objscores",
