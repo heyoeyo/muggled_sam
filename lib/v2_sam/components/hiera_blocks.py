@@ -16,7 +16,7 @@ from torch import Tensor
 # %% Classes
 
 
-class TransformerBlock(nn.Module):
+class GlobalBlock(nn.Module):
     """
     Wrapper around self-attention block which adds layernorms & MLP on output.
     This is a standard vision-transformer-encoder with GELU (MLP) activations.

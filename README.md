@@ -6,7 +6,7 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
   <img src=".readme_assets/demo_anim.gif">
 </p>
 
-While the focus of this implementation is on interactivity and readability of the model code, this implementation provides support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
+While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
 > [!Note]
 > This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
@@ -106,7 +106,7 @@ The `run_image.py` script will run the segment-anything model on a single image 
 python run_image.py
 ```
 
-You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. One especially interesting flag is `-b`, which allows for processing images at different resolutions and `-ar` for processing images at their original aspect ratio (SAMv1 has better support for this than SAMv2!).
+You can also add  `--help` to the end of this command to see a list of additional flags you can set when running this script. For example, two interesting options are the `--crop` flag to interactively crop an image prior to processing and the `-b` flag, which can change the processing resolution of the model.
 
 If you don't provide an image path (using the `-i` flag), then you will be asked to provide one when you run the script, likewise for a path to the model weights. Afterwards, a window will pop-up, with options for how to 'prompt' the model (e.g. bounding boxes or clicking to add points) along the top and various sliders to alter the segmentation results at the bottom. Results can be saved by pressing the `s` key.
 
@@ -119,13 +119,13 @@ If you don't provide an image path (using the `-i` flag), then you will be asked
 </p>
 
 
-The `run_video.py` script allows for segmentation of videos based on prompts on paused frames of the video using an interactive UI running locally. However, it only works with SAMv2 models!
+The `run_video.py` script allows for segmentation of videos using an interactive UI running locally. However, it only works with SAMv2 models!
 To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
 ```bash
 python run_video.py
 ```
 
-As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` and `-ar` can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!).
+As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` and `-ar` to reduce the processing resolution can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!).
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
@@ -160,5 +160,5 @@ The code in this repo is entirely based off the original segment-anything github
 - Clean up code base (especially the image encoder, which is unfinished)
 - Add interactive script replicating the original 'automatic mask geneartor'
 - Add model structure documentation
-- Add various experiment scripts (onnx export, block norm vis, mask prompts, imgenc size effect etc.)
+- Add various experiment scripts (onnx export, mask prompts, attention vis etc.)
 - Inevitable bugfixes

@@ -22,12 +22,11 @@ from .contours import pixelize_contours
 
 
 def save_segmentation_results(
-    image_path, display_image, mask_contours_norm, raw_result_uint8, all_prompts_dict, base_save_folder=None
+    image_path, image_bgr, display_image, mask_contours_norm, raw_result_uint8, all_prompts_dict, base_save_folder=None
 ):
     """Helper used to handle saving of image segmentation results"""
 
     # Load copy of original image for saving results
-    image_bgr = cv2.imread(image_path)
     image_name, _ = osp.splitext(osp.basename(image_path))
 
     # Make a mask matching the original image resolution

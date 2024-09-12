@@ -7,7 +7,7 @@
 
 import torch.nn as nn
 
-from .hiera_blocks import PooledWindowedBlock, WindowedBlock, TransformerBlock
+from .hiera_blocks import PooledWindowedBlock, WindowedBlock, GlobalBlock
 
 # For type hints
 from torch import Tensor
@@ -191,7 +191,7 @@ class HieraStage(nn.Sequential):
             # Use windowed or global attention blocks as needed
             is_global_attn_layer = block_idx in global_attn_idxs
             if is_global_attn_layer:
-                block = TransformerBlock(features_per_token, num_heads)
+                block = GlobalBlock(features_per_token, num_heads)
             else:
                 block = WindowedBlock(features_per_token, num_heads, window_size)
             blocks_list.append(block)

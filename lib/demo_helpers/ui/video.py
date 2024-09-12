@@ -174,6 +174,96 @@ class LoopingVideoReader:
     # .................................................................................................................
 
 
+class ReversibleLoopingVideoReader(LoopingVideoReader):
+    """
+    Simple variant on the basic looping reader.
+    This version supports reading frames in reverse, though
+    the implementation is extremely inefficient!
+
+    To use, simply call the '.toggle_reverse_state(True)' function.
+    (This can be done inside of a frame reading loop)
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, video_path: str, display_size_px: int | None = None, initial_position_0_to_1: float = 0.0):
+
+        # Inherit from parent
+        super().__init__(video_path, display_size_px, initial_position_0_to_1)
+
+        # Flag used to keep track of playback direction
+        self._is_reversed = False
+
+    # .................................................................................................................
+
+    def toggle_reverse_state(self, set_is_reversed: bool | None = None) -> bool:
+        """
+        Used to switch from forward-to-reverse frame reading
+        If the given target state is None, then the current
+        state will be toggled, otherwise it wil be set to
+        the given state (True to reverse, False for forward reading).
+
+        Returns: updated_reversal_state
+        """
+
+        self._is_reversed = (not self._is_reversed) if set_is_reversed is None else set_is_reversed
+
+        return self._is_reversed
+
+    # .................................................................................................................
+
+    def get_reverse_state(self):
+        """Used to check the current forward/reverse state"""
+        return self._is_reversed
+
+    # .................................................................................................................
+
+    def __next__(self):
+        """
+        Iterator that provides frame data from a video capture object.
+        Returns:
+            is_paused, frame_index, frame_bgr
+        """
+
+        # Don't read video frames while paused
+        if self._is_paused:
+            return self._is_paused, self._frame_idx, self._pause_frame.copy()
+
+        if self._is_reversed:
+
+            # Repeatedly 'rewind' the video backwards and read frames, looping to end if needed
+            self._frame_idx = (self._frame_idx - 1) % self._max_frame_idx
+            self._vcap.set(cv2.CAP_PROP_POS_FRAMES, self._frame_idx)
+            read_ok, frame = self._vcap.read()
+            while not read_ok:
+                self._vcap.set(cv2.CAP_PROP_POS_FRAMES, self._max_frame_idx)
+                read_ok, frame = self._vcap.read()
+                if not read_ok:
+                    self._max_frame_idx -= 1
+                    print("Error reading last frame. Will try with reduced indexing:", self._max_frame_idx)
+                self._frame_idx = self._max_frame_idx
+
+        else:
+
+            # Read next frame, or loop back to beginning if there are no more frames
+            self._frame_idx += 1
+            read_ok, frame = self._vcap.read()
+            if not read_ok:
+                self._frame_idx = 0
+                self._vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                read_ok, frame = self._vcap.read()
+                assert read_ok, "Error looping video! Unable to read first frame"
+
+        # Scale frame for display & store in case we pause
+        if self._need_resize:
+            frame = self.scale_to_display_wh(frame)
+        self._pause_frame = frame
+
+        return self._is_paused, self._frame_idx, self._pause_frame.copy()
+
+    # .................................................................................................................
+
+
 class LoopingVideoPlaybackSlider(BaseCallback):
     """
     Implements a 'playback slider' UI element that is specific to working with videos.

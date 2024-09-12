@@ -22,6 +22,7 @@ from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.ui.static import StaticMessageBar
 
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
+from lib.demo_helpers.crop_ui import run_crop_ui
 
 from lib.demo_helpers.contours import get_contours_from_mask
 from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
@@ -113,6 +114,12 @@ parser.add_argument(
     action="store_true",
     help="If set, the model will generate mask predictions even when no prompts are given",
 )
+parser.add_argument(
+    "--crop",
+    default=False,
+    action="store_true",
+    help="If set, a cropping UI will appear on start-up to allow for the image to be cropped prior to processing",
+)
 
 
 # For convenience
@@ -128,6 +135,7 @@ imgenc_base_size = args.base_size_px
 show_iou_preds = args.quality_estimate
 show_info = not args.hide_info
 disable_promptless_masks = not args.enable_promptless_masks
+enable_crop_ui = args.crop
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -164,6 +172,12 @@ if full_image_bgr is None:
     if not ok_read:
         print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
         raise FileNotFoundError(osp.basename(image_path))
+
+# Crop input image if needed
+if enable_crop_ui:
+    print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
+    x_crop, y_crop = run_crop_ui(full_image_bgr, display_size_px)
+    full_image_bgr = full_image_bgr[y_crop, x_crop, :]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -384,7 +398,7 @@ try:
                 "bg_points": bg_xy_norm_list,
             }
             save_folder, save_idx = save_segmentation_results(
-                image_path, disp_image, mask_contours_norm, selected_mask_uint8, all_prompts_dict
+                image_path, full_image_bgr, disp_image, mask_contours_norm, selected_mask_uint8, all_prompts_dict
             )
             print(f"SAVED ({save_idx}):", save_folder)
 
