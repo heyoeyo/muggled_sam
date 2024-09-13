@@ -541,7 +541,7 @@ class BoxSelectOverlay(BaseOverlay):
     # .................................................................................................................
 
 
-class CropBoxOverlay(BaseOverlay):
+class EditBoxOverlay(BaseOverlay):
     """
     Overlay used to provide a 'crop-box' or similar UI
     The idea being to have a single box that can be modified
@@ -686,8 +686,7 @@ class CropBoxOverlay(BaseOverlay):
 
         # Figure out if we're 'modifying' the box or drawing a new one
         xy_idx, _, is_interactive_dist = self._check_xy_interaction(cbxy.xy_norm, cbxy.hw_px)
-        is_center_closest = all(idx == 1 for idx in xy_idx)
-        is_new_click = not is_interactive_dist or is_center_closest
+        is_new_click = not is_interactive_dist or cbflags.shift_key
 
         # Either modify an existing point or reset/re-draw the box if clicking away from existing points
         self._xy_modify_idx = xy_idx
@@ -765,7 +764,7 @@ class CropBoxOverlay(BaseOverlay):
         # Default to 'fake' pixel count if not given (so we can re-use the same calculations)
         if frame_hw is None:
             frame_hw = (2.0, 2.0)
-        h_scale, w_scale = tuple(float(size - 1.0) for size in frame_hw)
+        h_scale, w_scale = tuple(np.float32(size - 1.0) for size in frame_hw)
         target_x, target_y = target_xy_norm
 
         # Find closest x point on box
@@ -779,10 +778,14 @@ class CropBoxOverlay(BaseOverlay):
         closest_y_dist_px = y_dists[closest_y_index] * h_scale
 
         # Check if the point is within interaction distance
-        closest_xy_dist = (closest_x_dist_px, closest_y_dist_px)
-        is_interactive = all(dist < self._interact_dist_px_threshold for dist in closest_xy_dist)
+        closest_xy_index = (closest_x_index, closest_y_index)
+        closest_xy_dist_px = (closest_x_dist_px, closest_y_dist_px)
+        is_interactive = all(dist < self._interact_dist_px_threshold for dist in closest_xy_dist_px)
+        if is_interactive:
+            is_center_point = all(idx == 1 for idx in closest_xy_index)
+            is_interactive = not is_center_point
 
-        return (closest_x_index, closest_y_index), closest_xy_dist, is_interactive
+        return closest_xy_index, closest_xy_dist_px, is_interactive
 
     # .................................................................................................................
 
@@ -811,9 +814,8 @@ class CropBoxOverlay(BaseOverlay):
             (x_idx, y_idx), _, is_interactive_dist = self._check_xy_interaction(self._mouse_xy_norm, frame_hw)
             close_x_px = all_x_px[x_idx]
             close_y_px = all_y_px[y_idx]
-            is_center_point = (x_idx == 1) and (y_idx == 1)
             is_inbounds = np.min(self._mouse_xy_norm) > 0.0 and np.max(self._mouse_xy_norm) < 1.0
-            need_draw_indicator = is_interactive_dist and is_inbounds and not is_center_point
+            need_draw_indicator = is_interactive_dist and is_inbounds
         closest_xy_px = (close_x_px, close_y_px)
 
         # Draw all background coloring first, so it appears entirely 'behind' the foreground

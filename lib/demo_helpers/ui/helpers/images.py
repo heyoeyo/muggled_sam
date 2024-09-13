@@ -8,6 +8,9 @@
 import cv2
 import numpy as np
 
+# For type hints
+from numpy import ndarray
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
@@ -40,8 +43,8 @@ class CheckerPattern:
         base_wh = (checker_size_px, checker_size_px)
         base_pattern = np.uint8(((color_a, color_b), (color_b, color_a)))
         base_pattern = cv2.resize(base_pattern, dsize=base_wh, interpolation=cv2.INTER_NEAREST_EXACT)
-        self._base = base_pattern
-        self._full_pattern = cv2.cvtColor(self._base.copy(), cv2.COLOR_GRAY2BGR)
+        self._base: ndarray = base_pattern
+        self._full_pattern: ndarray = cv2.cvtColor(self._base.copy(), cv2.COLOR_GRAY2BGR)
 
     # .................................................................................................................
 
@@ -53,14 +56,14 @@ class CheckerPattern:
 
     # .................................................................................................................
 
-    def draw_like(self, other_frame):
+    def draw_like(self, other_frame) -> ndarray:
         """Draw a full checker pattern matching the shape of the given 'other_frame'"""
         other_h, other_w = other_frame.shape[0:2]
         return self.draw(other_h, other_w)
 
     # .................................................................................................................
 
-    def draw(self, frame_h, frame_w):
+    def draw(self, frame_h, frame_w) -> ndarray:
         """Draw a full checker pattern of the given size"""
 
         # Re-draw the full pattern if the render size doesn't match
@@ -85,7 +88,7 @@ class CheckerPattern:
 
     # .................................................................................................................
 
-    def superimpose(self, other_frame, mask):
+    def superimpose(self, other_frame, mask) -> ndarray:
         """Draw the given frame with a checker pattern based on the provided mask"""
 
         # Create checker pattern matched to other frame
@@ -114,7 +117,7 @@ class CheckerPattern:
 # %% Functions
 
 
-def blank_image(height: int, width: int, bgr_color: None | int | tuple[int, int, int] = None):
+def blank_image(height: int, width: int, bgr_color: None | int | tuple[int, int, int] = None) -> ndarray:
     """Helper used to create a blank image of a given size (and optionally provide a fill color)"""
 
     # If no color is given, default to zeros
@@ -128,12 +131,12 @@ def blank_image(height: int, width: int, bgr_color: None | int | tuple[int, int,
     return np.full((height, width, 3), bgr_color, dtype=np.uint8)
 
 
-def blank_mask(height: int, width: int, gray_value: int = 0):
+def blank_mask(height: int, width: int, gray_value: int = 0) -> ndarray:
     """Helper used to create a blank mask (i.e. grayscale/no channels) of a given size"""
     return np.full((height, width), gray_value, dtype=np.uint8)
 
 
-def draw_box_outline(frame, color=(0, 0, 0), thickness=1):
+def draw_box_outline(frame: ndarray, color=(0, 0, 0), thickness=1) -> ndarray:
     """Helper used to draw a box outline around the outside of a given frame"""
     img_h, img_w = frame.shape[0:2]
     x1, y1 = thickness - 1, thickness - 1
@@ -142,8 +145,14 @@ def draw_box_outline(frame, color=(0, 0, 0), thickness=1):
 
 
 def draw_normalized_polygons(
-    frame, polygon_xy_norm_list, color=(0, 255, 255), thickness=1, bg_color=None, line_type=cv2.LINE_AA, is_closed=True
-):
+    frame: ndarray,
+    polygon_xy_norm_list,
+    color=(0, 255, 255),
+    thickness=1,
+    bg_color=None,
+    line_type=cv2.LINE_AA,
+    is_closed=True,
+) -> ndarray:
 
     # Make sure we have a list of polygons
     if not isinstance(polygon_xy_norm_list, (list, tuple)):
@@ -161,7 +170,7 @@ def draw_normalized_polygons(
     return cv2.polylines(frame, xy_px_list, is_closed, color, thickness, line_type)
 
 
-def convert_color(color, conversion_code):
+def convert_color(color: tuple[int, int, int], conversion_code: int) -> tuple[int, int, int]:
     """
     Helper used to convert singular color values, without requiring a full image
     For example:
@@ -176,7 +185,7 @@ def convert_color(color, conversion_code):
     return tuple(converted_color_as_img.squeeze().tolist())
 
 
-def linear_gradient_image(h, w, start_color=(0, 0, 0), end_color=(255, 255, 255), vertical=True):
+def linear_gradient_image(h, w, start_color=(0, 0, 0), end_color=(255, 255, 255), vertical=False) -> ndarray:
     """
     Helper used to make simple linear gradient images, either vertical or horizontal
     Does not (currently) support angled gradients!
@@ -211,7 +220,17 @@ def get_image_hw_to_fill(image, target_hw) -> tuple[int, int]:
     return out_h, out_w
 
 
-def get_image_hw_for_max_height(image, max_height_px=800):
+def get_image_hw_for_max_height(image, max_height_px=800) -> tuple[int, int]:
+    """
+    Helper used to find the height & width of a given image if it
+    is scaled to fit to a given target height, assuming the aspect
+    ratio is preserved.
+    For example, to fit a (HxW) 100x200 image to a max height of
+    500, the image would be scaled to 500x1000
+
+    Returns:
+        output_height, output_width
+    """
 
     img_h, img_w = image.shape[0:2]
     scale = max_height_px / img_h
@@ -221,7 +240,17 @@ def get_image_hw_for_max_height(image, max_height_px=800):
     return out_h, out_w
 
 
-def get_image_hw_for_max_width(image, max_width_px=800):
+def get_image_hw_for_max_width(image, max_width_px=800) -> tuple[int, int]:
+    """
+    Helper used to find the height & width of a given image if it
+    is scaled to fit to a given target width, assuming the aspect
+    ratio is preserved.
+    For example, to fit a (HxW) 100x200 image to a max width of
+    500, the image would be scaled to 250x500
+
+    Returns:
+        output_height, output_width
+    """
 
     img_h, img_w = image.shape[0:2]
     scale = max_width_px / img_w
@@ -231,7 +260,17 @@ def get_image_hw_for_max_width(image, max_width_px=800):
     return out_h, out_w
 
 
-def get_image_hw_for_max_side_length(image, max_side_length=800):
+def get_image_hw_for_max_side_length(image, max_side_length=800) -> tuple[int, int]:
+    """
+    Helper used to find the height & width of a given image if it
+    is scaled to a target max side length, assuming the aspect
+    ratio is preserved.
+    For example, to fit a (HxW) 100x200 image to a max side length
+    of 500, the image would be scaled to 250x500
+
+    Returns:
+        output_height, output_width
+    """
 
     img_h, img_w = image.shape[0:2]
     scale = min(max_side_length / img_h, max_side_length / img_h)
@@ -241,21 +280,60 @@ def get_image_hw_for_max_side_length(image, max_side_length=800):
     return out_h, out_w
 
 
-if __name__ == "__main__":
+def pad_to_hw(image, output_hw, border_type=cv2.BORDER_CONSTANT, border_color=(0, 0, 0), align_xy=(0.5, 0.5)):
+    """
+    Helper used to pad out an image to match a given output height & width.
+    Uses opencv 'copyMakeBorder' internally and can used the border types
+    of that function. See: cv2.BORDER_... constants.
 
-    # w = 400
-    # h = 200
-    # start_color = (0, 0, 0)
-    # end_color = (0, 0, 255)
-    # vertical = False
+    The 'align_xy' argument can be used to determine how padding is allocated.
+    The default padding places the original image in the center, but alignment
+    can be set to left/top-align (e.g align_xy = (0, 0)) for example.
 
-    # weight = np.linspace(0, 1, h if vertical else w, dtype=np.float32)
-    # weight = np.expand_dims(weight, axis=(1, 2) if vertical else (0, 2))
-    # col_1px = (1.0 - weight) * np.float32(start_color) + weight * np.float32(end_color)
+    If the output height or width is smaller than the given image, then the
+    image height or width will remain as-is (i.e. it won't be scaled/cropped)
 
-    # lingrad = cv2.resize(np.uint8(col_1px), dsize=(w, h), interpolation=cv2.INTER_NEAREST_EXACT)
+    Returns:
+        padded_image
+    """
 
-    lingrad = linear_gradient_image(200, 400, (255, 0, 0), (0, 255, 255))
-    cv2.imshow("Gradient", lingrad)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # For convenience
+    img_h, img_w = image.shape[0:2]
+    out_h, out_w = output_hw[0:2]
+    align_x, align_y = np.clip(align_xy, 0.0, 1.0).tolist()
+
+    # Figure out how much total padding is needed
+    available_h = max(0, out_h - img_h)
+    available_w = max(0, out_w - img_w)
+
+    # Split the top/bottom, left/right padding spacing, based on alignment
+    pad_top, pad_left = int(available_h * align_y), int(available_w * align_x)
+    pad_bot, pad_right = int(available_h - pad_top), int(available_w - pad_left)
+    return cv2.copyMakeBorder(image, pad_top, pad_bot, pad_left, pad_right, border_type, value=border_color)
+
+
+def scale_and_pad_to_fit_hw(
+    image,
+    output_hw,
+    interpolation_type=cv2.INTER_AREA,
+    pad_border_type=cv2.BORDER_CONSTANT,
+    pad_color=(0, 0, 0),
+    pad_align_xy=(0.5, 0.5),
+):
+    """
+    Helper function which scales a given image so that it fits inside a
+    target height & width. If the original image aspect ratio does not match
+    the target sizing, then the image will be padded to fit.
+    """
+
+    # Resize to fit inside target sizing
+    out_h, out_w = output_hw
+    scale_h, scale_w = get_image_hw_to_fill(image, output_hw)
+    out_image = cv2.resize(image, dsize=(scale_w, scale_h), interpolation=interpolation_type)
+
+    # Pad to fit if needed
+    scaled_h, scaled_w = out_image.shape[0:2]
+    if scaled_h < out_h or scaled_w < out_w:
+        out_image = pad_to_hw(out_image, output_hw, pad_border_type, pad_color, pad_align_xy)
+
+    return out_image

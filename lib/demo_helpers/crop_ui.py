@@ -14,10 +14,10 @@ from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.ui.static import HSeparator, VSeparator, StaticMessageBar
 from lib.demo_helpers.ui.images import ExpandingImage
 from lib.demo_helpers.ui.buttons import ImmediateButton
-from lib.demo_helpers.ui.overlays import CropBoxOverlay, HoverOverlay, DrawPolygonsOverlay
+from lib.demo_helpers.ui.overlays import EditBoxOverlay, HoverOverlay, DrawPolygonsOverlay
 from lib.demo_helpers.ui.text import ValueBlock
 
-from lib.demo_helpers.ui.helpers.images import get_image_hw_to_fill
+from lib.demo_helpers.ui.helpers.images import scale_and_pad_to_fit_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -36,7 +36,7 @@ def make_crop_ui(image_bgr, fg_line_color=(0, 255, 0)):
     # Set up interactive elements for user interactions
     zoom_olay = HoverOverlay()
     zoom_slider = HSlider("Zoom Factor", 0.5, 0, 1, step_size=0.05, marker_steps=5, enable_value_display=False)
-    crop_olay = CropBoxOverlay(image_bgr.shape, fg_line_color, 2).set_box([(0.25, 0.25), (0.75, 0.75)])
+    crop_olay = EditBoxOverlay(image_bgr.shape, fg_line_color, 2).set_box([(0.25, 0.25), (0.75, 0.75)])
 
     # Set up text blocks for feedback
     xy1_txt = ValueBlock("Crop XY1: ", "(0,0)")
@@ -172,15 +172,7 @@ def run_crop_ui(
 
                 # Resize crop to fit into display area
                 dispcrop_hw = crop_disp.get_render_hw()
-                crop_scale_h, crop_scale_w = get_image_hw_to_fill(crop_image, dispcrop_hw)
-                crop_scale_wh = (crop_scale_w, crop_scale_h)
-                crop_image = cv2.resize(crop_image, dsize=crop_scale_wh, interpolation=cv2.INTER_NEAREST_EXACT)
-
-                # Pad crop to match display area aspect ratio
-                available_h, available_w = dispcrop_hw[0] - crop_scale_h, dispcrop_hw[1] - crop_scale_w
-                pad_t, pad_l = available_h // 2, available_w // 2
-                pad_b, pad_r = available_h - pad_t, available_w - pad_l
-                crop_image = cv2.copyMakeBorder(crop_image, pad_t, pad_b, pad_l, pad_r, cv2.BORDER_CONSTANT)
+                crop_image = scale_and_pad_to_fit_hw(crop_image, dispcrop_hw)
                 crop_disp.set_image(crop_image)
 
                 # Update text indicators
