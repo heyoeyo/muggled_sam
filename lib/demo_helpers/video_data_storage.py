@@ -73,7 +73,7 @@ class SAM2VideoObjectResults:
     prevframe_buffer: SAM2VideoBuffer
 
     @classmethod
-    def create(cls, memory_history_length=6, pointer_history_length=15, prompt_history_length=1):
+    def create(cls, memory_history_length=6, pointer_history_length=15, prompt_history_length=32):
         prompts_buffer = SAM2VideoBuffer.create(prompt_history_length, prompt_history_length)
         prevframe_buffer = SAM2VideoBuffer.create(memory_history_length, pointer_history_length)
         return cls(prompts_buffer, prevframe_buffer)

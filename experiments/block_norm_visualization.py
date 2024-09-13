@@ -99,7 +99,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help="Override base model size (default {default_base_size})",
+    help=f"Override base model size (default {default_base_size})",
 )
 parser.add_argument(
     "--hide_info",

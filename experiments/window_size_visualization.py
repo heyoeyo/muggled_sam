@@ -101,14 +101,14 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help="Override base model size (default {default_base_size})",
+    help=f"Override base model size (default {default_base_size})",
 )
 parser.add_argument(
     "-w",
     "--max_window_size",
     default=default_max_window_size,
     type=int,
-    help="Change max allowable window sizing. Higher sizes require more VRAM (default {default_base_size})",
+    help=f"Change max allowable window sizing. Higher sizes require more VRAM (default {default_max_window_size})",
 )
 parser.add_argument(
     "-q",

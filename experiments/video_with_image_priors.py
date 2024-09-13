@@ -95,19 +95,19 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help="Override base model size (default {default_base_size})",
+    help=f"Override base model size (default {default_base_size})",
 )
 parser.add_argument(
     "--max_memories",
     default=default_max_memory_history,
     type=int,
-    help="Maximum number of previous-frame memory encodings to store (default {default_max_memory_history})",
+    help=f"Maximum number of previous-frame memory encodings to store (default {default_max_memory_history})",
 )
 parser.add_argument(
     "--max_pointers",
     default=default_max_pointer_history,
     type=int,
-    help="Maximum number of previous-frame object pointers to store (default {default_max_pointer_history})",
+    help=f"Maximum number of previous-frame object pointers to store (default {default_max_pointer_history})",
 )
 parser.add_argument(
     "--discard_on_bad_objscore",
@@ -127,7 +127,6 @@ parser.add_argument(
     action="store_true",
     help="Hide text info elements from UI",
 )
-
 
 # For convenience
 args = parser.parse_args()

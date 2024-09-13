@@ -47,7 +47,7 @@ from lib.demo_helpers.misc import get_default_device_string, make_device_config,
 # Set argparse defaults
 default_device = get_default_device_string()
 default_model_path = None
-default_display_size = 800
+default_display_size = 900
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to visualize position encodings of SAM image encoders")

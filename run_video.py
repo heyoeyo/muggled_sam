@@ -50,7 +50,6 @@ default_display_size = 900
 default_base_size = 1024
 default_max_memory_history = 6
 default_max_pointer_history = 15
-default_max_prompt_history = 8
 default_num_object_buffers = 4
 
 # Define script arguments
@@ -112,12 +111,6 @@ parser.add_argument(
     help=f"Maximum number of previous-frame object pointers to store (default: {default_max_pointer_history})",
 )
 parser.add_argument(
-    "--max_prompts",
-    default=default_max_prompt_history,
-    type=int,
-    help=f"Maximum number of prompts to store for video segmentation (default: {default_max_prompt_history})",
-)
-parser.add_argument(
     "--keep_bad_objscores",
     default=False,
     action="store_true",
@@ -169,7 +162,6 @@ imgenc_base_size = args.base_size_px
 num_obj_buffers = args.num_buffers if enable_saving else 1
 max_memory_history = args.max_memories
 max_pointer_history = args.max_pointers
-max_prompt_history = args.max_prompts
 discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
 show_info = not args.hide_info
@@ -422,7 +414,7 @@ objiter = list(range(num_obj_buffers))
 maskresults_list = [MaskResults.create(init_mask_preds) for _ in objiter]
 savebuffers_list = [SaveBufferData.create() for _ in objiter]
 memory_list = [
-    SAM2VideoObjectResults.create(max_memory_history, max_pointer_history, max_prompt_history) for _ in objiter
+    SAM2VideoObjectResults.create(max_memory_history, max_pointer_history, prompt_history_length=32) for _ in objiter
 ]
 
 vreader.pause()
