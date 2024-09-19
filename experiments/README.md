@@ -5,7 +5,7 @@ This folder contains random experiments using the SAM models, mostly out of curi
 
 ## Block Norm Visualization
 
-This script is a companion to an earlier [block norm visualization](https://github.com/heyoeyo/muggled_dpt/tree/main/experiments#block-norm-visualization) script for depth-prediction models. The display shows the 'block norms' of the image features at every layer of the model (SAMv1 or v2), alongside a per-channel visualization. A paper titled [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588) suggests that vision transformers (like the image encoder inside the SAM models) will end up with tokens that have unusually high value norms if they don't include 'register' tokens (neither version of SAM includes these). This script can help detect these artifacts in both SAMv1 or v2 as well as any fine-tuned variants.
+This script is a companion to an earlier [block norm visualization](https://github.com/heyoeyo/muggled_dpt/tree/main/experiments#block-norm-visualization) script for depth-prediction models. The display shows the magnitude of the _internal_ image features at every layer of the model (SAMv1 or v2), alongside a per-channel visualization of a selected layer. A paper titled [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588) suggests that vision transformers (like the image encoder inside the SAM models) will end up with unusually high-norm (high magnitude) tokens if they don't include 'registers' (neither version of SAM includes these). This script can help detect these artifacts in both SAMv1 or v2 as well as any fine-tuned variants.
 
 <p align="center">
   <img src=".readme_assets/blocknorm_example.webp" alt="">
@@ -13,6 +13,18 @@ This script is a companion to an earlier [block norm visualization](https://gith
 
 Interestingly, while the base+ and large SAMv2 models _do_ have these high-norm tokens as expected (see the blacked-out tiles in the example image above), the SAMv1 models **do not**! There are other interesting patterns as well, for example, the high-norm blocks of SAMv2 seem to exclusive appear in stage 3. Additionally, the tokens for the v1 models show surprisingly little differences from one block to another (vaguely suggesting that the models could make due with far fewer blocks?), while the v2 models show similarly small differences between blocks within each stage, but drastic differences between stages (likely due to pooling).
 
+## Mask Stability Visualization
+
+This script was made to better understand the 'stability' of SAM masking, after coming across a [stability_score](https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/utils/amg.py#L158) function in the original SAM implementation. The original scoring function simply calculates the ratio of masked pixels using two different thresholds. The idea being that if the mask doesn't change much as the threshold changes, then the mask can be said to be stable. In this visualization, a lower and upper threshold can be set while the parts of the mask that land within those thresholds is visualized. This can help determine what parts of the mask are most likely to change due to changes in thresholding (and often prompting):
+
+<p align="center">
+  <img src=".readme_assets/mask_stability_example.webp" alt="">
+</p>
+
+
+In the example above, where the thresholds are set at 0 and +12 (see the bottom-most UI element), bright areas can be considered 'very stable', as the threshold would need to be set above 12 (which is a lot) before those areas would be excluded from the final mask. Darker areas, for example the cat's whiskers, are more likely to be 'lost' as the threshold or prompt changes. It can also be interesting to switch between the different mask outputs as well, as even though the thresholded results may look identical, often the stability is very different.
+
+Out of curiosity, the script also allows for the image encoding size to be changed, as well as even downscaling the input image itself before any processing. This is meant to provide another way of observing how stable the output is in response to slight changes to the input image.
 
 ## Video with Image Priors
 

@@ -440,9 +440,20 @@ class ReusableBaseImage:
     def __init__(self, full_image_bgr: ndarray):
 
         # Initialize state values
-        self._full_img = full_image_bgr.copy()
-        self._disp_img = full_image_bgr.copy()
-        self._prev_h, self._prev_w = full_image_bgr.shape[0:2]
+        self._full_img = self._disp_img = self._prev_h = self._prev_w = None
+        self.set_new_image(full_image_bgr)
+
+    def set_new_image(self, new_image_bgr: ndarray):
+        """
+        Store a new image to be cached. This isn't expected to happen often!
+        (setting the image frequently defeats the purpose of caching)
+        """
+
+        self._full_img = new_image_bgr
+        self._disp_img = new_image_bgr.copy()
+        self._prev_h, self._prev_w = new_image_bgr.shape[0:2]
+
+        return self
 
     def regenerate(self, new_display_hw):
         """Resizes the original input image to the given display size or re-uses a cached copy at the given size"""

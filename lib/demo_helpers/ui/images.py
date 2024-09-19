@@ -31,8 +31,8 @@ class ExpandingImage(BaseImageCallback):
 
     # .................................................................................................................
 
-    def get_render_hw(self):
-        return self._render_image.shape[0:2]
+    def get_render_hw(self, *, return_as_wh=False):
+        return tuple(reversed(self._render_image.shape[0:2])) if return_as_wh else self._render_image.shape[0:2]
 
     # .................................................................................................................
 
@@ -55,7 +55,7 @@ class ExpandingImage(BaseImageCallback):
         self._targ_w = -1
 
         return self
-    
+
     # .................................................................................................................
 
 
