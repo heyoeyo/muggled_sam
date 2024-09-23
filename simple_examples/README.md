@@ -49,3 +49,11 @@ Segmentation results are displayed per-frame for verification, and the total inf
 | V2-Small | 28 ms | 8 ms |
 | V2-Base | 38 ms | 11 ms |
 | V2-Large | 64 ms | 17 ms |
+
+
+## Video Segmentation (Multi-object)
+
+This is an extension of the more basic video segmentation script, which shows how multiple objects can be segmented/tracked through a video. For the sake of demonstration, this example works by having all prompts known ahead of time, but of course they could be generated dynamically (e.g. by an object detection model). No results are saved from this script, but the combined mask results are displayed and the corresponding code for generating the display output can hopefully provide ideas about how to handle the model outputs for other use cases.
+
+The prompts that are hard-coded into this example script are set up to track a few horses from a short video by [Adrian Hoparda](https://www.pexels.com/@adrian-hoparda-1684220/) which can be freely downloaded:
+https://www.pexels.com/video/horses-running-on-grassland-4215784/
