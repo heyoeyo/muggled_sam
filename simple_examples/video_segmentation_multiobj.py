@@ -29,9 +29,6 @@ device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
-video_path = "/home/eo/Downloads/4215784-hd_1920_1080_30fps.mp4"
-model_path = "/home/eo/Software/my_github/muggled_sam/model_weights/sam2_hiera_base_plus.pt"
-
 # Define image processing config (shared for all video frames)
 imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 
