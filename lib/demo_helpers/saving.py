@@ -29,10 +29,13 @@ def save_segmentation_results(
     # Load copy of original image for saving results
     image_name, _ = osp.splitext(osp.basename(image_path))
 
+    # Remove any overly small contours (opencv can generate 1 & 2 points contours)
+    cleaned_contours_norm = [c for c in mask_contours_norm if len(c) > 2]
+
     # Make a mask matching the original image resolution
     img_h, img_w = image_bgr.shape[0:2]
     full_mask_1ch = np.zeros((img_h, img_w), dtype=np.uint8)
-    mask_contours_px = pixelize_contours(mask_contours_norm, image_bgr.shape)
+    mask_contours_px = pixelize_contours(cleaned_contours_norm, image_bgr.shape)
     full_mask_1ch = cv2.fillPoly(full_mask_1ch, mask_contours_px, 255, cv2.LINE_AA)
 
     # Make full sized image, with mask transparency
@@ -42,8 +45,8 @@ def save_segmentation_results(
     full_transparent[:, :, -1] = full_mask_1ch
 
     # Find bounding coordinates of mask contours
-    tl_xy_norm = np.min([np.min(contour.squeeze(), axis=0) for contour in mask_contours_norm], 0)
-    br_xy_norm = np.max([np.max(contour.squeeze(), axis=0) for contour in mask_contours_norm], 0)
+    tl_xy_norm = np.min([np.min(contour.squeeze(), axis=0) for contour in cleaned_contours_norm], 0)
+    br_xy_norm = np.max([np.max(contour.squeeze(), axis=0) for contour in cleaned_contours_norm], 0)
 
     # Crop full image down to bounding region
     max_xy = (img_w - 1, img_h - 1)

@@ -118,6 +118,9 @@ def get_contours_from_mask(
     if normalize:
         mask_contours_list = normalize_contours(mask_contours_list, mask_binary_uint8.shape)
 
+    # Remove any 1 or 2 point 'contours' since these aren't valid shapes
+    mask_contours_list = [c for c in mask_contours_list if len(c) > 2]
+
     return have_contours, tuple(mask_contours_list)
 
 
