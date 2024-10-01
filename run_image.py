@@ -29,7 +29,7 @@ from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
-from lib.demo_helpers.saving import save_segmentation_results
+from lib.demo_helpers.saving import save_image_segmentation, get_save_name, make_prompt_save_data
 from lib.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -164,20 +164,24 @@ model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
-full_image_bgr = cv2.imread(image_path)
-if full_image_bgr is None:
+loaded_image_bgr = cv2.imread(image_path)
+if loaded_image_bgr is None:
     vreader = cv2.VideoCapture(image_path)
-    ok_read, full_image_bgr = vreader.read()
+    ok_read, loaded_image_bgr = vreader.read()
     vreader.release()
     if not ok_read:
         print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
         raise FileNotFoundError(osp.basename(image_path))
 
 # Crop input image if needed
+input_image_bgr = loaded_image_bgr
+yx_crop_slice = None
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
-    x_crop, y_crop = run_crop_ui(full_image_bgr, display_size_px)
-    full_image_bgr = full_image_bgr[y_crop, x_crop, :]
+    _, history_crop_tlbr = history.read("crop_tlbr_norm")
+    yx_crop_slice, crop_tlbr_norm = run_crop_ui(loaded_image_bgr, display_size_px, history_crop_tlbr)
+    input_image_bgr = loaded_image_bgr[yx_crop_slice]
+    history.store(crop_tlbr_norm=crop_tlbr_norm)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -186,7 +190,7 @@ if enable_crop_ui:
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(input_image_bgr, imgenc_base_size, use_square_sizing)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -226,7 +230,7 @@ if model_device == "cuda":
 # %% Set up the UI
 
 # Set up shared UI elements & control logic
-ui_elems = PromptUI(full_image_bgr, mask_preds)
+ui_elems = PromptUI(input_image_bgr, mask_preds)
 uictrl = PromptUIControl(ui_elems)
 
 # Set up message bars to communicate data info & controls
@@ -297,7 +301,7 @@ KEY_ZOOM_IN = ord("=")
 KEY_ZOOM_OUT = ord("-")
 
 # Set up helper objects for managing display/mask data
-base_img_maker = ReusableBaseImage(full_image_bgr)
+base_img_maker = ReusableBaseImage(input_image_bgr)
 mask_postprocessor = MaskPostProcessor()
 
 # Some feedback
@@ -391,14 +395,23 @@ try:
 
         # Save data
         if save_btn.read():
+
+            # Get additional data for saving
             disp_image = ui_elems.display_block.rerender()
-            all_prompts_dict = {
-                "boxes": box_tlbr_norm_list,
-                "fg_points": fg_xy_norm_list,
-                "bg_points": bg_xy_norm_list,
-            }
-            save_folder, save_idx = save_segmentation_results(
-                image_path, full_image_bgr, disp_image, mask_contours_norm, selected_mask_uint8, all_prompts_dict
+            all_prompts_dict = make_prompt_save_data(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+            # Generate & save segmentation images!
+            save_folder, save_idx = get_save_name(image_path, "manual")
+            save_image_segmentation(
+                save_folder,
+                save_idx,
+                loaded_image_bgr,
+                disp_image,
+                selected_mask_uint8,
+                mask_contours_norm,
+                all_prompts_dict,
+                use_inverted_mask,
+                yx_crop_slice,
             )
             print(f"SAVED ({save_idx}):", save_folder)
 

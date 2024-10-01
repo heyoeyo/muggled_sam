@@ -35,7 +35,7 @@ from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from lib.demo_helpers.contours import get_contours_from_mask
 from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
-from lib.demo_helpers.saving import save_video_frames
+from lib.demo_helpers.saving import save_video_frames, get_save_name
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -206,8 +206,10 @@ vreader = ReversibleLoopingVideoReader(video_path).release()
 sample_frame = vreader.get_sample_frame()
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
-    x_crop, y_crop = run_crop_ui(sample_frame, display_size_px)
-    sample_frame = sample_frame[y_crop, x_crop, :]
+    _, history_crop_tlbr = history.read("crop_tlbr_norm")
+    yx_crop_slice, crop_tlbr_norm = run_crop_ui(sample_frame, display_size_px, history_crop_tlbr)
+    sample_frame = sample_frame[yx_crop_slice]
+    history.store(crop_tlbr_norm=crop_tlbr_norm)
 
 # Initial model run to make sure everything succeeds
 print("", "Encoding image data...", sep="\n", flush=True)
@@ -426,7 +428,8 @@ try:
 
         # Crop incoming frames if needed
         if enable_crop_ui:
-            frame = frame[y_crop, x_crop, :]
+            full_frame = frame.copy()
+            frame = frame[yx_crop_slice]
 
         # Change playback direction, if needed
         is_reversed_changed, reverse_video = reversal_btn.read()
@@ -693,14 +696,23 @@ try:
 
                 # Generate a full sized mask matching the frame
                 mask_preds, mask_idx = maskresults_list[objidx].preds, maskresults_list[objidx].idx
-                save_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mask_idx, save_hw)
+                save_mask_1ch_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mask_idx, save_hw)
                 if is_inverted_mask:
-                    save_mask_uint8 = cv2.bitwise_not(save_mask_uint8)
+                    save_mask_1ch_uint8 = cv2.bitwise_not(save_mask_1ch_uint8)
+
+                # Select whether we use the existing frame/mask or expand to the full (uncropped) sizing
+                save_frame = frame
+                if enable_crop_ui:
+                    mask_bg = 255 if is_inverted_mask else 0
+                    full_mask_1ch = np.full(full_frame.shape[0:2], mask_bg, dtype=np.uint8)
+                    full_mask_1ch[yx_crop_slice] = save_mask_1ch_uint8
+                    save_mask_1ch_uint8 = full_mask_1ch
+                    save_frame = full_frame
 
                 # Add mask to alpha channel (and clear masked RGB data, reduces file size!)
-                save_frame = cv2.bitwise_and(frame, cv2.cvtColor(save_mask_uint8, cv2.COLOR_GRAY2BGR))
+                save_frame = cv2.bitwise_and(save_frame, cv2.cvtColor(save_mask_1ch_uint8, cv2.COLOR_GRAY2BGR))
                 save_frame = cv2.cvtColor(save_frame, cv2.COLOR_BGR2BGRA)
-                save_frame[:, :, -1] = save_mask_uint8
+                save_frame[:, :, -1] = save_mask_1ch_uint8
 
                 # Encode frame data in memory (want to save in bulk, to avoid killing filesystem)
                 ok_encode, png_encoding = cv2.imencode(".png", save_frame)
@@ -717,11 +729,15 @@ try:
 
         # Save data to disk and clear storage
         if buffer_save_btn.read():
+
+            # Only save if we actually have frame data!
             png_per_frame_dict = savebuffers_list[buffer_select_idx].png_per_frame_dict
-            save_path, save_num_frames = save_video_frames(video_path, buffer_select_idx, png_per_frame_dict)
-            if save_num_frames > 0:
-                print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
-            buffer_clear_btn.click()
+            num_frames = len(png_per_frame_dict.keys())
+            if num_frames > 0:
+                save_folder, save_idx = get_save_name(video_path, "video")
+                save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
+                print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
+                buffer_clear_btn.click()
 
         # Wipe out save data if needed
         if buffer_clear_btn.read():
@@ -742,8 +758,10 @@ finally:
     # Save any buffered frame data
     for objidx, savebuffer in enumerate(savebuffers_list):
         png_per_frame_dict = savebuffer.png_per_frame_dict
-        save_path, save_num_frames = save_video_frames(video_path, objidx, png_per_frame_dict)
-        if save_num_frames > 0:
-            print("", f"Saving frame data ({save_num_frames} frames)...", f"@ {save_path}", sep="\n")
+        num_frames = len(png_per_frame_dict.keys())
+        if num_frames > 0:
+            save_folder, save_idx = get_save_name(video_path, "video")
+            save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
+            print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
 
     pass
