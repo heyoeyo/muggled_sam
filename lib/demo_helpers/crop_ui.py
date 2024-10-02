@@ -119,7 +119,7 @@ def run_crop_ui(
     crop_xy1_txt, crop_wh_txt, crop_xy2_txt = ui_text
 
     # Set up window for display
-    window = DisplayWindow(window_title)
+    window = DisplayWindow(window_title).move(200, 50)
     window.attach_mouse_callbacks(crop_ui)
     window.attach_keypress_callback("[", zoom_slider.decrement)
     window.attach_keypress_callback("]", zoom_slider.increment)
@@ -179,7 +179,7 @@ def run_crop_ui(
 
                 # Crop the image!
                 crop_image = image_bgr[crop_y1:crop_y2, crop_x1:crop_x2, :]
-                crop_w, crop_h = crop_image.shape[0:2]
+                crop_h, crop_w = crop_image.shape[0:2]
 
                 # Resize crop to fit into display area
                 dispcrop_hw = crop_disp.get_render_hw()

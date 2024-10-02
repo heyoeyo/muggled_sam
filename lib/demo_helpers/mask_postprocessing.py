@@ -44,6 +44,10 @@ class MaskPostProcessor:
 
     def __call__(self, mask_uint8, mask_contours_norm, point_hint_xy_norm=None):
 
+        # Don't do any processing if there are no masks!
+        if len(mask_contours_norm) == 0:
+          return mask_contours_norm, mask_uint8
+
         # For convenience, get pixel sizing for operations that need it
         mask_shape = mask_uint8.shape
 

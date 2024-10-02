@@ -48,7 +48,6 @@ with torch.inference_mode():
     image_tensor = sammodel.image_encoder.prepare_image(img_bgr, max_side_length=1024, use_square_sizing=True)
     image_batch = image_tensor.repeat(batch_size, 1, 1, 1)
     encoded_img = sammodel.image_encoder(image_batch)
-    tokens_shape = encoded_img[0].shape if isinstance(encoded_img, list) else encoded_img.shape  # SAMv2 vs v1
 
 # Process data
 print("Generating masks...")
@@ -56,10 +55,13 @@ encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, b
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 
 # Feedback
+is_samv2 = isinstance(encoded_img, (tuple, list))
+tokens_shape = encoded_img[0].shape if is_samv2 else encoded_img.shape
 print("")
 print("Results:")
 if torch.cuda.is_available():
-    print("Peak VRAM:", torch.cuda.max_memory_allocated() // 1_000_000, "MB")
+    free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
+    print("VRAM Usage:", (total_vram_bytes - free_vram_bytes) // 1_000_000)
 print("Input image shape:", img_bgr.shape)
 print("Pre-encoded image shape:", tuple(image_batch.shape))
 print("Image tokens shape:", tuple(tokens_shape))
