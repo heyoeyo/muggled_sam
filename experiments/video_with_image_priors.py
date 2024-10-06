@@ -50,6 +50,7 @@ from lib.demo_helpers.misc import PeriodicVRAMReport, get_default_device_string,
 # Set argparse defaults
 default_device = get_default_device_string()
 default_image_path = None
+default_video_path = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
@@ -61,6 +62,7 @@ default_show_iou_preds = False
 # Define script arguments
 parser = argparse.ArgumentParser(description="Run SAMV2 video segmentation with prompting from a separate image")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
+parser.add_argument("-v", "--video_path", default=default_video_path, help="Path to input video")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")
 parser.add_argument(
     "-s",
@@ -131,6 +133,7 @@ parser.add_argument(
 # For convenience
 args = parser.parse_args()
 arg_image_path = args.image_path
+arg_video_path = args.video_path
 arg_model_path = args.model_path
 display_size_px = args.display_size
 device_str = args.device
@@ -155,7 +158,7 @@ _, history_modelpath = history.read("model_path")
 
 # Get pathing to resources, if not provided already
 image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
-video_path = ask_for_path_if_missing(arg_image_path, "video", history_vidpath)
+video_path = ask_for_path_if_missing(arg_video_path, "video", history_vidpath)
 model_path = ask_for_model_path_if_missing(root_path, arg_model_path, history_modelpath)
 
 # Store history for use on reload
