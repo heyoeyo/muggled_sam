@@ -204,8 +204,7 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
-encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+encoded_prompts = sammodel.encode_prompts([], [], [])
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
 
@@ -306,7 +305,7 @@ try:
     while True:
 
         # Read prompt input data & selected mask
-        need_prompt_encode, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = uictrl.read_prompts()
+        need_prompt_encode, prompts = uictrl.read_prompts()
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Record existing prompts into a single memory
@@ -314,7 +313,7 @@ try:
 
             # Produce prompt to be recorded for video segmentation
             _, init_mem, init_ptr = sammodel.initialize_video_masking(
-                encoded_img, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=mselect_idx
+                encoded_img, *prompts, mask_index_select=mselect_idx
             )
             objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
@@ -332,7 +331,7 @@ try:
 
         # Only run the model when an input affecting the output has changed!
         if need_prompt_encode:
-            encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            encoded_prompts = sammodel.encode_prompts(*prompts)
             mask_preds, iou_preds = sammodel.generate_masks(
                 encoded_img, encoded_prompts, mask_hint=None, blank_promptless_output=True
             )
@@ -341,7 +340,7 @@ try:
         need_mask_update = any((need_prompt_encode, is_mask_changed))
         if need_mask_update:
             selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_img_hw)
-            uictrl.update_mask_previews(mask_preds, mselect_idx)
+            uictrl.update_mask_previews(mask_preds)
 
         # Process contour data
         final_mask_uint8 = selected_mask_uint8
@@ -381,7 +380,7 @@ finally:
     cv2.destroyAllWindows()
 
 # Sanity check. If the user didn't record
-has_prompts = len([*box_tlbr_norm_list, *fg_xy_norm_list, *bg_xy_norm_list])
+has_prompts = any(len(prompt_type) > 0 for prompt_type in prompts)
 no_buffer = objbuffer.get_num_memories()[0] == 0
 if no_buffer and has_prompts:
     print(
@@ -394,13 +393,7 @@ if no_buffer and has_prompts:
     )
 
     # Store encoding associated with last active prompt data
-    _, init_mem, init_ptr = sammodel.initialize_video_masking(
-        encoded_img,
-        box_tlbr_norm_list,
-        fg_xy_norm_list,
-        bg_xy_norm_list,
-        mask_index_select=mselect_idx,
-    )
+    _, init_mem, init_ptr = sammodel.initialize_video_masking(encoded_img, *prompts, mask_index_select=mselect_idx)
     objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
 
@@ -500,7 +493,7 @@ try:
             # Update the mask indicator to show which mask the model has chosen each frame
             best_mask_idx = int(best_mask_idx.squeeze().cpu())
             ui_elems.masks_constraint.change_to(best_mask_idx)
-            uictrl.update_mask_previews(video_preds, best_mask_idx)
+            uictrl.update_mask_previews(video_preds)
 
             # Process contour data
             selected_mask_uint8 = uictrl.create_hires_mask_uint8(video_preds, best_mask_idx, preencode_img_hw)

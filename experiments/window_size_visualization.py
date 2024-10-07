@@ -198,8 +198,7 @@ init_time_taken_ms = round(1000 * (t2 - t1), 1)
 print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
-encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+encoded_prompts = sammodel.encode_prompts([], [], [])
 init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
@@ -330,7 +329,7 @@ try:
     while True:
 
         # Read prompt input data & selected mask
-        need_prompt_encode, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = uictrl.read_prompts()
+        need_prompt_encode, prompts = uictrl.read_prompts()
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Read controls
@@ -364,7 +363,7 @@ try:
 
         # Update masking result if window or prompts are changed
         if need_image_encode or need_prompt_encode:
-            encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            encoded_prompts = sammodel.encode_prompts(*prompts)
             mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 
             # Make scaled copy of predictions for preview when sizing changes
@@ -374,7 +373,7 @@ try:
                 preview_preds = torch.nn.functional.interpolate(mask_preds, size=init_preds_hw)
 
         # Update display of mask previews
-        uictrl.update_mask_previews(preview_preds, mselect_idx, mask_threshold=0.0, invert_mask=False)
+        uictrl.update_mask_previews(preview_preds)
         if show_iou_preds:
             uictrl.draw_iou_predictions(iou_preds)
 

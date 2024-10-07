@@ -322,7 +322,7 @@ try:
     while True:
 
         # Read prompt input data & selected mask
-        need_prompt_encode, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = uictrl.read_prompts()
+        need_prompt_encode, (box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) = uictrl.read_prompts()
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Read secondary controls
@@ -354,7 +354,7 @@ try:
         need_mask_update = any((need_prompt_encode, is_mthresh_changed, is_invert_changed, is_mask_changed))
         if need_mask_update:
             selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_img_hw, mthresh)
-            uictrl.update_mask_previews(mask_preds, mselect_idx, mthresh, use_inverted_mask)
+            uictrl.update_mask_previews(mask_preds, mthresh, use_inverted_mask)
             if show_iou_preds:
                 uictrl.draw_iou_predictions(iou_preds)
 

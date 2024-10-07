@@ -65,6 +65,14 @@ class OverlayGroup:
             item.enable(enabled)
         return self
 
+    def clear_all(self, flag_is_changed=True):
+        for item in self.totuple():
+            try:
+                item.clear(flag_is_changed)
+            except TypeError:
+                item.clear()
+        return self
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Builder functions
@@ -83,11 +91,13 @@ def build_tool_overlays() -> OverlayGroup:
     return OverlayGroup(polygon_olay, hover_olay, box_olay, fgpt_olay, bgpt_olay)
 
 
-def build_tool_buttons() -> tuple[ToolButtonsGroup, RadioConstraint]:
+def build_tool_buttons(text_scale=0.75) -> tuple[ToolButtonsGroup, RadioConstraint]:
     """Helper used to build tool group UI (tool select buttons + prompt clear button)"""
 
     # Set up tool selection UI
-    hover_btn, box_btn, fgpt_btn, bgpt_btn = ToggleButton.many("Hover", "Box", "FG Point", "BG Point")
+    hover_btn, box_btn, fgpt_btn, bgpt_btn = ToggleButton.many(
+        "Hover", "Box", "FG Point", "BG Point", text_scale=text_scale
+    )
     clear_all_prompts_btn = ImmediateButton("Clear", color=(0, 0, 150))
 
     # Set up constraint so only 1 tool can be active (excluding clear button, which isn't toggled)
@@ -290,15 +300,9 @@ class BaseUIControl:
 
     # .................................................................................................................
 
-    def update_mask_previews(self, mask_predictions, mask_select_index, mask_threshold=0.0, invert_mask=False) -> None:
+    def update_mask_previews(self, mask_predictions, mask_threshold=0.0, invert_mask=False) -> None:
         """Updates mask preview buttons with binary copies of predictions"""
-
-        # Update mask selection images
-        mask_preds_uint8 = ((mask_predictions.squeeze(0) > mask_threshold) * 255).byte().cpu().numpy()
-        for pred_idx, (mpred_uint8, mbtn) in enumerate(zip(mask_preds_uint8, self.elems.mask_btns)):
-            mbtn.set_image(mpred_uint8 if not invert_mask else np.bitwise_not(mpred_uint8))
-
-        return
+        return update_mask_preview_buttons(mask_predictions, self.elems.mask_btns, mask_threshold, invert_mask)
 
     # .................................................................................................................
 
@@ -315,13 +319,9 @@ class BaseUIControl:
 
     @staticmethod
     def create_hires_mask_uint8(mask_predictions, mask_select_index, output_hw, mask_threshold=0.0) -> ndarray:
-        """Draws binary mask matching the given output height & width"""
-
-        mask_select = mask_predictions[:, mask_select_index, :, :].unsqueeze(1).float()
-        mask_upscale = nn.functional.interpolate(mask_select, size=output_hw, mode="bilinear", align_corners=False)
-        mask_uint8 = ((mask_upscale.squeeze() > mask_threshold) * 255).byte().cpu().numpy()
-
-        return mask_uint8
+        """Draws binary mask matching the given output height & width. Returns: mask_uint8_1ch"""
+        mask_select = mask_predictions[:, mask_select_index].float()
+        return make_hires_mask_uint8(mask_select, output_hw, mask_threshold).squeeze(0)
 
     # .................................................................................................................
 
@@ -379,48 +379,10 @@ class PromptUIControl(BaseUIControl):
         """
         Helper used to manage prompt reading, as well as quality-of-life behaviors when interpretting prompts
         Returns:
-            need_prompt_reencoding, box_tlbr_list, fg_xy_list, bg_xy_list
+            need_prompt_reencoding, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
         """
 
-        # Read prompting controls
-        is_tool_changed, tool_idx, selected_tool = self.elems.tools_constraint.read()
-        clear_prompts = self.elems.tools.clear.read()
-        if clear_prompts:
-            self.elems.olays.box.clear()
-            self.elems.olays.fgpt.clear()
-            self.elems.olays.bgpt.clear()
-
-        # Read prompt inputs
-        box_prompt_changed, box_tlbr_norm_list = self.elems.olays.box.read()
-        fg_prompt_changed, fg_xy_norm_list = self.elems.olays.fgpt.read()
-        bg_prompt_changed, bg_xy_norm_list = self.elems.olays.bgpt.read()
-
-        # Only add hover point when the tool is active
-        hover_prompt_changed, hover_xy_norm_list = False, []
-        if selected_tool is self.elems.tools.hover:
-            hover_prompt_changed, hover_is_clicked, hover_xy_event = self.elems.olays.hover.read()
-            if hover_xy_event.is_in_region:
-                hover_xy_norm_list = [hover_xy_event.xy_norm]
-
-            # If the user clicks while hovering, treat it as a foreground point (and switch to FG tool)
-            if hover_is_clicked:
-                self.elems.tools_constraint.change_to(self.elems.tools.fgpt)
-                self.elems.olays.fgpt.add_points(hover_xy_event.xy_norm)
-
-        # Add hover points (if any) as foreground prompts
-        fg_xy_norm_list = tuple([*fg_xy_norm_list, *hover_xy_norm_list])
-
-        # Toggle back to hover in case where an fg point is removed and no other points remain
-        if fg_prompt_changed:
-            no_prompts = sum(len(pts) for pts in (fg_xy_norm_list, box_tlbr_norm_list, bg_xy_norm_list)) == 0
-            if no_prompts:
-                self.elems.tools_constraint.change_to(self.elems.tools.hover)
-
-        # Decide if anything changed that would require us to re-encode prompts
-        prompt_changed = any((box_prompt_changed, fg_prompt_changed, bg_prompt_changed, hover_prompt_changed))
-        need_prompt_reencode = prompt_changed or is_tool_changed or clear_prompts
-
-        return need_prompt_reencode, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
+        return read_prompts(self.elems.olays, self.elems.tools, self.elems.tools_constraint)
 
     # .................................................................................................................
 
@@ -473,6 +435,56 @@ class ReusableBaseImage:
 # %% Functions
 
 
+def read_prompts(
+    overlays_group: OverlayGroup,
+    tools_group: ToolButtonsGroup,
+    tools_constraint: RadioConstraint,
+    debug_name="",
+) -> tuple[bool, tuple[list, list, list]]:
+    """
+    Helper used to standardize prompt reading, assuming standard
+    hover/box/fg/bg UI.
+
+    Returns:
+        is_prompt_changed, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+    """
+
+    # Read all overlay states (which is where prompts are actually held!)
+    box_prompt_changed, boxes_tlbr_norm_list = overlays_group.box.read()
+    fg_prompt_changed, fg_xy_norm_list = overlays_group.fgpt.read()
+    bg_prompt_changed, bg_xy_norm_list = overlays_group.bgpt.read()
+    _, _, selected_tool_elem = tools_constraint.read()
+
+    # Only add hover point when the tool is active
+    hover_changed = False
+    if selected_tool_elem is tools_group.hover:
+
+        # Add hover points (if any) as foreground prompts
+        hover_moved, clicked_while_hovering, hover_xy_event = overlays_group.hover.read()
+        hover_changed = hover_moved  # and hover_xy_event.is_in_region
+        if hover_xy_event.is_in_region:
+            fg_xy_norm_list = tuple([*fg_xy_norm_list, hover_xy_event.xy_norm])
+
+        # Treat hover clicks as foreground points (and switch to FG tool)
+        if clicked_while_hovering:
+            tools_constraint.change_to(tools_group.fgpt)
+            overlays_group.fgpt.add_points(hover_xy_event.xy_norm)
+
+    # Toggle back to hover in case where an fg point is removed and no other points remain
+    if fg_prompt_changed:
+        no_prompts = sum(len(pts) for pts in (fg_xy_norm_list, boxes_tlbr_norm_list, bg_xy_norm_list)) == 0
+        if no_prompts:
+            tools_constraint.change_to(tools_group.hover)
+
+    # Bundle all prompt changes into single check for convenience
+    is_prompt_changed = any((hover_changed, box_prompt_changed, fg_prompt_changed, bg_prompt_changed))
+
+    return is_prompt_changed, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+
+# .....................................................................................................................
+
+
 def find_best_display_arrangement(image_shape, mask_shape, target_ar=2.0, num_masks=4):
     """
     Helper function used to decide how to arrange a display made up of a
@@ -517,3 +529,58 @@ def find_best_display_arrangement(image_shape, mask_shape, target_ar=2.0, num_ma
     _, best_side, best_order = min(ardelta_side_order_list)
 
     return best_side, best_order
+
+
+# .....................................................................................................................
+
+
+def update_mask_preview_buttons(
+    mask_predictions: Tensor,
+    mask_buttons: list[ToggleImage],
+    mask_threshold=0.0,
+    invert_mask=False,
+) -> None:
+    """
+    Helper used to draw updated mask preview buttons (used for selecting which mask to use)
+    Supports inversion as well as adjusting the threshold level used for the display.
+    Assumes predictions are given with shape: 1x4xHxW
+    -> Where 1 is batch size (only supports batch of 1)
+    -> Expects 4 masks of any H/W
+
+    Returns nothing!
+    """
+
+    # Update mask selection images
+    mask_preds_uint8 = ((mask_predictions.squeeze(0) > mask_threshold) * 255).byte().cpu().numpy()
+    for pred_idx, (mpred_uint8, mbtn) in enumerate(zip(mask_preds_uint8, mask_buttons)):
+        mbtn.set_image(mpred_uint8 if not invert_mask else np.bitwise_not(mpred_uint8))
+
+    return
+
+
+# .....................................................................................................................
+
+
+def make_hires_mask_uint8(mask_prediction: Tensor, output_hw=(1024, 1024), mask_threshold=0.0) -> ndarray:
+    """
+    Helper used to draw a high-resolution binary uint8 (numpy)
+    version of a given mask prediction. Expects a single mask
+    prediction, but will work with a variety of input shapes.
+    Supports inputs of shape:
+        BxNxHxW, NxHxW, HxW
+
+    Will return result with matching shape dimensions,
+    but with output H/W sizing in numpy uint8 format
+    """
+
+    # Set up dimension padding (for interpolation func) & post-indexing to remove padded dimensions
+    preds, squeeze_idx = mask_prediction, slice(None)
+    if preds.ndim == 3:
+        preds = mask_prediction[None]
+        squeeze_idx = (0,)
+    elif preds.ndim == 2:
+        preds = mask_prediction[None, None]
+        squeeze_idx = (0, 0)
+
+    mask_upscale = nn.functional.interpolate(preds, size=output_hw, mode="bilinear", align_corners=False)
+    return ((mask_upscale[squeeze_idx] > mask_threshold) * 255).byte().cpu().numpy()

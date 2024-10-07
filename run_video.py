@@ -222,8 +222,8 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
-encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+prompts = ([], [], [])
+encoded_prompts = sammodel.encode_prompts(*prompts)
 init_mask_preds, _ = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 prediction_hw = init_mask_preds.shape[2:]
 # mask_uint8 = ((mask_preds[:, 0, :, :] > 0.0) * 255).byte().cpu().numpy().squeeze()
@@ -538,12 +538,10 @@ try:
             track_btn.toggle(True, flag_if_changed=False)
 
             # If a prompt exists when tracking begins, assume we should use it
-            if sammodel.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list):
+            if sammodel.check_have_prompts(*prompts):
                 _, init_mem, init_ptr = sammodel.initialize_video_masking(
                     encoded_img,
-                    box_tlbr_norm_list,
-                    fg_xy_norm_list,
-                    bg_xy_norm_list,
+                    *prompts,
                     mask_index_select=maskresults_list[buffer_select_idx].idx,
                 )
                 memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
@@ -567,11 +565,11 @@ try:
 
             # Look for user interactions
             _, paused_mask_idx, _ = ui_elems.masks_constraint.read()
-            need_prompt_encode, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = uictrl.read_prompts()
-            have_user_prompts = sammodel.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            need_prompt_encode, prompts = uictrl.read_prompts()
+            have_user_prompts = sammodel.check_have_prompts(*prompts)
             have_track_prompts = any(mem.check_has_prompts() for mem in memory_list)
             if need_prompt_encode and (have_user_prompts or not have_track_prompts):
-                encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+                encoded_prompts = sammodel.encode_prompts(*prompts)
                 paused_mask_preds, _ = sammodel.generate_masks(
                     encoded_img,
                     encoded_prompts,
@@ -593,9 +591,7 @@ try:
             if store_prompt_btn.read():
                 _, init_mem, init_ptr = sammodel.initialize_video_masking(
                     encoded_img,
-                    box_tlbr_norm_list,
-                    fg_xy_norm_list,
-                    bg_xy_norm_list,
+                    *prompts,
                     mask_index_select=paused_mask_idx,
                 )
                 memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
@@ -637,7 +633,7 @@ try:
         selected_mask_idx = maskresults_list[buffer_select_idx].idx
         selected_obj_score = maskresults_list[buffer_select_idx].objscore
         ui_elems.masks_constraint.change_to(selected_mask_idx)
-        uictrl.update_mask_previews(selected_mask_preds, selected_mask_idx, invert_mask=is_inverted_mask)
+        uictrl.update_mask_previews(selected_mask_preds, invert_mask=is_inverted_mask)
 
         # Update the (selected) object score
         objscore_text.set_value(round(selected_obj_score, 1))
