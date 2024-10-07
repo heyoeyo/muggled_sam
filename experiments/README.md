@@ -13,6 +13,18 @@ This script is a companion to an earlier [block norm visualization](https://gith
 
 Interestingly, while the base+ and large SAMv2 models _do_ have these high-norm tokens as expected (see the blacked-out tiles in the example image above), the SAMv1 models **do not**! There are other interesting patterns as well, for example, the high-norm blocks of SAMv2 seem to exclusive appear in stage 3. Additionally, the tokens for the v1 models show surprisingly little differences from one block to another (vaguely suggesting that the models could make due with far fewer blocks?), while the v2 models show similarly small differences between blocks within each stage, but drastic differences between stages (likely due to pooling).
 
+## Cross-Image Segmentation
+
+This script is a follow-up to the [image-cross-video](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) segmentation script (inspired by yet another post on the [SAMv2 issues board, #352](https://github.com/facebookresearch/sam2/issues/352)). In this case two regular images are loaded and the user is able to prompt either image while observing the segmentation result on the other! This makes use of the SAMv2 capability for processing videos, with the two images being treated as part of the same video, where the prompted image is the first frame and the other image is the second frame of the video.
+
+<p align="center">
+  <img src=".readme_assets/cross_image_segmentation_example.webp" alt="">
+</p>
+
+In the example above, a box prompt on a toad in one image is used to 'automatically' segment a toad from another image, in spite of the fact that the toads, backgrounds and even aspect ratios are different between the two images. One thing that does seem necessary for this to work is to repeatedly encode the 'second' frame, as if it appears several times in a row in the hypothetical 'video' containing both images, this can be done using a slider control in the UI.
+
+There is evidence of 'semantic transfer' capability between images that have similar content, especially when using the large model. However, the results are inconsistent and show high variability from even small changes to the prompt. This hints at an interesting question of whether the model could be trained to be better at this task and whether this might improve the model's semantic understanding of objects, ultimately benefitting regular image/video segmentation.
+
 ## Mask Stability Visualization
 
 This script was made to better understand the 'stability' of SAM masking, after coming across a [stability_score](https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/utils/amg.py#L158) function in the original SAM implementation. The original scoring function simply calculates the ratio of masked pixels using two different thresholds. The idea being that if the mask doesn't change much as the threshold changes, then the mask can be said to be stable. In this visualization, a lower and upper threshold can be set while the parts of the mask that land within those thresholds is visualized. This can help determine what parts of the mask are most likely to change due to changes in thresholding (and often prompting):

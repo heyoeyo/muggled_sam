@@ -32,8 +32,7 @@ class PeriodicVRAMReport:
         # Update recorded VRAM usage periodically
         curr_time_ms = int(1000 * perf_counter())
         if curr_time_ms > self._next_update_time_ms:
-            free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
-            self._vram_usage_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
+            self._vram_usage_mb = get_total_cuda_vram_usage_mb()
             self._next_update_time_ms = curr_time_ms + self._update_period_ms
 
         return self._vram_usage_mb
@@ -72,3 +71,11 @@ def normalize_to_npuint8(tensor_data):
     min_val, max_val = tensor_data.min(), tensor_data.max()
     data_norm = (tensor_data - min_val) / (max_val - min_val)
     return (data_norm * 255).byte().cpu().numpy()
+
+
+def get_total_cuda_vram_usage_mb():
+    """Helper used to measure the total VRAM usage when using CUDA. Returns 0 if not using CUDA"""
+    if torch.cuda.is_available():
+        free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
+        return (total_vram_bytes - free_vram_bytes) // 1_000_000
+    return 0

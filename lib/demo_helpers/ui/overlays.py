@@ -167,19 +167,23 @@ class HoverOverlay(BaseOverlay):
         self._is_valid = False
         self._is_clicked = False
         self._is_changed = False
+        self._prev_is_in_region = None
 
     # .................................................................................................................
 
-    def clear(self):
+    def clear(self, flag_is_changed=True):
+        """Reset overlay state"""
         self._event_xy = CBEventXY((0, 0), (0, 0), (0, 0), (1, 1), False)
         self._is_valid = False
         self._is_clicked = False
-        self._is_changed = False
+        self._is_changed = flag_is_changed
+        self._prev_is_in_region = None
         return self
 
     # .................................................................................................................
 
-    def read(self):
+    def read(self) -> tuple[bool, bool, CBEventXY]:
+        """Returns:  is_changed, is_click, event_xy"""
         is_changed = self._is_changed
         self._is_changed = False
         is_clicked = self._is_clicked
@@ -189,7 +193,10 @@ class HoverOverlay(BaseOverlay):
     # .................................................................................................................
 
     def on_move(self, cbxy, cbflags) -> None:
-        self._is_changed = True
+        is_in_region = cbxy.is_in_region
+        is_in_region_changed = is_in_region != self._prev_is_in_region
+        self._is_changed = is_in_region or is_in_region_changed
+        self._prev_is_in_region = is_in_region
         self._event_xy = cbxy
         return
 
@@ -250,14 +257,15 @@ class PointSelectOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def clear(self):
+    def clear(self, flag_is_changed=True):
+        self._is_changed = (len(self._xy_norm_list) > 0) and flag_is_changed
         self._xy_norm_list = []
-        self._is_changed = False
         return self
 
     # .................................................................................................................
 
-    def read(self):
+    def read(self) -> tuple[bool, tuple]:
+        """Returns: is_changed, xy_norm_list"""
         is_changed = self._is_changed
         self._is_changed = False
         return is_changed, tuple(self._xy_norm_list)
@@ -380,15 +388,17 @@ class BoxSelectOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def clear(self):
+    def clear(self, flag_is_changed=True):
+        had_boxes = (len(self._tlbr_norm_list) > 0) or (self._tlbr_norm_inprog is not None)
+        self._is_changed = had_boxes and flag_is_changed
         self._tlbr_norm_list = []
         self._tlbr_norm_inprog = None
-        self._is_changed = False
         return self
 
     # .................................................................................................................
 
     def read(self, include_in_progress_box=True) -> tuple[bool, tuple]:
+        """Returns: is_changed, box_tlbr_list"""
 
         # Toggle change state, if needed
         is_changed = self._is_changed

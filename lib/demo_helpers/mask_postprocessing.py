@@ -7,6 +7,7 @@
 
 import cv2
 import numpy as np
+import torch
 
 from lib.demo_helpers.contours import (
     get_contours_from_mask,
@@ -46,7 +47,7 @@ class MaskPostProcessor:
 
         # Don't do any processing if there are no masks!
         if len(mask_contours_norm) == 0:
-          return mask_contours_norm, mask_uint8
+            return mask_contours_norm, mask_uint8
 
         # For convenience, get pixel sizing for operations that need it
         mask_shape = mask_uint8.shape
@@ -172,3 +173,39 @@ class MaskPostProcessor:
         return mask_contours_norm, final_mask_uint8
 
     # .................................................................................................................
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Functions
+
+
+def calculate_mask_stability_score(mask_predictions, stability_offset=2.0, mask_threshold=0.0, sum_dtype=torch.int32):
+    """
+    Stability score measures the ratio of masked pixels when using a
+    lower than normal vs. higher than normal threshold (called easy vs. hard here).
+    The closer the hard result is to the easy result, the more 'stable'
+    the result considered to be.
+
+    See:
+    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/utils/amg.py#L158
+
+    Returns:
+        stability_score (shape: N, for N masks input)
+    """
+
+    # For clarity. Compute sum along H/W dimensions only
+    # -> We'll get a unique sum for each 'channel' (i.e. separate masks) and batch index
+    # -> For example, given preds. with shape: 1x4x32x32, we'll get sum result of shape: 1x4
+    # -> Given preds. with shape: 2x64x64, we'll get sum result of shape: 2
+    sum_dim = (-2, -1)
+
+    # Compute number of masked pixels with a more difficult (higher) threshold
+    hard_thresh = mask_threshold + stability_offset
+    hard_count = (mask_predictions > hard_thresh).sum(sum_dim, dtype=sum_dtype)
+
+    # Compute number of masked pixels with an easier (lower) threhsold
+    easy_thresh = mask_threshold - stability_offset
+    easy_count = (mask_predictions > easy_thresh).sum(sum_dim, dtype=sum_dtype)
+
+    # Stability is a measure of how similar hard vs. easy results are
+    return hard_count / torch.max(easy_count, torch.full_like(easy_count, 1))

@@ -118,9 +118,9 @@ class SAMV2MaskDecoder(nn.Module):
         patch_grid_hw = lowres_tokens.shape[2:]
 
         # Special case, return blank masks if no prompt is given
-        if num_prompts == 0 and blank_promptless_output:
-            mask_preds, iou_preds = self.maskgen.make_blank_results(patch_grid_hw)
-            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens)
+        if num_prompts == 0 and blank_promptless_output and not isinstance(mask_hint, Tensor):
+            mask_preds, iou_preds = self.maskgen.make_blank_results(patch_grid_hw, batch_size)
+            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens, batch_size)
             return mask_preds, iou_preds, obj_ptrs, obj_score
 
         # If an integer mask hint is given, interpret it to mean to run the model once, take
@@ -292,16 +292,17 @@ class MaskGen(nn.Module):
 
     # .................................................................................................................
 
-    def make_blank_results(self, patch_grid_hw: tuple[int, int]) -> tuple[Tensor, Tensor]:
+    def make_blank_results(self, patch_grid_hw: tuple[int, int], batch_size: int) -> tuple[Tensor, Tensor]:
         """Helper used to generate a 'blank' mask, meant for cases where inputs aren't available"""
 
         # Due to upscaler layer, the normal mask output should be 4 times larger than the image encoding size!
         mask_h, mask_w = [4 * size for size in patch_grid_hw]
+        mask_shape = (batch_size, 4, mask_h, mask_w)
 
         # Fill in empty mask and IoU prediction values
         device, dtype = self.device_info.device, self.device_info.dtype
-        blank_mask_preds = torch.full((1, 4, mask_h, mask_w), -100, device=device, dtype=dtype, requires_grad=False)
-        blank_iou_preds = torch.ones((1, 4), device=device, dtype=dtype, requires_grad=False)
+        blank_mask_preds = torch.full(mask_shape, -100, device=device, dtype=dtype, requires_grad=False)
+        blank_iou_preds = torch.ones((batch_size, 4), device=device, dtype=dtype, requires_grad=False)
 
         return blank_mask_preds, blank_iou_preds
 
@@ -423,9 +424,7 @@ class MaskHintEncoder(nn.Module):
         encoded_mask_hint = self.downscaler(mask_hint_bhw.to(self.device_info))
         _, _, hint_h, hint_w = encoded_mask_hint.shape
         if hint_h != grid_h or hint_w != grid_w:
-            encoded_mask_hint = encoded_mask_hint.unsqueeze(0)
             encoded_mask_hint = nn.functional.interpolate(encoded_mask_hint, size=patch_grid_hw)
-            encoded_mask_hint = encoded_mask_hint.squeeze(0)
 
         return encoded_mask_hint
 
@@ -494,10 +493,10 @@ class ObjectPointerGen(nn.Module):
 
     # .................................................................................................................
 
-    def make_blank_results(self, mask_tokens):
+    def make_blank_results(self, mask_tokens, batch_size):
         """Helper used to produce 'no object' output when needing blank results"""
         no_obj_score = -100
-        no_obj_ptr = self.no_ptr.expand_as(mask_tokens)
+        no_obj_ptr = self.no_ptr.expand_as(mask_tokens).expand(batch_size, -1, -1)
         return no_obj_score, no_obj_ptr
 
     # .................................................................................................................
