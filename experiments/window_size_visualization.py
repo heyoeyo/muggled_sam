@@ -38,6 +38,7 @@ from lib.demo_helpers.ui.text import ValueBlock
 from lib.demo_helpers.ui.colormaps import HColormapsBar, make_spectral_colormap
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
 
+from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from lib.demo_helpers.contours import get_contours_from_mask
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
@@ -176,10 +177,8 @@ is_v2_model = isinstance(sammodel, SAMV2Model)
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
 if full_image_bgr is None:
-    vreader = cv2.VideoCapture(image_path)
-    ok_read, full_image_bgr = vreader.read()
-    vreader.release()
-    if not ok_read:
+    ok_video, full_image_bgr = run_video_frame_select_ui(image_path)
+    if not ok_video:
         print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
         raise FileNotFoundError(osp.basename(image_path))
 

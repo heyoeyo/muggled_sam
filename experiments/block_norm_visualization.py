@@ -46,6 +46,7 @@ from lib.demo_helpers.ui.static import StaticMessageBar, HSeparator
 from lib.demo_helpers.ui.text import ValueBlock
 from lib.demo_helpers.ui.helpers.text import TextDrawer
 
+from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from lib.demo_helpers.model_capture import ModelOutputCapture
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
@@ -152,10 +153,8 @@ sammodel.to(**device_config_dict)
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
 if full_image_bgr is None:
-    vreader = cv2.VideoCapture(image_path)
-    ok_read, full_image_bgr = vreader.read()
-    vreader.release()
-    if not ok_read:
+    ok_video, full_image_bgr = run_video_frame_select_ui(image_path)
+    if not ok_video:
         print("", "Unable to load image!", f"  @ {image_path}", sep="\n", flush=True)
         raise FileNotFoundError(osp.basename(image_path))
 

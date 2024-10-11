@@ -45,6 +45,7 @@ from lib.demo_helpers.shared_ui_layout import (
     update_mask_preview_buttons,
 )
 
+from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from lib.demo_helpers.contours import get_contours_from_mask
 from lib.demo_helpers.mask_postprocessing import calculate_mask_stability_score
 from lib.demo_helpers.history_keeper import HistoryKeeper
@@ -170,6 +171,18 @@ sammodel.to(**device_config_dict)
 # Load image and get shaping info for providing display
 full_image_a = cv2.imread(image_path_a)
 full_image_b = cv2.imread(image_path_b)
+
+# Handle case where videos are provided instead of images
+if full_image_a is None:
+    ok_video, full_image_a = run_video_frame_select_ui(image_path_a, window_title="Select frame for image A")
+    if not ok_video:
+        print("", "Unable to load first image!", f"  @ {image_path_a}", sep="\n", flush=True)
+        raise FileNotFoundError(osp.basename(image_path_a))
+if full_image_b is None:
+    ok_video, full_image_b = run_video_frame_select_ui(image_path_b, window_title="Select frame for image B")
+    if not ok_video:
+        print("", "Unable to load first image!", f"  @ {image_path_b}", sep="\n", flush=True)
+        raise FileNotFoundError(osp.basename(image_path_b))
 
 # Determine stacking direction
 need_auto_stack_check = not (use_hstack_images or use_vstack_images)
@@ -363,9 +376,9 @@ try:
         # Read prompts
         prompt_a_changed, prompts_a = read_prompts(overlays_a, tools_group, tools_constraint, "a")
         prompt_b_changed, prompts_b = read_prompts(overlays_b, tools_group, tools_constraint, "b")
-        if prompt_a_changed:
+        if prompt_a_changed and img_a_elem.is_hovered():
             side_select = "a"
-        elif prompt_b_changed:
+        elif prompt_b_changed and img_b_elem.is_hovered():
             side_select = "b"
 
         # If we switch which image is prompted, clear prompts from the other image
