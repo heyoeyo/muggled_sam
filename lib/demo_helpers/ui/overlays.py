@@ -195,7 +195,7 @@ class HoverOverlay(BaseOverlay):
     def on_move(self, cbxy, cbflags) -> None:
         is_in_region = cbxy.is_in_region
         is_in_region_changed = is_in_region != self._prev_is_in_region
-        self._is_changed = is_in_region or is_in_region_changed
+        self._is_changed |= is_in_region or is_in_region_changed
         self._prev_is_in_region = is_in_region
         self._event_xy = cbxy
         return

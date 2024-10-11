@@ -382,6 +382,10 @@ class PromptUIControl(BaseUIControl):
             need_prompt_reencoding, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
         """
 
+        need_prompt_clear = self.elems.tools.clear.read()
+        if need_prompt_clear:
+            self.elems.olays.clear_all(flag_is_changed=True)
+
         return read_prompts(self.elems.olays, self.elems.tools, self.elems.tools_constraint)
 
     # .................................................................................................................
@@ -460,8 +464,7 @@ def read_prompts(
     if selected_tool_elem is tools_group.hover:
 
         # Add hover points (if any) as foreground prompts
-        hover_moved, clicked_while_hovering, hover_xy_event = overlays_group.hover.read()
-        hover_changed = hover_moved  # and hover_xy_event.is_in_region
+        hover_changed, clicked_while_hovering, hover_xy_event = overlays_group.hover.read()
         if hover_xy_event.is_in_region:
             fg_xy_norm_list = tuple([*fg_xy_norm_list, hover_xy_event.xy_norm])
 

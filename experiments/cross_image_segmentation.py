@@ -118,7 +118,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--vstack",
-    default=True,
+    default=False,
     action="store_true",
     help="Force images to stack vertically",
 )
