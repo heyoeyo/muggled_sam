@@ -33,6 +33,7 @@ from lib.demo_helpers.saving import save_image_segmentation, get_save_name, make
 from lib.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
+    get_total_cuda_vram_usage_mb,
 )
 
 
@@ -44,6 +45,7 @@ default_device = get_default_device_string()
 default_image_path = None
 default_model_path = None
 default_prompts_path = None
+default_mask_hint_path = None
 default_display_size = 900
 default_base_size = 1024
 default_window_size = 16
@@ -59,6 +61,12 @@ parser.add_argument(
     default=default_prompts_path,
     type=str,
     help="Path to a json file containing initial prompts to use on start-up (see saved json results for formatting)",
+)
+parser.add_argument(
+    "--mask_path",
+    default=default_mask_hint_path,
+    type=str,
+    help="Path to a mask image, which will be used as a prompt for segmentation",
 )
 parser.add_argument(
     "-s",
@@ -126,7 +134,8 @@ parser.add_argument(
 args = parser.parse_args()
 arg_image_path = args.image_path
 arg_model_path = args.model_path
-int_prompts_path = args.prompts_path
+init_prompts_path = args.prompts_path
+mask_hint_path = args.mask_path
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
@@ -183,6 +192,14 @@ if enable_crop_ui:
     input_image_bgr = loaded_image_bgr[yx_crop_slice]
     history.store(crop_tlbr_norm=crop_tlbr_norm)
 
+# Try loading the given mask hint
+mask_hint_img = None
+if mask_hint_path is not None:
+    assert osp.exists(mask_hint_path), f"Invalid mask hint path: {mask_hint_path}"
+    mask_hint_img = cv2.imread(mask_hint_path)
+    assert mask_hint_img is not None, f"Error loading mask hint image: {mask_hint_path}"
+use_mask_hint = mask_hint_img is not None
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Run image encoder
@@ -203,7 +220,17 @@ encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, b
 mask_preds, iou_preds = sammodel.generate_masks(
     encoded_img, encoded_prompts, blank_promptless_output=disable_promptless_masks
 )
-prediction_hw = mask_preds.shape[2:]
+
+# Set up mask hint to match image encoding, if needed
+mask_hint = None
+if use_mask_hint:
+    pred_h, pred_w = mask_preds.shape[2:]
+    mask_hint_img_1ch = cv2.cvtColor(mask_hint_img, cv2.COLOR_BGR2GRAY)
+    mask_hint_img_1ch = cv2.resize(mask_hint_img_1ch, dsize=(pred_w, pred_h))
+    mask_hint = torch.from_numpy(mask_hint_img_1ch).squeeze().unsqueeze(0)
+    mask_hint = ((mask_hint / max(mask_hint.max(), 1.0)) - 0.5) * 20.0
+    mask_hint = mask_hint.to(mask_preds)
+    mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -222,8 +249,8 @@ print(
 
 # Provide memory usage feedback, if using cuda GPU
 if model_device == "cuda":
-    peak_vram_mb = torch.cuda.max_memory_allocated() // 1_000_000
-    print("  VRAM:", peak_vram_mb, "MB")
+    total_vram_mb = get_total_cuda_vram_usage_mb()
+    print("  VRAM:", total_vram_mb, "MB")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -237,16 +264,28 @@ uictrl = PromptUIControl(ui_elems)
 device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(model_name, f"{token_hw_str} tokens", device_dtype_str, space_equally=True)
 footer_msgbar = StaticMessageBar(
-    "[p] Preview", "[i] Invert", "[tab] Contouring", "[arrows] Tools/Masks", text_scale=0.35
+    "[p] Preview",
+    "[i] Invert",
+    "[tab] Contouring",
+    "[m] Mask hint" if use_mask_hint else "[arrows] Tools/Masks",
+    text_scale=0.35,
 )
 
 # Set up secondary button controls
-show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn = ToggleButton.many(
-    "Preview", "Invert", "Largest Only", "Pick best", default_state=False, text_scale=0.5
+mask_hint_btn, show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn = ToggleButton.many(
+    "Mask Hint", "Preview", "Invert", "Largest Only", "Pick best", default_state=False, text_scale=0.5
 )
+mask_hint_btn.toggle(use_mask_hint)
 large_mask_only_btn.toggle(True)
 save_btn = ImmediateButton("Save", (60, 170, 20))
-secondary_ctrls = HStack(show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn, save_btn)
+secondary_ctrls = HStack(
+    mask_hint_btn if use_mask_hint else None,
+    show_preview_btn,
+    invert_mask_btn,
+    large_mask_only_btn,
+    pick_best_btn,
+    save_btn,
+)
 
 # Set up slider controls
 thresh_slider = HSlider("Mask Threshold", 0, -8.0, 8.0, 0.1, marker_steps=10)
@@ -273,7 +312,7 @@ render_limit_dict = {render_side: display_size_px}
 min_display_size_px = disp_layout._rdr.limits.min_h if render_side == "h" else disp_layout._rdr.limits.min_w
 
 # Load initial prompts, if provided
-have_init_prompts, init_prompts_dict = load_init_prompts(int_prompts_path)
+have_init_prompts, init_prompts_dict = load_init_prompts(init_prompts_path)
 if have_init_prompts:
     uictrl.load_initial_prompts(init_prompts_dict)
 
@@ -295,6 +334,10 @@ window.attach_keypress_callback(KEY.TAB, large_mask_only_btn.toggle)
 window.attach_keypress_callback("i", invert_mask_btn.toggle)
 window.attach_keypress_callback("s", save_btn.click)
 window.attach_keypress_callback("c", ui_elems.tools.clear.click)
+
+# Add toggle for mask hinting if needed
+if use_mask_hint:
+    window.attach_keypress_callback("m", mask_hint_btn.toggle)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
@@ -322,10 +365,11 @@ try:
     while True:
 
         # Read prompt input data & selected mask
-        need_prompt_encode, (box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) = uictrl.read_prompts()
+        is_prompt_changed, (box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) = uictrl.read_prompts()
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Read secondary controls
+        is_mhint_changed, enable_mask_hint = mask_hint_btn.read()
         _, show_mask_preview = show_preview_btn.read()
         is_invert_changed, use_inverted_mask = invert_mask_btn.read()
         _, use_largest_contour = large_mask_only_btn.read()
@@ -341,10 +385,14 @@ try:
         mask_postprocessor.update(use_largest_contour, msimplify, mrounding, mpadding, use_inverted_mask)
 
         # Only run the model when an input affecting the output has changed!
+        need_prompt_encode = is_prompt_changed or is_mhint_changed
         if need_prompt_encode:
             encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
             mask_preds, iou_preds = sammodel.generate_masks(
-                encoded_img, encoded_prompts, mask_hint=None, blank_promptless_output=disable_promptless_masks
+                encoded_img,
+                encoded_prompts,
+                mask_hint if enable_mask_hint else None,
+                blank_promptless_output=disable_promptless_masks,
             )
             if use_best_mask:
                 best_mask_idx = sammodel.get_best_mask_index(iou_preds)

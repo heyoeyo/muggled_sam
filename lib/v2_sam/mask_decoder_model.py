@@ -298,11 +298,12 @@ class MaskGen(nn.Module):
         # Due to upscaler layer, the normal mask output should be 4 times larger than the image encoding size!
         mask_h, mask_w = [4 * size for size in patch_grid_hw]
         mask_shape = (batch_size, 4, mask_h, mask_w)
+        iou_shape = (batch_size, 4)
 
         # Fill in empty mask and IoU prediction values
         device, dtype = self.device_info.device, self.device_info.dtype
         blank_mask_preds = torch.full(mask_shape, -100, device=device, dtype=dtype, requires_grad=False)
-        blank_iou_preds = torch.ones((batch_size, 4), device=device, dtype=dtype, requires_grad=False)
+        blank_iou_preds = torch.ones(iou_shape, device=device, dtype=dtype, requires_grad=False)
 
         return blank_mask_preds, blank_iou_preds
 
