@@ -103,6 +103,7 @@ def make_sam_v2(
     num_memory_downsample_layers=4,
     num_memory_encoder_mixer_layers=2,
     num_memory_fusion_layers=4,
+    is_version_2p1=True,
 ) -> SAMV2Model:
     """
     Helper used to build all SAMV2 model components. The arguments for this function are
@@ -153,6 +154,7 @@ def make_sam_v2(
         features_per_memory_token,
         num_downsample_layers=num_memory_downsample_layers,
         num_mixer_layers=num_memory_encoder_mixer_layers,
+        is_version_2p1=is_version_2p1,
     )
     memfuse_model = SAMV2MemoryFusion(
         features_per_prompt_token, features_per_memory_token, num_layers=num_memory_fusion_layers

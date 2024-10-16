@@ -262,7 +262,7 @@ class SAMV2Model(nn.Module):
             best_obj_ptr = obj_ptrs[:, [mask_index_select]]
 
             # Encode initial memory
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, is_prompt_encoding=True)
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, obj_score, is_prompt_encoding=True)
 
         return best_mask_pred, memory_encoding, best_obj_ptr
 
@@ -331,7 +331,7 @@ class SAMV2Model(nn.Module):
 
             # Encode new memory features
             # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L787
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred)
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, obj_score)
 
         return obj_score, best_mask_idx, mask_preds, memory_encoding, best_obj_ptr
 

@@ -36,6 +36,7 @@ def get_model_config_from_state_dict(state_dict):
         "num_output_mask_tokens": get_num_output_mask_tokens(state_dict),
         "num_decoder_blocks": get_mask_decoder_block_count(state_dict),
         "num_decoder_heads": hardcoded_num_decoder_heads,
+        "is_version_2p1": check_is_version_2p1(state_dict),
     }
 
     return config_dict
@@ -316,3 +317,21 @@ def get_mask_decoder_block_count(state_dict):
     num_maskdec_blocks = 1 + max(block_idxs)
 
     return int(num_maskdec_blocks)
+
+
+# .....................................................................................................................
+
+
+def check_is_version_2p1(state_dict) -> bool:
+    """
+    An updated version of SAMv2, called v2.1, was released a couple months
+    after the initial release. It contains some additional parameters, and
+    slight differences in model structure (to use these parameters) compared
+    to v2.
+
+    This function checks for these extra parameters and returns a boolean
+    flag which is True if version 2.1 (aka 2p1) is loaded.
+    """
+
+    target_keys_list = ["no_obj_embed_spatial", "obj_ptr_tpos_proj.weight", "obj_ptr_tpos_proj.bias"]
+    return all(key in state_dict.keys() for key in target_keys_list)

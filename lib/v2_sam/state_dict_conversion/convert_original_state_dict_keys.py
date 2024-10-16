@@ -417,6 +417,10 @@ def _convert_memencoder_keys(key: str) -> None | str:
     if key.startswith("memory_encoder"):
         return key.removeprefix("memory_encoder.")
 
+    # Check for 'no object embedding' which is unique to version 2.1
+    if key == "no_obj_embed_spatial":
+        return "missing_obj_encoder.no_object_embed"
+
     return None
 
 

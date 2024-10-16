@@ -401,7 +401,7 @@ try:
             encoded_prompts = sammodel.encode_prompts(*selected_prompts)
             with torch.inference_mode():
                 grid_posenc = sammodel.coordinate_encoder.get_full_grid_encoding(token_hw)
-                ref_preds, _, ref_ptrs, _ = sammodel.mask_decoder(encoded_img, encoded_prompts, grid_posenc)
+                ref_preds, _, ref_ptrs, obj_score = sammodel.mask_decoder(encoded_img, encoded_prompts, grid_posenc)
 
         # Encode memory data from selected mask
         need_memory_encode = need_prompt_encode or is_mask_select_changed or is_numiter_changed
@@ -409,7 +409,7 @@ try:
             mem_mask_idx = mask_a_idx if side_select == "a" else mask_b_idx
             mask_for_mem = ref_preds[:, [mem_mask_idx], :, :]
             with torch.inference_mode():
-                ref_mem = sammodel.memory_encoder(encoded_img[0], mask_for_mem, is_prompt_encoding=True)
+                ref_mem = sammodel.memory_encoder(encoded_img[0], mask_for_mem, obj_score, is_prompt_encoding=True)
             ref_ptr = ref_ptrs[:, [mem_mask_idx]]
 
             # Run 'video' segmentation to prompt other image

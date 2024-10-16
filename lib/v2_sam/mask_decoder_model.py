@@ -496,7 +496,7 @@ class ObjectPointerGen(nn.Module):
 
     def make_blank_results(self, mask_tokens, batch_size):
         """Helper used to produce 'no object' output when needing blank results"""
-        no_obj_score = -100
+        no_obj_score = torch.tensor(-10).to(mask_tokens)
         no_obj_ptr = self.no_ptr.expand_as(mask_tokens).expand(batch_size, -1, -1)
         return no_obj_score, no_obj_ptr
 
