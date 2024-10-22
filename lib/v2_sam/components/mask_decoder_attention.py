@@ -82,30 +82,27 @@ class GenericAttention(nn.Module):
         """
 
         # For convenience, get the batch size for reshaping operations
-        batch_size_q = q.shape[0]
-        batch_size_kv = k.shape[0]
+        batch_size_q, num_q, features_per_token = q.shape
+        batch_size_kv, num_k = k.shape[0:2]
 
         # Comput QKV tokens & split into 'per-head' shape
         # -> Inputs have shape: BxNxF
         # -> Projection changes shape to: BxNxF' (F' is 'internal' feature count)
         # -> Reshape to get features per head: BxNxHxf (H is number of heads, f is features per head)
         # -> Transpose gives final shape: BxHxNxf
-        q = self.q_proj(q).reshape(batch_size_q, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        k = self.k_proj(k).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        v = self.v_proj(v).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
+        q = self.q_proj(q).reshape(batch_size_q, num_q, self.num_heads, self.features_per_head).transpose(1, 2)
+        k = self.k_proj(k).reshape(batch_size_kv, num_k, self.num_heads, self.features_per_head).transpose(1, 2)
+        v = self.v_proj(v).reshape(batch_size_kv, num_k, self.num_heads, self.features_per_head).transpose(1, 2)
 
-        # Perform query-key 'scaled dot-product' for all heads
-        # -> k.transpose converts shape: BxHxNxf -> BxHxfxN
-        # -> Gives q/k multiply between shapes: BxHxNqxf @ BxHxfxN, result has shape: BxHxNqxN
-        # -> Follow up multiply with v is between: BxHxNqxN @ BxHxNxf, gives final shape: BxHxNqxf
-        attn = (q * self.attn_scale) @ k.transpose(-2, -1)
-        attn = self.softmax(attn) @ v
+        # Fast attention calculation. Result has shape: BxHxNqxf
+        attn = nn.functional.scaled_dot_product_attention(q, k, v)
 
         # Recombine per-head tokens and project back to input feature count
         # -> Tranpose converts shape: BxHxNqxf -> BxNqxHxf
         # -> Flatten merges per-head features to give shape: BxNqxF'
         # -> Output projection maps F' to F features giving output shape: BxNqxF
         enc_q_tokens = attn.transpose(1, 2).flatten(2)
+
         return self.out_proj(enc_q_tokens)
 
     # .................................................................................................................

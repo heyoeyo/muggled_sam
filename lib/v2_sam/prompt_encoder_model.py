@@ -60,22 +60,27 @@ class SAMV2PromptEncoder(nn.Module):
         Returns:
             prompt_tensor
             -> Has shape: BxN'xF
-            -> Where N' is total number of prompt points = N_FG + N_BG + 2*N_boxes
+            -> Where N' is total number of prompt points = 2*N_boxes + N_FG + N_BG + 1
+               (+1 is due to padding point added whenever a prompt is given)
         """
 
-        # The original implementation added extra padding points when no boxes where given:
+        # The original implementation adds an extra padding point when no boxes are given:
         # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/sam/prompt_encoder.py#L169
+        # But at the same time, never passes boxes as inputs! (it always treats them as points):
+        # https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/sam2_image_predictor.py#L406
+        # So a padding point is always added, as long as either a point or box prompt is given
+        # (this is slightly different from the v1 implementation, which does handle boxes separately)
         # -> From brief testing, this isn't strictly required, but does
         #    seem to give slightly nicer results, at least qualitatively.
         #    The behavior has been replicated here for consistency
         no_points = posenc_fg_pts.shape[1] == 0 and posenc_bg_pts.shape[1] == 0
         no_boxes = posenc_boxes.shape[1] == 0
-        num_padding_points = 1 if (no_boxes and not no_points) else 0
+        num_padding_points = 0 if (no_boxes and no_points) else 1
         fg_pt, bg_pt, pad_pt = self.point_encoder(posenc_fg_pts, posenc_bg_pts, num_padding_points)
         boxes_as_pts = self.box_encoder(posenc_boxes)
 
         # Merge all encodings together
-        return torch.cat((fg_pt, bg_pt, pad_pt, boxes_as_pts), dim=1)
+        return torch.cat((boxes_as_pts, fg_pt, bg_pt, pad_pt), dim=1)
 
     # .................................................................................................................
 

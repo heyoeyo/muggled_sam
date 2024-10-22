@@ -47,7 +47,7 @@ class LayerNorm2d(nn.Module):
 
         zeroed_mean = imagelike_bchw - imagelike_bchw.mean(1, keepdim=True)
         channel_stdev = torch.sqrt(zeroed_mean.square().mean(1, keepdim=True) + self.eps)
-        return self.bias + self.weight * zeroed_mean / channel_stdev
+        return self.bias + self.weight * (zeroed_mean / channel_stdev)
 
     # .................................................................................................................
 

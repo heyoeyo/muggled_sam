@@ -151,16 +151,16 @@ class SAMV2MaskDecoder(nn.Module):
 
         # Cross-encode image tokens with prompt tokens
         prompt_tokens = torch.cat((cls_tokens, encoded_prompts_bnc), dim=1)
-        prompt_tokens, img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
+        encoded_prompt_tokens, encoded_img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
 
         # Extract the (now-encoded) 'cls' tokens by undoing the earlier cls concatenation step
-        encoded_cls_tokens = prompt_tokens[:, :num_cls_tokens, :]
+        encoded_cls_tokens = encoded_prompt_tokens[:, :num_cls_tokens, :]
         obj_token_out = encoded_cls_tokens[:, 0, :]
         iou_token_out = encoded_cls_tokens[:, 1, :]
         mask_tokens_out = encoded_cls_tokens[:, 2:, :]
 
         # Produce final output mask & quality predictions
-        mask_preds = self.maskgen(img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out, patch_grid_hw)
+        mask_preds = self.maskgen(encoded_img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out, patch_grid_hw)
         iou_preds = self.iou_token_mlp(iou_token_out)
 
         # Generate 'object pointer' output

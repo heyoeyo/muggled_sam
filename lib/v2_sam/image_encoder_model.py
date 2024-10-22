@@ -52,8 +52,8 @@ class SAMV2ImageEncoder(nn.Module):
     """
 
     # Input image RGB normalization factors (for 0-255 pixel values)
-    rgb_offset = [123.675, 116.28, 103.53]
-    rgb_stdev = [58.395, 57.12, 57.375]
+    rgb_offset = [255.0 * v for v in (0.485, 0.456, 0.406)]
+    rgb_stdev = [255.0 * v for v in (0.229, 0.224, 0.225)]
 
     # .................................................................................................................
 
@@ -167,13 +167,18 @@ class SAMV2ImageEncoder(nn.Module):
             scaled_w = int(np.ceil(img_w * scale_factor / tiling_size)) * tiling_size
 
         # Scale RGB image to correct size and re-order from HWC to BCHW (with batch of 1)
-        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        scaled_hwc = cv2.resize(image_rgb, dsize=(scaled_w, scaled_h))
-        scaled_bchw = np.expand_dims(np.transpose(scaled_hwc, (2, 0, 1)), 0)
-
-        # Move the image over to the pytorch for final pre-processing steps
         device, dtype = self.mean_rgb.device, self.mean_rgb.dtype
-        image_tensor_bchw = torch.tensor(scaled_bchw, device=device, dtype=dtype)
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        image_tensor_chw = torch.tensor(np.transpose(image_rgb, (2, 0, 1)), device=device, dtype=dtype)
+        image_tensor_bchw = torch.nn.functional.interpolate(
+            image_tensor_chw.unsqueeze(0),
+            size=(scaled_h, scaled_w),
+            align_corners=False,
+            antialias=True,
+            mode="bilinear",
+        )
+
+        # Perform mean/scale normalization
         image_tensor_bchw = (image_tensor_bchw - self.mean_rgb) * self.stdev_scale_rgb
 
         # The original SAM implementation padded the short side of the image to form a square

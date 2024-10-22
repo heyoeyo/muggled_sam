@@ -51,9 +51,10 @@ default_base_size = 1024
 default_max_memory_history = 6
 default_max_pointer_history = 15
 default_num_object_buffers = 4
+default_object_score_threshold = 0.0
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
+parser = argparse.ArgumentParser(description="Script used to run Segment-Anything-V2 (SAMv2) on a video")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")
 parser.add_argument(
@@ -82,7 +83,7 @@ parser.add_argument(
     "--use_aspect_ratio",
     default=False,
     action="store_true",
-    help="Process the image at it's original aspect ratio",
+    help="Process the video at it's original aspect ratio",
 )
 parser.add_argument(
     "-b",
@@ -121,6 +122,12 @@ parser.add_argument(
     default=False,
     action="store_true",
     help="If set, existing history data will not be cleared when adding new prompts",
+)
+parser.add_argument(
+    "--objscore_threshold",
+    default=default_object_score_threshold,
+    type=float,
+    help=f"Threshold below which objects are considered to be 'lost' (default: {default_object_score_threshold})",
 )
 parser.add_argument(
     "--hide_info",
@@ -164,6 +171,7 @@ max_memory_history = args.max_memories
 max_pointer_history = args.max_pointers
 discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
+object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
@@ -620,7 +628,7 @@ try:
                     tracked_mask_idx = int(best_mask_idx.squeeze().cpu())
 
                     # Only store history for high-scoring predictions
-                    if obj_score < 0 and discard_on_bad_objscore:
+                    if obj_score < object_score_threshold and discard_on_bad_objscore:
                         mask_preds = mask_preds * 0.0
                     elif is_trackhistory_enabled:
                         memory_list[objidx].store_result(frame_idx, mem_enc, obj_ptr)
