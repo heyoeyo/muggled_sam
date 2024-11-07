@@ -10,6 +10,7 @@ import torch.nn as nn
 
 from .components.memfuse_components import MemoryFusionTransformerLayer, FusionPositionOffset
 from .components.posenc_sine import PositionEmbeddingSine
+from .components.version_2_vs_2p1_variants import ObjectPointerPosEnc_v2p0, ObjectPointerPosEnc_v2p1
 
 # For type hints
 from torch import Tensor
@@ -52,6 +53,7 @@ class SAMV2MemoryFusion(nn.Module):
         features_per_memory_token=64,
         num_layers=4,
         max_memory_history=6,
+        is_version_2p1=True,
     ):
 
         # Inherit from parent
@@ -65,7 +67,9 @@ class SAMV2MemoryFusion(nn.Module):
         self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, features_per_image_token))
 
         # Create models used to help prepare data for transformer layers
-        self.memconcat = MemoryConcatenator(features_per_image_token, features_per_memory_token, max_memory_history)
+        self.memconcat = MemoryConcatenator(
+            features_per_image_token, features_per_memory_token, max_memory_history, is_version_2p1
+        )
         self.imgposenc = ImageTokenPositionEncoder(features_per_image_token)
 
         # Build transformer layers
@@ -112,7 +116,7 @@ class SAMV2MemoryFusion(nn.Module):
             fused_tokens = lowres_image_tokens_bchw + no_mem_bchw
             return fused_tokens
 
-        # Merge all prior memory data into a single set oftokens
+        # Merge all prior memory data into a single set of tokens
         memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
             prompt_memory_encodings,
             prompt_object_pointers,
@@ -145,7 +149,7 @@ class MemoryConcatenator(nn.Module):
     Model used to prepare prior memory encodings & object pointers for
     use within the memory fusion model. The model primarily just
     concatenates all memory data together, but also handles positional
-    encoding of memory data (which follows somewhat complicate rules!).
+    encoding of memory data (which follows somewhat complicated rules!).
 
     This model does not exist in the original implementation. In fact,
     the original functionality exists across many different parts of
@@ -158,7 +162,13 @@ class MemoryConcatenator(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, features_per_image_token=256, features_per_memory_token=64, max_memory_history=6):
+    def __init__(
+        self,
+        features_per_image_token=256,
+        features_per_memory_token=64,
+        max_memory_history=6,
+        is_version_2p1=True,
+    ):
 
         # Inherit from parent
         super().__init__()
@@ -166,10 +176,14 @@ class MemoryConcatenator(nn.Module):
         # Store sizing config for re-use
         self.features_per_memory_token = features_per_memory_token
         self._num_tokens_per_pointer = features_per_image_token // features_per_memory_token
-        self._max_mempos_idx = max_memory_history
+        self._max_mempos_idx = max_memory_history - 1
 
         # Learned embeddings per 'relative position in time', applied to memory encodings
         self.memposenc = FusionPositionOffset(features_per_memory_token, max_memory_history)
+
+        # Create model responsible for position encodings of object pointers
+        ObjectPointerPosenc = ObjectPointerPosEnc_v2p1 if is_version_2p1 else ObjectPointerPosEnc_v2p0
+        self.ptrposenc = ObjectPointerPosenc(features_per_image_token, features_per_memory_token)
 
     # .................................................................................................................
 
@@ -205,7 +219,7 @@ class MemoryConcatenator(nn.Module):
             -> Memory tokens have shape: BxNxF (B batch size, N number of tokens, F features, 64 by default)
             -> Memory position encoding has shape: BxNxF (matching tokens shape)
             -> Number of object pointer tokens is very small compared to the number of memory tokens!
-               The object pointer tokens are stored at the end of the memory tokens tensor.
+               The object pointer tokens are stored at the end of the memory_tokens tensor.
         """
 
         # Allocate storage for all memory encodings and positional encodings
@@ -221,41 +235,53 @@ class MemoryConcatenator(nn.Module):
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
 
-        # Combine memory encodings from past frames
-        for buffer_idx, memenc in enumerate(previous_frame_memory_encodings):
+        # Get index representing how 'far away' each previous frame item is from current frame
+        # -> Assumes buffer is built with 'appendleft' (i.e. 0th index entry is most recent in time)
+        # -> E.g. indexing is: [0, 1, 2, 3, 4, 5]
+        buffer_idx_list = list(range(len(previous_frame_memory_encodings)))
+        if not previous_is_recent_first:
+            # indexing is least-recent first: [5, 4, 3, 2, 1, 0]
+            buffer_idx_list = list(reversed(buffer_idx_list))
+        buffer_idx_list = [min(idx, self._max_mempos_idx) for idx in buffer_idx_list]
 
-            # Get index representing how 'far away' each item is from current frame
-            # -> Assumes buffer is built with 'appendleft' (i.e. 0th index is closest in time)
-            pos_idx = min(buffer_idx + 1, self._max_mempos_idx)
-            if not previous_is_recent_first:
-                pos_idx = self._max_mempos_idx - pos_idx
+        # Combine memory encodings from past frames
+        for mem_idx, memenc in zip(buffer_idx_list, previous_frame_memory_encodings):
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(init_memenc.shape, pos_idx).flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(init_memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
 
-        # Build object pointer input
+        # Build object pointer input if needed
         num_ptr_tokens = 0
-        ptrs_list = [ptr for ptr in prompt_object_pointers]
-        ptrs_list += [ptr for ptr in previous_frame_object_pointers]
-        if len(ptrs_list) > 0:
+        num_prompt_pointers = len(prompt_object_pointers)
+        num_prev_pointers = len(previous_frame_object_pointers)
+        have_pointers = (num_prompt_pointers + num_prev_pointers) > 0
+        if have_pointers:
 
             # Combine all pointers and figure out token shaping
-            # -> Pointers themselves are 'simple' embedding vectors
+            # -> Pointers themselves are 'simple' embedding vectors (shape: Bx1xF)
             # -> They have a larger dimension than memory encodings (default sizing is: 256 vs 64)
             # -> Each pointer gets broken into multiple smaller 'tokens' to match memory dimension
             #    so that pointers can be stacked together with memory encodings for attention calculations
-            ptrs = torch.stack(ptrs_list, dim=0)
-            num_ptrs, ptr_batch_size = ptrs.shape[0:2]
+            # -> For example, say we have 12 pointers, each with 256 features. Assume memory tokens have
+            #    64 features. If we just stack pointers into 'rows-of-tokens' format, we'd get a tensor
+            #    with shape: 12x256, but we want to match memory token shape, which is Nx64 (N tokens).
+            #    So we break each of the 256-feature pointers into 4 (=256/64) tokens for a total of
+            #    48 'pointer tokens' each with 64 features and stack them altogether, giving shape: 48x64
+            ptrs = torch.concat(list(prompt_object_pointers) + list(previous_frame_object_pointers), dim=1)
+            ptr_batch_size, num_ptrs = ptrs.shape[0:2]
             num_ptr_tokens = num_ptrs * self._num_tokens_per_pointer
+            ptr_tokens = ptrs.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
 
-            # Combine pointers into BxNxC shape (where 'C' channels matches memory tokens)
-            ptrs = ptrs.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
-            ptr_pos = torch.zeros_like(ptrs)
-            memory_list.append(ptrs)
-            posenc_list.append(ptr_pos)
+            # Compute position encodings for pointer tokens
+            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, previous_is_recent_first)
+            ptrs_posenc = ptrs_posenc.expand(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
+
+            # Add pointer encodings to total memory/position-encoding tokens
+            memory_list.append(ptr_tokens)
+            posenc_list.append(ptrs_posenc)
 
         # Stack memory & object pointer tokens (and positional encodings) into large BxNxC tensor
         memory_tokens = torch.cat(memory_list, dim=1)

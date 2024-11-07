@@ -51,10 +51,6 @@ class SAMV2Model(nn.Module):
         self.memory_encoder = memory_encoder_model
         self.memory_fusion = memory_fusion_model
 
-        # Store 'empty' prompt encoding, used when stepping video (so we don't repeatedly re-compute it!)
-        no_prompt_encoding = self.encode_prompts([], [], [])
-        self.register_buffer("_video_noprompt_encoding", no_prompt_encoding, persistent=False)
-
         # Default to eval mode, expecting to use inference only
         self.eval()
 
@@ -315,7 +311,7 @@ class SAMV2Model(nn.Module):
             grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 [memfused_encimg, *hires_imgenc],
-                self._video_noprompt_encoding,
+                self.prompt_encoder.create_video_no_prompt_encoding(),
                 grid_posenc,
                 mask_hint=None,
                 blank_promptless_output=False,

@@ -157,7 +157,10 @@ def make_sam_v2(
         is_version_2p1=is_version_2p1,
     )
     memfuse_model = SAMV2MemoryFusion(
-        features_per_prompt_token, features_per_memory_token, num_layers=num_memory_fusion_layers
+        features_per_prompt_token,
+        features_per_memory_token,
+        num_layers=num_memory_fusion_layers,
+        is_version_2p1=is_version_2p1,
     )
 
     # Bundle components into complete SAM model!

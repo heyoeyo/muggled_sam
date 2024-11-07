@@ -437,6 +437,10 @@ def _convert_memfusion_keys(key: str) -> None | str:
     if key == "maskmem_tpos_enc":
         return "memconcat.memposenc.base_memposenc_offsets"
 
+    # Rename object pointer projection weights (only present on SAMv2.1)
+    if key.startswith("obj_ptr_tpos_proj"):
+        return key.replace("obj_ptr_tpos_proj", "memconcat.ptrposenc.pointer_pos_proj")
+
     # Remove model name prefix
     if key.startswith("memory_attention"):
 

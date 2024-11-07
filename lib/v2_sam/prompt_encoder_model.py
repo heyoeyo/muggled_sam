@@ -46,6 +46,9 @@ class SAMV2PromptEncoder(nn.Module):
         self.point_encoder = PointEncoder(output_channels)
         self.box_encoder = BoxEncoder(output_channels)
 
+        # Create cache for storing a special encoding repeatedly used during video segmentation
+        self.register_buffer("_cached_no_prompt", torch.empty((0, 1, 1)), persistent=False)
+
     # .................................................................................................................
 
     def forward(self, posenc_boxes: Tensor, posenc_fg_pts: Tensor, posenc_bg_pts: Tensor) -> Tensor:
@@ -81,6 +84,41 @@ class SAMV2PromptEncoder(nn.Module):
 
         # Merge all encodings together
         return torch.cat((boxes_as_pts, fg_pt, bg_pt, pad_pt), dim=1)
+
+    # .................................................................................................................
+
+    def create_video_no_prompt_encoding(self, batch_size=1) -> Tensor:
+        """
+        Helper used to mimic the 'no prompt' encoding used by SAMv2 during video segmentation
+        which uses 2 padding points. To see how this happens in the SAMv2 model, note that first,
+        if no prompt is given then a single padding point is used as the prompt:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L316-L318
+
+        Also note that for the box prompt, a 'None' value is used:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L342
+
+        Due to the way the prompt encoder is structured, if a point prompt is given with a box input of 'None',
+        then the point encoding gets a padding point:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam/prompt_encoder.py#L169
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam/prompt_encoder.py#L87-L91
+
+        So the result is one explicitly given padding point + an additional padding point due to a box input of 'None'.
+        This has a shockingly large impact on the results, at least for the object score prediction
+        (which tends to be lower without this encoding, most notably with the v2.1 tiny model).
+
+        Returns:
+            no_prompt_encoding
+            (shape: Bx2xF, B batch size, F features per token)
+        """
+
+        cache_batch_size = self._cached_no_prompt.shape[0]
+        if cache_batch_size != batch_size:
+            with torch.inference_mode():
+                self._cached_no_prompt = self.point_encoder.create_padding_point_encoding(
+                    batch_size, num_padding_points=2
+                )
+
+        return self._cached_no_prompt
 
     # .................................................................................................................
 
@@ -134,9 +172,15 @@ class PointEncoder(nn.Module):
 
         # Create 'not a point' encoding to pad the prompt if needed
         batch_size = max(1, fg_out.shape[0], bg_out.shape[0])
-        pad_out = self.not_a_point_embed.tile(batch_size, num_padding_points, 1)
+        pad_out = self.create_padding_point_encoding(batch_size, num_padding_points)
 
         return fg_out, bg_out, pad_out
+
+    # .................................................................................................................
+
+    def create_padding_point_encoding(self, batch_size=1, num_padding_points=1):
+        """Helper used to standardize padding point creation (important for SAMv2 video processing!)"""
+        return self.not_a_point_embed.tile(batch_size, num_padding_points, 1)
 
     # .................................................................................................................
 
