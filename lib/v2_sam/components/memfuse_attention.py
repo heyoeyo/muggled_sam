@@ -95,14 +95,14 @@ class RoPEAttention(nn.Module):
         # -> Projection changes shape to: BxNxF' (F' matches the F for query tokens)
         # -> Reshape to get features per head: BxNxHxf (H is number of heads, f is features per head)
         # -> Transpose gives final shape: BxHxNxf
-        batch_size_q = q.shape[0]
-        batch_size_kv, num_k_total = k.shape[0:2]
-        q = self.q_proj(q).reshape(batch_size_q, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        k = self.k_proj(k).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
-        v = self.v_proj(v).reshape(batch_size_kv, -1, self.num_heads, self.features_per_head).transpose(1, 2)
+        batch_size_q, num_q = q.shape[0:2]
+        batch_size_kv, num_k = k.shape[0:2]
+        q = self.q_proj(q).reshape(batch_size_q, num_q, self.num_heads, self.features_per_head).transpose(1, 2)
+        k = self.k_proj(k).reshape(batch_size_kv, num_k, self.num_heads, self.features_per_head).transpose(1, 2)
+        v = self.v_proj(v).reshape(batch_size_kv, num_k, self.num_heads, self.features_per_head).transpose(1, 2)
 
         # Apply position encoding (shapes: BxHxNxF)
-        num_k_keep = num_k_total - num_final_k_to_exclude
+        num_k_keep = num_k - num_final_k_to_exclude
         q, k[:, :, :num_k_keep] = self.rotposenc(q_tokens_hw, q, k[:, :, :num_k_keep])
 
         # Attention
@@ -235,10 +235,10 @@ class RPEComplexEncoder(nn.Module):
         # -> Tokens assumed to have shape: Batch, Heads, NumTokens, Features/channels
         bq, hq, nq, cq = q.shape
         bk, hk, nk, ck = k.shape
-        n_mat = self.rotvectors.shape[2]
+        n_vec = self.rotvectors.shape[2]
 
         # Re-build rotation vectors if needed
-        if n_mat != nq:
+        if n_vec != nq:
             self.rotvectors = self.get_rotation_vectors(q_tokens_hw)
 
         # Convert each consecutive feature value pair into 'xy' format and rotate

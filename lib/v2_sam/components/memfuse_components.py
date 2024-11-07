@@ -60,7 +60,7 @@ class MemoryFusionTransformerLayer(nn.Module):
         image_patch_hw: tuple[int, int],
         image_tokens_bnc: Tensor,
         memory_tokens_bnc: Tensor,
-        memory_posenc: Tensor,
+        memory_posenc_bnc: Tensor,
         num_objpointer_tokens: int = 0,
     ) -> Tensor:
         """
@@ -70,7 +70,7 @@ class MemoryFusionTransformerLayer(nn.Module):
 
         enc_img_tokens = self.image_selfattn(image_patch_hw, image_tokens_bnc)
         enc_img_tokens = self.image_crossattn(
-            image_patch_hw, enc_img_tokens, memory_tokens_bnc, memory_posenc, num_objpointer_tokens
+            image_patch_hw, enc_img_tokens, memory_tokens_bnc, memory_posenc_bnc, num_objpointer_tokens
         )
         enc_img_tokens = self.image_mlp(enc_img_tokens)
 

@@ -144,8 +144,9 @@ class ConvNeXtBlock(nn.Module):
     This implementation is only slightly different from the original, with a minor structural change
     to better indicate the 'inverted bottleneck' component along with renaming layers
     to more closely describe their usage. This implementation also uses 1x1 convolutions
-    instead of linear layers for simplicity.
-    (the original notes that this may be slower, but if it is, it's hard to measure)
+    for the inverted bottleneck instead of linear layers for simplicity.
+    -> the original notes that this may be slower, but if it is, it's hard to measure
+    -> the two implementations do differ numerically! On the order of 1E-3
 
     The original implementation can be found here:
     https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/memory_encoder.py#L62
