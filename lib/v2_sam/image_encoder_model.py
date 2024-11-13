@@ -81,7 +81,7 @@ class SAMV2ImageEncoder(nn.Module):
         self.posenc = WindowTiledPositionEncoding(features_per_token, base_patch_grid_hw, window_tile_posenc_hw)
 
         # Set up hierarchical image encoder model
-        self.trunk = HieraModel(
+        self.hiera = HieraModel(
             features_per_token,
             num_heads,
             blocks_per_stage,
@@ -89,8 +89,8 @@ class SAMV2ImageEncoder(nn.Module):
             global_attn_spacing_per_stage,
         )
 
-        # Create output projection model which follows the trunk model
-        features_per_stage = self.trunk.get_features_per_stage()
+        # Create output projection model which follows the hiera model
+        features_per_stage = self.hiera.get_features_per_stage()
         self.output_projection = OutputProjection(output_channels, features_per_stage)
 
         # New to version-2, used to process pass-thru features sent to the mask decoder
@@ -126,7 +126,7 @@ class SAMV2ImageEncoder(nn.Module):
         patch_tokens_bhwc = self.posenc(patch_tokens_bhwc)
 
         # Encode patches using transformer, then project down to 3 feature maps
-        multires_tokens_list = self.trunk(patch_tokens_bhwc)
+        multires_tokens_list = self.hiera(patch_tokens_bhwc)
         features_list = self.output_projection(multires_tokens_list)
 
         # Further process high-res features
@@ -236,7 +236,7 @@ class SAMV2ImageEncoder(nn.Module):
         if window_size_per_stage is None:
             window_size_per_stage = [None] * 4
 
-        self.trunk.set_window_sizes(window_size_per_stage)
+        self.hiera.set_window_sizes(window_size_per_stage)
 
         return self
 

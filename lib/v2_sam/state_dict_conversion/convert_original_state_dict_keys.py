@@ -200,7 +200,7 @@ def _convert_imgenc_keys(
         stage_idx = block_idx_to_stage_idx[orig_block_idx]
         new_block_idx = orig_block_idx - block_idx_offset_by_stage[stage_idx]
         old_prefix = f"trunk.blocks.{orig_block_idx}"
-        new_prefix = f"trunk.stages.{stage_idx}.{new_block_idx}"
+        new_prefix = f"hiera.stages.{stage_idx}.{new_block_idx}"
         new_key = new_key.replace(old_prefix, new_prefix)
 
         return new_key

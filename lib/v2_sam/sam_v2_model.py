@@ -178,7 +178,7 @@ class SAMV2Model(nn.Module):
     ) -> tuple[Tensor, Tensor]:
         """
         Function used to generate segmentation masks given an image encoding,
-        as well as a prompt encoding and potentiall a mask hint/prompt. These
+        as well as a prompt encoding and potentially a mask hint/prompt. These
         input encodings are expected to come from other model components.
 
         The mask hint can either be None (no mask input), an integer or a
@@ -228,6 +228,9 @@ class SAMV2Model(nn.Module):
 
         If a 'mask_index_select' isn't given, then the 'best' mask will be chosen automatically.
 
+        This function roughly corresponds to `add_new_points_or_box` in the original SAMv2 implementation:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/sam2_video_predictor.py#L173
+
         Returns:
             best_mask_prediction, memory_encoding, object_pointer
         """
@@ -275,8 +278,11 @@ class SAMV2Model(nn.Module):
         """
         Function which makes segmentation predictions for consecutive frames of
         an input video. It takes in the encoded video frame data along with prior
-        prompt/previous frame memory data, in order to automatically continue
+        prompt/previous frame memory data in order to automatically continue
         segmenting some existing object (i.e. without requiring user prompts).
+
+        This function corresponds to 'track_step' in the original SAMv2 implementation:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L812
 
         Returns:
             object_score, best_mask_index, mask_predictions, memory_encoding, best_object_pointer
@@ -295,6 +301,8 @@ class SAMV2Model(nn.Module):
         with torch.inference_mode():
 
             # Encode image features with previous memory encodings & object pointer data
+            # Called '_prepare_memory_conditioned_features' in original code
+            # See: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L759
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
             memfused_encimg = self.memory_fusion(
                 lowres_imgenc,
@@ -304,9 +312,9 @@ class SAMV2Model(nn.Module):
                 previous_object_pointers,
             )
 
-            # Run mask decoder on memory encoded features
+            # Run mask decoder on memory-fused features
             # Called '_forward_sam_heads' in original code
-            # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L762
+            # See: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L777
             patch_grid_hw = memfused_encimg.shape[2:]
             grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
@@ -318,6 +326,8 @@ class SAMV2Model(nn.Module):
             )
 
             # Keep only the 'best' results
+            # Part of the '_forward_sam_heads' function in original code
+            # See: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L383
             best_mask_idx, best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
                 mask_preds,
                 iou_preds,
@@ -326,7 +336,8 @@ class SAMV2Model(nn.Module):
             )
 
             # Encode new memory features
-            # See: https://github.com/facebookresearch/segment-anything-2/blob/6ba4c65cb2ccaff418610662eb96d3eb4a77eaf4/sam2/modeling/sam2_base.py#L787
+            # Called '_encode_memory_in_output' in original code
+            # https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L867
             memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, obj_score)
 
         return obj_score, best_mask_idx, mask_preds, memory_encoding, best_obj_ptr
