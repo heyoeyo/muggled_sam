@@ -5,6 +5,8 @@ This folder contains random experiments using the SAM models, mostly out of curi
 
 ## Block Norm Visualization
 
+_(Supports SAMv1 or SAMv2)_
+
 This script is a companion to an earlier [block norm visualization](https://github.com/heyoeyo/muggled_dpt/tree/main/experiments#block-norm-visualization) script for depth-prediction models. The display shows the magnitude of the _internal_ image features at every layer of the model (SAMv1 or v2), alongside a per-channel visualization of a selected layer. A paper titled [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588) suggests that vision transformers (like the image encoder inside the SAM models) will end up with unusually high-norm (high magnitude) tokens if they don't include 'registers' (neither version of SAM includes these). This script can help detect these artifacts in both SAMv1 or v2 as well as any fine-tuned variants.
 
 <p align="center">
@@ -14,6 +16,8 @@ This script is a companion to an earlier [block norm visualization](https://gith
 Interestingly, while the base+ and large SAMv2 models _do_ have these high-norm tokens as expected (see the blacked-out tiles in the example image above), the SAMv1 models **do not**! There are other interesting patterns as well, for example, the high-norm blocks of SAMv2 seem to exclusive appear in stage 3. Additionally, the tokens for the v1 models show surprisingly little differences from one block to another (vaguely suggesting that the models could make due with far fewer blocks?), while the v2 models show similarly small differences between blocks within each stage, but drastic differences between stages (likely due to pooling).
 
 ## Cross-Image Segmentation
+
+_(Supports SAMv2 only)_
 
 This script is a follow-up to the [image-cross-video](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) segmentation script (inspired by yet another post on the [SAMv2 issues board, #352](https://github.com/facebookresearch/sam2/issues/352)). In this case two regular images are loaded and the user is able to prompt either image while observing the segmentation result on the other! This makes use of the SAMv2 capability for processing videos, with the two images being treated as part of the same video, where the prompted image is the first frame and the other image is the second frame of the video.
 
@@ -27,6 +31,8 @@ There is evidence of 'semantic transfer' capability between images that have sim
 
 ## Mask Stability Visualization
 
+_(Supports SAMv1 or SAMv2)_
+
 This script was made to better understand the 'stability' of SAM masking, after coming across a [stability_score](https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/utils/amg.py#L158) function in the original SAM implementation. The original scoring function simply calculates the ratio of masked pixels using two different thresholds. The idea being that if the mask doesn't change much as the threshold changes, then the mask can be said to be stable. In this visualization, a lower and upper threshold can be set while the parts of the mask that land within those thresholds is visualized. This can help determine what parts of the mask are most likely to change due to changes in thresholding (and often prompting):
 
 <p align="center">
@@ -38,7 +44,37 @@ In the example above, where the thresholds are set at 0 and +12 (see the bottom-
 
 Out of curiosity, the script also allows for the image encoding size to be changed, as well as even downscaling the input image itself before any processing. This is meant to provide another way of observing how stable the output is in response to slight changes to the input image.
 
+## Semantic Similarity
+
+_(Supports SAMv1 or SAMv2)_
+
+This script was made to test an analysis technique described in the [original SAMv1 paper](https://arxiv.org/abs/2304.02643) in the section: **Probing the Latent Space of SAM** (page 22). The goal of this technique is to use the segmentation results of one object to find similar instances of that object automatically in the rest of the image (or other images). This script implements a simplified version of the algorithm with support for having different source & comparison images.
+
+<p align="center">
+  <img src=".readme_assets/semantic_similarity_example.webp" alt="">
+</p>
+
+The example above shows an image of a flock of birds on the left, with one bird masked (via a box prompt) and the corresponding 'similarity image' on the right. The similarity indicates which parts of the image are most similar to the masked bird. In this case it highlights all (21) birds while ignoring the sky or darker regions in the rest of the image. It should be noted however, that this seems to be a best case scenario, most of the time the similarity mapping is not so clean!
+
+### Details
+
+The algorithm works by trying to match the image tokens associated with a masked object with the tokens from the rest of the image (or even a different image). The basic steps are as follows:
+1. Encode an image and generate a mask of an object using SAM
+2. Use the generated mask to extract only the encoded image tokens associated with the target object
+3. Average the masked image tokens to create a single token representing the object
+4. Compute the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity) between the averaged object token and a full image encoding
+
+More details can be found in a [post](https://github.com/facebookresearch/segment-anything/issues/283#issuecomment-1531989328) on the SAMv1 issues board (issue #283). The implementation in this script is slightly different than the original in a few ways:
+- The original approach included a sort of 'zoom-in' step, where the masked object is actually cropped and re-encoded, resulting in more image tokens. This script does not support this as it would prevent real-time interaction and (from very limited testing) tends to degrade the results.
+- The SAM image encoders (both v1 and v2) include a 'projection' step which reduces the image tokens to a consistent feature count across all model sizes. The original implementation used the raw features (e.g. prior to the projection step), whereas this script defaults to using the projection features but has a toggle to switch to using the raw features.
+- The original implementation included a horizontally flipped copy of the image encoding when performing the averaging step. This script defaults to _not_ using the flipped encoding, but has a toggle switch to enable the use of both regular & flipped features.
+- SAMv1 only produces a single set of image tokens, whereas SAMv2 produces 4 sets of raw encodings and 3 projection encodings at different resolutions. This script provides a slider for switching between the various encodings when a SAMv2 model is loaded (though only the lowest-resolution encodings are typically useful).
+
+Overall, this is a relatively simple technique which could also be applied to any other image encoder (assuming an object mask is available). The use of averaging down to a single token has the obvious limitation of blurring together parts of an object which may be visually quite different and ultimately producing a poorer similarity match as a result. Using more than a single averaged token (via clustering of the masked tokens?) to represent the object may improve the results.
+
 ## Video with Image Priors
+
+_(Supports SAMv2 only)_
 
 This experimental script is a follow-up to a [post on the SAMv2 issues board (#210)](https://github.com/facebookresearch/segment-anything-2/issues/210), where the idea of re-using the SAMv2 memory bank across videos/images was suggested. This script begins by having the user 'record' prompts from a loaded image and then uses these prompts as the initial memory (with no other prompts) to run segmentation on a separate (potentially unrelated) video:
 
@@ -51,6 +87,8 @@ Here for example, a single picture of a cat is used to segment a fox from a sepa
 
 
 ## ViT Position Encoding Visualization
+
+_(Supports SAMv1 or SAMv2)_
 
 This script was made after observing that SAMv1 tends to outperform SAMv2 at image segmentation when working with downscaled or non-square images, figuring that it may have something to do with the positional encodings (in retrospect, the window sizing of v2 is probably the issue). The visualization here is for the encodings that are added to the initial patch embedding tokens to help represent the positioning of each token within the image.
 
@@ -66,6 +104,8 @@ It's worth noting that the default [bfloat16](https://pytorch.org/docs/stable/te
 
 ## Window Size Visualization
 
+_(Supports SAMv1 or SAMv2)_
+
 This script was inspired by a [pull request](https://github.com/facebookresearch/segment-anything/pull/594) for the SAMv1 model which suggested some improvements when using a window size of 16 (which evenly 'tiles' into the default 64x64 patch sizing) instead of the base size of 14. SAMv2 has a far more complex use of windowing which varies by stage in a somewhat unpredictable pattern, leading to even more questions about the consequences of changing the window sizing.
 
 <p align="center">
@@ -77,8 +117,5 @@ The UI allows for independently updating the window size of each stage (for both
 <p align="center">
   <img src=".readme_assets/windowsizing_anim.gif" alt="">
 </p>
-
-
-
 
 One interesting observation from playing with this script is that adjustments to stages 1, 2 & 3 of SAMv2 show consistent but distinct effects. For example, changes to stage 1 tend to shuffle around small artifacts, increasing sizing on stage 2 has a blurring effect while decreasing sizing on stage 3 destabilizes the masking entirely. By comparison, while SAMv1 is affected by changes to window sizing on any stage, it tends to be less consistent and less detrimental. As the original (SAMv1) pull request suggested, increasing the window size to 16 actually _speeds up_ the model slightly (this is true for v2 as well) without dramatically harming the masking results (not true for v2!).
