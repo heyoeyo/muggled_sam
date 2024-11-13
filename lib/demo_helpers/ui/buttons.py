@@ -50,6 +50,13 @@ class Toggleable(BaseCallback):
 
     # .................................................................................................................
 
+    def set_is_changed(self, is_changed=True):
+        """Helper used to artificially toggle is_changed flag, useful for forcing read updates (e.g. on startup)"""
+        self._is_changed = is_changed
+        return self
+
+    # .................................................................................................................
+
     def read(self) -> tuple[bool, bool]:
         is_changed = self._is_changed
         self._is_changed = False
@@ -385,6 +392,13 @@ class ImmediateButton(BaseCallback):
 
     def on_left_click(self, cbxy, cbflags) -> None:
         self.click()
+
+    # .................................................................................................................
+
+    def set_is_changed(self, is_changed=True):
+        """Helper used to artificially toggle is_changed flag, useful for forcing read updates (e.g. on startup)"""
+        self._is_changed = is_changed
+        return self
 
     # .................................................................................................................
 

@@ -84,9 +84,8 @@ class StaticMessageBar(BaseCallback):
 
     def __init__(self, *messages, bar_height=40, bar_bg_color=(64, 53, 52), text_scale=0.5, space_equally=False):
 
-        # Store messages with front/back padding for nicer spacing on display
-        msgs_list = [messages] if isinstance(messages, str) else [str(m) for m in messages]
-        self._msgs_list = [f" {msg}  " for msg in msgs_list]
+        # Store messages with front/back padding for nicer spacing on display (and skip 'None' entries)
+        self._msgs_list = [f" {msg}  " for msg in messages if msg is not None]
 
         # Store visual settings
         self._base_image = blank_image(1, 1, bar_bg_color)
@@ -106,7 +105,7 @@ class StaticMessageBar(BaseCallback):
         total_msg_w = sum(msg_widths)
 
         # Pre-compute the relative x-positioning of each message for display
-        cumulative_w = [sum(msg_widths[:k]) for k in range(len(msgs_list))]
+        cumulative_w = [sum(msg_widths[:k]) for k in range(len(self._msgs_list))]
         self._msg_x_norms = [(cum_w + 0.5 * msg_w) / total_msg_w for cum_w, msg_w in zip(cumulative_w, msg_widths)]
         if space_equally:
             num_msgs = len(msg_widths)

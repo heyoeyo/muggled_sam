@@ -98,7 +98,7 @@ def build_tool_buttons(text_scale=0.75) -> tuple[ToolButtonsGroup, RadioConstrai
     hover_btn, box_btn, fgpt_btn, bgpt_btn = ToggleButton.many(
         "Hover", "Box", "FG Point", "BG Point", text_scale=text_scale
     )
-    clear_all_prompts_btn = ImmediateButton("Clear", color=(0, 0, 150))
+    clear_all_prompts_btn = ImmediateButton("Clear", color=(0, 0, 150), text_scale=text_scale)
 
     # Set up constraint so only 1 tool can be active (excluding clear button, which isn't toggled)
     tools_group = ToolButtonsGroup(hover_btn, box_btn, fgpt_btn, bgpt_btn, clear_all_prompts_btn)
@@ -145,11 +145,13 @@ class PromptUI:
 
     # .................................................................................................................
 
-    def __init__(self, full_image_bgr: ndarray, mask_predictions: Tensor, target_aspect_ratio=2.0):
+    def __init__(
+        self, full_image_bgr: ndarray, mask_predictions: Tensor, target_aspect_ratio=2.0, tool_button_text_scale=0.75
+    ):
 
         # Build out UI component pieces
         self.olays = build_tool_overlays()
-        self.tools, self.tools_constraint = build_tool_buttons()
+        self.tools, self.tools_constraint = build_tool_buttons(tool_button_text_scale)
         self.mask_btns, self.masks_constraint = build_mask_preview_buttons(mask_predictions)
 
         # Build main layout!
