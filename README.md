@@ -1,6 +1,6 @@
-# Muggled SAM
+# MuggledSAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2) (and [SAMV1](https://github.com/facebookresearch/segment-anything)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch/sam2](https://github.com/facebookresearch/sam2) (and [SAMv1](https://github.com/facebookresearch/segment-anything)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
@@ -49,7 +49,7 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 ### Model Weights
 
-Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Download Checkpoints** section of [SAMv2 repo](https://github.com/facebookresearch/segment-anything-2?tab=readme-ov-file#download-checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
+Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2/v2.1 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
 
 After downloading a model file, you can place it in the `model_weights` folder of this repo or otherwise just keep note of the file path, since you'll need to provide this when running the demo scripts. If you do place the file in the [model_weights](https://github.com/heyoeyo/muggled_sam/tree/main/model_weights) folder, then it will auto-load when running the scripts.
 
@@ -58,6 +58,13 @@ After downloading a model file, you can place it in the `model_weights` folder o
 <summary>Direct download links</summary>
 
 The tables below include direct download links to all of the supported models. **Note:** These are all links to the original repos, none of these files belong to MuggledSAM!
+
+| SAMv2.1 Models | Size (MB) |
+| -----| -----|
+| [sam2.1_hiera_tiny](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt) | 160 |
+| [sam2.1_hiera_small](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt) | 185 |
+| [sam2.1_hiera_base_plus](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt) | 325 |
+| [sam2.1_hiera_large](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt) | 900 |
 
 | SAMv2 Models | Size (MB) |
 | -----| -----|
@@ -75,7 +82,7 @@ The tables below include direct download links to all of the supported models. *
 </details>
 
 ### Simple Example
-Here is an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
+Here's an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
 ```python
 import cv2
 from lib.make_sam import make_sam_from_state_dict
@@ -145,7 +152,7 @@ The code in this repo is entirely based off the original segment-anything github
 ```
 
 
-[facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2)
+[facebookresearch/sam2](https://github.com/facebookresearch/sam2)
 ```bibtex
 @article{ravi2024sam2,
   title={SAM 2: Segment Anything in Images and Videos},
