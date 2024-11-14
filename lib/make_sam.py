@@ -7,6 +7,9 @@
 
 import torch
 
+# Note: There are additional dynamic imports inside the function: `import_model_functions`
+#       This is done to avoid importing code associated with a model that isn't being loaded
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
@@ -71,10 +74,10 @@ def import_model_functions(model_type):
     """
 
     if model_type == "sam_v2":
-        from .make_sam_v2 import make_samv2_from_original_state_dict as make_sam_func
+        from .v2_sam.make_sam_v2 import make_samv2_from_original_state_dict as make_sam_func
 
     elif model_type == "sam_v1":
-        from .make_sam_v1 import make_samv1_from_original_state_dict as make_sam_func
+        from .v1_sam.make_sam_v1 import make_samv1_from_original_state_dict as make_sam_func
 
     else:
         raise TypeError(f"Cannot import model functions, Unknown model type: {model_type}")

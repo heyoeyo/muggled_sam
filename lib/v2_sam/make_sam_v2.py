@@ -7,17 +7,17 @@
 
 import torch
 
-from .v2_sam.sam_v2_model import SAMV2Model
+from .sam_v2_model import SAMV2Model
 
-from .v2_sam.image_encoder_model import SAMV2ImageEncoder
-from .v2_sam.coordinate_encoder_model import SAMV2CoordinateEncoder
-from .v2_sam.prompt_encoder_model import SAMV2PromptEncoder
-from .v2_sam.mask_decoder_model import SAMV2MaskDecoder
-from .v2_sam.memory_fusion_model import SAMV2MemoryFusion
-from .v2_sam.memory_encoder_model import SAMV2MemoryEncoder
+from .image_encoder_model import SAMV2ImageEncoder
+from .coordinate_encoder_model import SAMV2CoordinateEncoder
+from .prompt_encoder_model import SAMV2PromptEncoder
+from .mask_decoder_model import SAMV2MaskDecoder
+from .memory_fusion_model import SAMV2MemoryFusion
+from .memory_encoder_model import SAMV2MemoryEncoder
 
-from .v2_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
-from .v2_sam.state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
+from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
+from .state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
 
 
 # ---------------------------------------------------------------------------------------------------------------------

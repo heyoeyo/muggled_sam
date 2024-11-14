@@ -19,7 +19,7 @@ from collections import deque
 import cv2
 import numpy as np
 import torch
-from lib.make_sam_v2 import make_samv2_from_original_state_dict
+from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
 
 # Define pathing & device usage
 video_path = "/path/to/video.mp4"

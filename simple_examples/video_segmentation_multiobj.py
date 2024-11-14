@@ -18,7 +18,7 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import torch
-from lib.make_sam_v2 import make_samv2_from_original_state_dict
+from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
 from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
 
 
