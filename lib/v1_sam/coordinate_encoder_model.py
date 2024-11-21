@@ -33,9 +33,7 @@ class SAMV1CoordinateEncoder(nn.Module):
     as well as grid cell positions (i.e. every image patch token position). More specifically,
     this model converts (x,y) coordinates into larger vectors, which are sized to match the
     image patch tokens from the image encoder. For example, a single (x,y) pair, like (0.5, 0.5)
-    will be transformed into a 256-dimensional (by default) vector
-
-    this allows the coordinates
+    will be transformed into a 256-dimensional (by default) vector. This allows the coordinates
     to be used within a transformer model (i.e. for cross-attention with image tokens).
 
     The original implementation named this module 'PositionEmbeddingRandom' and included it
@@ -70,14 +68,21 @@ class SAMV1CoordinateEncoder(nn.Module):
         Generates positional encodings from normalized (0-to-1) xy coordinates
 
         When handling single point coordinates, takes in BxNx2 tensors
-        and returns BxNxF tensors
+        and returns BxNxF tensors, where N is the number of xy coordinates,
+        F is the number of encoded features per coord. (256 by default).
 
         When handling box coordinates (e.g. 2 points, top-left/bottom-right),
         the input will have a shape of BxNx2x2 while the output will have
-        a shape of BxNx2xF
+        a shape of BxNx2xF. Here N is the number of boxes, the remaining
+        '2' in the output shape refers to the top-left/bottom-right entries.
 
-        In both cases, N is the number of prompts while F is the number of
-        features per encoded token.
+        In both cases, the last '2' in the input shape is assumed to hold the
+        (x,y) coordinate pair, which gets converted to a vector of length F.
+
+        Returns:
+            encoded_xy_coords
+            -> If more than one input is given, the model will output
+               a tuple/list in the same order!
         """
 
         results = []
@@ -95,10 +100,45 @@ class SAMV1CoordinateEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def get_full_grid_encoding(self, patch_grid_hw: tuple[int, int]) -> Tensor:
+    def create_grid_xy_coordinates(self, grid_hw: tuple[int, int]) -> Tensor:
+        """
+        Creates a grid of (x,y) coordinates matching a given grid height/width.
+        For example, for a grid of height 2 and width 3, this function gives something like:
+            ┌                                          ┐
+            │ (0.17, 0.25)  (0.50, 0.25)  (0.83, 0.25) │
+            │ (0.17, 0.75)  (0.50, 0.75)  (0.83, 0.75) │
+            └                                          ┘
+        * Note that the coordinates are inset by a 'half-step',
+          so instead of ranging from 0 to 1, they are inset by 0.5/N,
+          where N is the number of coordinate points (e.g. h or w).
+          (this is done to remain consistent with original implementation)
+
+        Returns:
+            xy_grid_coords (shape: HxWx2)
+        """
+
+        # For clarity
+        h, w = grid_hw
+        device, dtype = self.grid_posenc.device, self.grid_posenc.dtype
+
+        # Set up min/max coordinate values (with inset)
+        half_step_hw = (0.5 / n for n in grid_hw)
+        (y1, y2), (x1, x2) = [(0.0 + step, 1.0 - step) for step in half_step_hw]
+
+        # Compute grid of (x,y) coordinates
+        x_vals = torch.linspace(x1, x2, w, device=device, dtype=dtype)
+        y_vals = torch.linspace(y1, y2, h, device=device, dtype=dtype)
+        xy_coords = torch.stack([x_vals.repeat(h, 1), y_vals.repeat(w, 1).T], dim=-1)
+
+        return xy_coords
+
+    # .................................................................................................................
+
+    def get_grid_position_encoding(self, patch_grid_hw: tuple[int, int]) -> Tensor:
         """
         Generates positional encodings for all possible (x,y) coordinates within a
-        grid based on the provided sizing. Caches results for the given height & width.
+        grid based on the provided sizing.
+        Also caches results for the given height & width.
 
         Returns:
             grid_posenc
@@ -110,13 +150,8 @@ class SAMV1CoordinateEncoder(nn.Module):
         h, w = patch_grid_hw
         _, _, curr_h, curr_w = self.grid_posenc.shape
         if curr_h != h or curr_w != w:
-
-            with torch.inference_mode():
-                device, dtype = self.grid_posenc.device, self.grid_posenc.dtype
-                x_embed = torch.linspace(0.5, w - 0.5, w, device=device, dtype=dtype) / w
-                y_embed = torch.linspace(0.5, h - 0.5, h, device=device, dtype=dtype) / h
-                xy_embed = torch.stack([x_embed.repeat(h, 1), y_embed.repeat(w, 1).T], dim=-1)
-                self.grid_posenc = self.forward(xy_embed).permute(2, 0, 1).unsqueeze(0)
+            xy_coords = self.create_grid_xy_coordinates(patch_grid_hw)
+            self.grid_posenc = self.forward(xy_coords).permute(2, 0, 1).unsqueeze(0)
 
         return self.grid_posenc
 

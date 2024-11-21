@@ -400,7 +400,7 @@ try:
             selected_prompts = prompts_a if side_select == "a" else prompts_b
             encoded_prompts = sammodel.encode_prompts(*selected_prompts)
             with torch.inference_mode():
-                grid_posenc = sammodel.coordinate_encoder.get_full_grid_encoding(token_hw)
+                grid_posenc = sammodel.coordinate_encoder.get_grid_position_encoding(token_hw)
                 ref_preds, _, ref_ptrs, obj_score = sammodel.mask_decoder(encoded_img, encoded_prompts, grid_posenc)
 
         # Encode memory data from selected mask

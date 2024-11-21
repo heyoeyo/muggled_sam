@@ -77,7 +77,7 @@ class SAMV1Model(nn.Module):
 
         # Combine encodings to generate mask output
         patch_grid_hw = encoded_image.shape[2:]
-        grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+        grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
         mask_preds, iou_preds = self.mask_decoder(encoded_image, encoded_prompts, grid_posenc, mask_hint)
 
         return mask_preds, iou_preds
@@ -153,7 +153,7 @@ class SAMV1Model(nn.Module):
 
         with torch.inference_mode():
             patch_grid_hw = encoded_image.shape[2:]
-            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds = self.mask_decoder(
                 encoded_image, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )

@@ -83,7 +83,7 @@ class SAMV2Model(nn.Module):
 
         # Combine encodings to generate mask output
         patch_grid_hw = encoded_image.shape[2:]
-        grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+        grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
         mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.mask_decoder(
             encoded_image, encoded_prompts, grid_posenc, mask_hint
         )
@@ -201,7 +201,7 @@ class SAMV2Model(nn.Module):
         patch_grid_hw = encoded_image_features_list[0].shape[2:]
 
         with torch.inference_mode():
-            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 encoded_image_features_list, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
@@ -245,7 +245,7 @@ class SAMV2Model(nn.Module):
             token_hw = lowres_imgenc.shape[2:]
 
             # Generate mask prediction from image/prompt encodings, as usual
-            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(token_hw)
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 encoded_image_features_list,
                 encoded_prompts,
@@ -316,7 +316,7 @@ class SAMV2Model(nn.Module):
             # Called '_forward_sam_heads' in original code
             # See: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L777
             patch_grid_hw = memfused_encimg.shape[2:]
-            grid_posenc = self.coordinate_encoder.get_full_grid_encoding(patch_grid_hw)
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 [memfused_encimg, *hires_imgenc],
                 self.prompt_encoder.create_video_no_prompt_encoding(),
