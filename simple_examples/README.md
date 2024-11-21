@@ -1,4 +1,4 @@
-# Muggled SAM - Simple Examples
+# MuggledSAM - Simple Examples
 
 This folder contains several scripts that contain minimal/simplified examples of how the SAM models can be used for various tasks. They are provided as an alternative to the UI scripts, which tend to hide the underlying model usage due to all the extra UI code!
 

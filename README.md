@@ -49,7 +49,7 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 ### Model Weights
 
-Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2/v2.1 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
+Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2/v2.1 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) (config files are not needed, only the checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
 
 After downloading a model file, you can place it in the `model_weights` folder of this repo or otherwise just keep note of the file path, since you'll need to provide this when running the demo scripts. If you do place the file in the [model_weights](https://github.com/heyoeyo/muggled_sam/tree/main/model_weights) folder, then it will auto-load when running the scripts.
 
@@ -88,7 +88,8 @@ import cv2
 from lib.make_sam import make_sam_from_state_dict
 
 # Define prompts using 0-to-1 xy coordinates
-box_tlbrs = []  # Example [((0.25, 0.25), (0.75, 0.75))]
+# -> (0,0) is top-left, (1,1) is bottom-right
+box_xy1xy2s = []  # Example [((0.25, 0.25), (0.75, 0.75))]
 fg_xys = [(0.5, 0.5)]
 bg_xys = []
 
@@ -98,7 +99,7 @@ _, model = make_sam_from_state_dict("/path/to/model.pth")
 
 # Process data
 encoded_img, _, _ = model.encode_image(image_bgr)
-encoded_prompts = model.encode_prompts(box_tlbrs, fg_xys, bg_xys)
+encoded_prompts = model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
 mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
 ```
 

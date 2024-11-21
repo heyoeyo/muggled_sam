@@ -1,4 +1,4 @@
-# Muggled SAM - Experiments
+# MuggledSAM - Experiments
 
 This folder contains random experiments using the SAM models, mostly out of curiosity. These scripts have configurable options which can be viewed by running the scripts with the `--help` flag.
 
@@ -54,7 +54,7 @@ This script was made to test an analysis technique described in the [original SA
   <img src=".readme_assets/semantic_similarity_example.webp" alt="">
 </p>
 
-The example above shows an image of a flock of birds on the left, with one bird masked (via a box prompt) and the corresponding 'similarity image' on the right. The similarity indicates which parts of the image are most similar to the masked bird. In this case it highlights all (21) birds while ignoring the sky or darker regions in the rest of the image. It should be noted however, that this seems to be a best case scenario, most of the time the similarity mapping is not so clean!
+The example above shows an image of a flock of pigeons on the left, with one bird masked (via a box prompt) and the corresponding 'similarity image' on the right. The similarity indicates which parts of the image are most similar to the masked bird. In this case it highlights all (21) pigeons while ignoring the sky or darker regions in the rest of the image. It should be noted that this result requires thresholding (controlled by a slider in the UI), and seems to be a best case scenario. Most of the time the similarity mapping is not so clean!
 
 ### Details
 
@@ -65,12 +65,14 @@ The algorithm works by trying to match the image tokens associated with a masked
 4. Compute the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity) between the averaged object token and a full image encoding
 
 More details can be found in a [post](https://github.com/facebookresearch/segment-anything/issues/283#issuecomment-1531989328) on the SAMv1 issues board (issue #283). The implementation in this script is slightly different than the original in a few ways:
-- The original approach included a sort of 'zoom-in' step, where the masked object is actually cropped and re-encoded, resulting in more image tokens. This script does not support this as it would prevent real-time interaction and (from very limited testing) tends to degrade the results.
-- The SAM image encoders (both v1 and v2) include a 'projection' step which reduces the image tokens to a consistent feature count across all model sizes. The original implementation used the raw features (e.g. prior to the projection step), whereas this script defaults to using the projection features but has a toggle to switch to using the raw features.
-- The original implementation included a horizontally flipped copy of the image encoding when performing the averaging step. This script defaults to _not_ using the flipped encoding, but has a toggle switch to enable the use of both regular & flipped features.
-- SAMv1 only produces a single set of image tokens, whereas SAMv2 produces 4 sets of raw encodings and 3 projection encodings at different resolutions. This script provides a slider for switching between the various encodings when a SAMv2 model is loaded (though only the lowest-resolution encodings are typically useful).
+- The original approach included a sort of 'zoom-in' step, where the masked object is cropped and re-encoded to produce more image tokens. This script does not support this as it would prevent real-time interaction and (from very limited testing) tends to be unhelpful.
+- The SAM image encoders include a 'projection' step (a [sequential neck](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L88-L104) module in v1 & [FpnNeck](https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/backbones/image_encoder.py#L45) in v2) which reduces the image tokens to a consistent feature count across all model sizes. The original implementation used the raw features (e.g. prior to the projection step), whereas this script defaults to using the projection features but has a toggle to switch to using the raw features.
+- The original implementation included a horizontally flipped copy of the image encoding when performing the averaging step. This script defaults to _not_ using the flipped features, but has a toggle to include them.
+- SAMv1 only produces a single set of image tokens, whereas SAMv2 produces 4 sets of raw encodings and 3 projection encodings at different resolutions. This script provides a slider for switching between the various encodings when a SAMv2 model is loaded. Only the lowest-resolution encodings tend to be useful.
 
-Overall, this is a relatively simple technique which could also be applied to any other image encoder (assuming an object mask is available). The use of averaging down to a single token has the obvious limitation of blurring together parts of an object which may be visually quite different and ultimately producing a poorer similarity match as a result. Using more than a single averaged token (via clustering of the masked tokens?) to represent the object may improve the results.
+Overall, this is a relatively simple technique which could also be applied to any other image encoder (assuming an object mask is available). The use of averaging down to a single token has the obvious limitation of mixing together parts of an object which may be visually quite different and ultimately producing a poorer similarity match as a result. Using more than a single averaged token (via clustering of the masked tokens?) to represent the object may improve the results.
+
+It's worth noting that this similarity algorithm is actually very similar to the attention calculation used within transformers, except for the use of cosine similarity in place of a softmax (though cosine similarity is used by some vision transformers, like [Swinv2](https://arxiv.org/abs/2111.09883)). The averaging of the image tokens is analogous to special hard-coding of the (normally learned) weights of an attention block. It's likely that a (very small?) transformer model trained on this semantic-object-matching task could significantly outperform the manually implemented version of the algorithm.
 
 ## Video with Image Priors
 
