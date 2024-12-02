@@ -57,7 +57,7 @@ class SAMV1Model(nn.Module):
         fg_tensor: Tensor,
         bg_tensor: Tensor,
         mask_hint: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Main functionality of the SAM model, bundled into a single function.
         Takes an image and set of prompts and produces several candidate segmentation masks.
@@ -66,8 +66,11 @@ class SAMV1Model(nn.Module):
         rather than using this function so that image & prompt encoding can happen independently.
         See the 'encode_prompts', 'encode_image' and 'generate_masks' functions for more info
 
+        Allso note that the 'cls' contain information about the iou & mask results, not classification
+        info! They are included to match SAMv2 outputs, but are normally not needed for SAMv1.
+
         Returns:
-            mask_predictions, iou_predictions
+            mask_predictions, iou_predictions, cls_tokens
         """
 
         # Encode prompts & image inputs
@@ -78,9 +81,9 @@ class SAMV1Model(nn.Module):
         # Combine encodings to generate mask output
         patch_grid_hw = encoded_image.shape[2:]
         grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-        mask_preds, iou_preds = self.mask_decoder(encoded_image, encoded_prompts, grid_posenc, mask_hint)
+        mask_preds, iou_preds, cls_tokens = self.mask_decoder(encoded_image, encoded_prompts, grid_posenc, mask_hint)
 
-        return mask_preds, iou_preds
+        return mask_preds, iou_preds, cls_tokens
 
     # .................................................................................................................
 
@@ -154,7 +157,7 @@ class SAMV1Model(nn.Module):
         with torch.inference_mode():
             patch_grid_hw = encoded_image.shape[2:]
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds, iou_preds = self.mask_decoder(
+            mask_preds, iou_preds, _ = self.mask_decoder(
                 encoded_image, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 

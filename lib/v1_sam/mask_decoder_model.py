@@ -96,11 +96,14 @@ class SAMV1MaskDecoder(nn.Module):
         'blank' result will be returned instead of running the full decoder.
 
         Returns:
-            mask_predictions, iou_predictions
-            -> Mask prediction has shape: Bx4xHxW, IoU has shape: Bx4
+            mask_predictions, iou_predictions, encoded_cls_tokens
+            -> Mask prediction has shape: Bx4xHxW, IoU has shape: Bx4, cls has shape: Bx5xF
             -> H & W are 4x the size of the image patch encoding size
             -> The 0-th mask was originally intended to be used in cases with
                many prompts, and not to be used with single points/box prompts
+            -> The 'cls' tokens are included for matching SAMv2 outputs,
+               they contain information about the iou & mask results but
+               are not normally used!
         """
 
         # For clarity
@@ -142,7 +145,7 @@ class SAMV1MaskDecoder(nn.Module):
         mask_preds = self.maskgen(img_tokens, mask_tokens_out, patch_grid_hw)
         iou_preds = self.iou_token_mlp(iou_token_out)
 
-        return mask_preds, iou_preds
+        return mask_preds, iou_preds, encoded_cls_tokens
 
     # .................................................................................................................
 
@@ -186,6 +189,7 @@ class MaskGen(nn.Module):
             nn.ConvTranspose2d(hidden_channels, upscaler_channels, kernel_size=2, stride=2),
             nn.GELU(),
         )
+        self._input_channels = input_channels
 
         self.mask_token_mlps = nn.ModuleList(
             [MLP3Layers(input_channels, upscaler_channels) for i in range(num_mask_tokens)]
@@ -221,13 +225,15 @@ class MaskGen(nn.Module):
         mask_h, mask_w = [4 * size for size in patch_grid_hw]
         mask_shape = (batch_size, 4, mask_h, mask_w)
         iou_shape = (batch_size, 4)
+        cls_shape = (batch_size, 5, self._input_channels)
 
         # Fill in empty mask and IoU prediction values
         device, dtype = self.device_info.device, self.device_info.dtype
         blank_mask_preds = torch.full(mask_shape, -100, device=device, dtype=dtype, requires_grad=False)
         blank_iou_preds = torch.ones(iou_shape, device=device, dtype=dtype, requires_grad=False)
+        blank_cls_tokens = torch.zeros(cls_shape, device=device, dtype=dtype, requires_grad=False)
 
-        return blank_mask_preds, blank_iou_preds
+        return blank_mask_preds, blank_iou_preds, blank_cls_tokens
 
     # .................................................................................................................
 
