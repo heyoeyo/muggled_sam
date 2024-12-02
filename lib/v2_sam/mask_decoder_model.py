@@ -118,25 +118,10 @@ class SAMV2MaskDecoder(nn.Module):
         patch_grid_hw = lowres_tokens.shape[2:]
 
         # Special case, return blank masks if no prompt is given
-        if num_prompts == 0 and blank_promptless_output and not isinstance(mask_hint, Tensor):
+        if blank_promptless_output and (num_prompts == 0) and mask_hint is None:
             mask_preds, iou_preds = self.maskgen.make_blank_results(patch_grid_hw, batch_size)
             obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens, batch_size)
             return mask_preds, iou_preds, obj_ptrs, obj_score
-
-        # If an integer mask hint is given, interpret it to mean to run the model once, take
-        # the predicted mask (given by the 'hint' as an index) and re-run the model using
-        # the mask as a mask hint
-        if isinstance(mask_hint, int):
-            no_mask_hint = None
-            mask_preds, iou_preds, obj_ptrs, obj_score = self(
-                encoded_image_tokens_list_bchw,
-                encoded_prompts_bnc,
-                grid_positional_encoding,
-                no_mask_hint,
-                blank_promptless_output,
-            )
-            hint_idx = mask_hint % mask_preds.shape[1]
-            mask_hint = mask_preds[:, hint_idx, :, :]
 
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_obj_token, self.cls_iou_token, self.cls_mask_tokens], dim=0)
@@ -144,7 +129,6 @@ class SAMV2MaskDecoder(nn.Module):
         num_cls_tokens = cls_tokens.shape[1]
 
         # Expand per-image data in batch direction to be per-mask, as well as the position encoding
-        # img_tokens_bchw = encoded_image_bchw + self.maskhint_encoder(patch_grid_hw, mask_hint)
         img_tokens_bchw = lowres_tokens + self.maskhint_encoder(patch_grid_hw, mask_hint)
         img_tokens_bchw = torch.repeat_interleave(img_tokens_bchw, batch_size, dim=0)
         img_posenc_bchw = torch.repeat_interleave(grid_positional_encoding, batch_size, dim=0)
@@ -160,7 +144,7 @@ class SAMV2MaskDecoder(nn.Module):
         mask_tokens_out = encoded_cls_tokens[:, 2:, :]
 
         # Produce final output mask & quality predictions
-        mask_preds = self.maskgen(encoded_img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out, patch_grid_hw)
+        mask_preds = self.maskgen(encoded_img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out)
         iou_preds = self.iou_token_mlp(iou_token_out)
 
         # Generate 'object pointer' output
@@ -254,7 +238,6 @@ class MaskGen(nn.Module):
         hires_tokens_x2: Tensor,
         hires_tokens_x4: Tensor,
         cls_mask_tokens: Tensor,
-        patch_grid_hw: tuple[int, int],
     ) -> Tensor:
         """
         Produces (non-thresholded) segmentation masks based on
@@ -275,12 +258,7 @@ class MaskGen(nn.Module):
                (will be Bx4x256x256 using default 1024x1024 input sizing)
         """
 
-        # For clarity
-        b, _, c = lowres_image_tokens.shape
-        h, w = patch_grid_hw
-
         # Convert image tokens to 'image-like' shape and upscale them to final output size
-        lowres_image_tokens = lowres_image_tokens.transpose(1, 2).view(b, c, h, w)
         upscaled_img_tokens = self.img_patch_upscaler(lowres_image_tokens, hires_tokens_x2, hires_tokens_x4)
 
         # Further encode cls mask tokens

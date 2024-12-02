@@ -78,7 +78,7 @@ class SAMV1MaskDecoder(nn.Module):
         encoded_image_bchw: Tensor,
         encoded_prompts_bnc: Tensor,
         grid_positional_encoding: Tensor,
-        mask_hint: Tensor | int | None = None,
+        mask_hint: Tensor | None = None,
         blank_promptless_output=True,
     ) -> tuple[Tensor, Tensor]:
         """
@@ -87,10 +87,7 @@ class SAMV1MaskDecoder(nn.Module):
         Also returns estimates for the 'quality' of each segmentation mask.
 
         The mask_hint input can be provided to help 'refine' the model output in some cases.
-        It is expected to be of the same shape as a single mask output by the model. If
-        the mask_hint argument is given as an integer, this is interpretted to mean to
-        run the model twice, once to generate onc eset of masks and then to index out
-        one of those masks to use as a hint for re-running the model.
+        It is expected to be of the same shape as a single mask output by the model.
 
         If 'blank_promptless_output' is true and no prompts are given, then a fully
         'blank' result will be returned instead of running the full decoder.
@@ -103,7 +100,7 @@ class SAMV1MaskDecoder(nn.Module):
                many prompts, and not to be used with single points/box prompts
             -> The 'cls' tokens are included for matching SAMv2 outputs,
                they contain information about the iou & mask results but
-               are not normally used!
+               are not normally needed by an end user
         """
 
         # For clarity
@@ -111,16 +108,8 @@ class SAMV1MaskDecoder(nn.Module):
         patch_grid_hw = encoded_image_bchw.shape[2:]
 
         # Special case, return blank masks if no prompt is given
-        if num_prompts == 0 and blank_promptless_output and not isinstance(mask_hint, Tensor):
+        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
             return self.maskgen.make_blank_results(patch_grid_hw, batch_size)
-
-        # If an integer mask hint is given, interpret it to mean to run the model once, take
-        # the predicted mask (given by the 'hint' as an index) and re-run the model using
-        # the mask as a mask hint
-        if isinstance(mask_hint, int):
-            mask_preds, iou_preds = self(encoded_image_bchw, encoded_prompts_bnc, grid_positional_encoding, None)
-            hint_idx = mask_hint % mask_preds.shape[1]
-            mask_hint = mask_preds[:, hint_idx, :, :]
 
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_iou_token, self.cls_mask_tokens], dim=0).unsqueeze(0)
@@ -134,7 +123,7 @@ class SAMV1MaskDecoder(nn.Module):
 
         # Cross-encode image tokens with prompt tokens
         prompt_tokens = torch.cat((cls_tokens, encoded_prompts_bnc), dim=1)
-        prompt_tokens, img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
+        prompt_tokens, img_tokens_bchw = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
 
         # Extract the (now-encoded) 'cls' tokens by undoing the earlier cls concatenation step
         encoded_cls_tokens = prompt_tokens[:, :num_cls_tokens, :]
@@ -142,7 +131,7 @@ class SAMV1MaskDecoder(nn.Module):
         mask_tokens_out = encoded_cls_tokens[:, 1:, :]
 
         # Produce final output mask & quality predictions
-        mask_preds = self.maskgen(img_tokens, mask_tokens_out, patch_grid_hw)
+        mask_preds = self.maskgen(img_tokens_bchw, mask_tokens_out)
         iou_preds = self.iou_token_mlp(iou_token_out)
 
         return mask_preds, iou_preds, encoded_cls_tokens
@@ -200,14 +189,10 @@ class MaskGen(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, image_patch_tokens: Tensor, cls_mask_tokens: Tensor, patch_grid_hw: tuple[int, int]) -> Tensor:
+    def forward(self, image_tokens_bchw: Tensor, cls_mask_tokens: Tensor) -> Tensor:
 
-        b, _, c = image_patch_tokens.shape
-        h, w = patch_grid_hw
-
-        # Convert image tokens to 'image-like' shape and upscale them to final output size
-        image_patch_tokens = image_patch_tokens.transpose(1, 2).view(b, c, h, w)
-        upscaled_img_tokens = self.img_patch_upscaler(image_patch_tokens)
+        # Process/upscale image tokens to final output size
+        upscaled_img_tokens = self.img_patch_upscaler(image_tokens_bchw)
 
         # Further encode cls mask tokens
         encoded_mask_tokens_list = [mlp(cls_mask_tokens[:, i, :]) for i, mlp in enumerate(self.mask_token_mlps)]

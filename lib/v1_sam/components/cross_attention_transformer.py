@@ -64,10 +64,8 @@ class CrossAttentionTransformer(nn.Module):
         -> F and C should match! That is, features per prompt & features per image token should be the same
 
         Returns:
-            encoded_prompt_tokens, encoded_image_tokens
-            -> Both have shape: BxNxF
-            -> N is number of tokens (same as input for prompts, N=H*W for image tokens)
-            -> F is same features per token as inputs
+            encoded_prompt_tokens, encoded_image_tokens_bchw
+            -> Both outputs have same shape as original inputs, BxCxHxW for image tokens, BxNxF for prompt tokens
         """
 
         # Convert image-related inputs from image-like shape to 'row-of-tokens' format
@@ -84,7 +82,10 @@ class CrossAttentionTransformer(nn.Module):
         # Apply final cross-encoding of prompt-tokens
         prompt_tokens = self.final_prompt_crossattn(prompt_tokens, prompt_posenc, image_tokens, image_posenc)
 
-        return prompt_tokens, image_tokens
+        # Restore image tokens to original shape (i.e. convert from rows-of-tokens to image-like shape)
+        image_tokens_bchw = image_tokens.transpose(1, 2).view(*image_tokens_bchw.shape)
+
+        return prompt_tokens, image_tokens_bchw
 
     # .................................................................................................................
 
