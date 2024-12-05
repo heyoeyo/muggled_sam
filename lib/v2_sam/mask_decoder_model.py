@@ -113,25 +113,24 @@ class SAMV2MaskDecoder(nn.Module):
         """
 
         # For clarity
-        batch_size, num_prompts, enc_dim = encoded_prompts_bnc.shape
+        batch_size_prompts, num_prompts, enc_dim = encoded_prompts_bnc.shape
         lowres_tokens, hires_tokens_x2, hires_tokens_x4 = encoded_image_tokens_list_bchw
-        patch_grid_hw = lowres_tokens.shape[2:]
 
         # Special case, return blank masks if no prompt is given
-        if blank_promptless_output and (num_prompts == 0) and mask_hint is None:
-            mask_preds, iou_preds = self.maskgen.make_blank_results(patch_grid_hw, batch_size)
-            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens, batch_size)
+        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
+            mask_preds, iou_preds = self.maskgen.make_blank_results(lowres_tokens, batch_size_prompts)
+            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens, batch_size_prompts)
             return mask_preds, iou_preds, obj_ptrs, obj_score
 
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_obj_token, self.cls_iou_token, self.cls_mask_tokens], dim=0)
-        cls_tokens = cls_tokens.unsqueeze(0).expand(batch_size, -1, -1)
+        cls_tokens = cls_tokens.unsqueeze(0).expand(batch_size_prompts, -1, -1)
         num_cls_tokens = cls_tokens.shape[1]
 
         # Expand per-image data in batch direction to be per-mask, as well as the position encoding
-        img_tokens_bchw = lowres_tokens + self.maskhint_encoder(patch_grid_hw, mask_hint)
-        img_tokens_bchw = torch.repeat_interleave(img_tokens_bchw, batch_size, dim=0)
-        img_posenc_bchw = torch.repeat_interleave(grid_positional_encoding, batch_size, dim=0)
+        img_tokens_bchw = self.maskhint_encoder(lowres_tokens, mask_hint)
+        img_tokens_bchw = torch.repeat_interleave(img_tokens_bchw, batch_size_prompts, dim=0)
+        img_posenc_bchw = torch.repeat_interleave(grid_positional_encoding, batch_size_prompts, dim=0)
 
         # Cross-encode image tokens with prompt tokens
         prompt_tokens = torch.cat((cls_tokens, encoded_prompts_bnc), dim=1)
@@ -270,13 +269,16 @@ class MaskGen(nn.Module):
 
     # .................................................................................................................
 
-    def make_blank_results(self, patch_grid_hw: tuple[int, int], batch_size: int) -> tuple[Tensor, Tensor]:
+    def make_blank_results(self, image_tokens_bchw: Tensor, batch_size_prompts: int) -> tuple[Tensor, Tensor]:
         """Helper used to generate a 'blank' mask, meant for cases where inputs aren't available"""
 
+        # For clarity
+        _, c, h, w = image_tokens_bchw.shape
+
         # Due to upscaler layer, the normal mask output should be 4 times larger than the image encoding size!
-        mask_h, mask_w = [4 * size for size in patch_grid_hw]
-        mask_shape = (batch_size, 4, mask_h, mask_w)
-        iou_shape = (batch_size, 4)
+        mask_h, mask_w = (4 * h, 4 * w)
+        mask_shape = (batch_size_prompts, 4, mask_h, mask_w)
+        iou_shape = (batch_size_prompts, 4)
 
         # Fill in empty mask and IoU prediction values
         device, dtype = self.device_info.device, self.device_info.dtype
@@ -378,34 +380,39 @@ class MaskHintEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, patch_grid_hw: tuple[int, int], mask_hint_bhw: Tensor | None) -> Tensor:
+    def forward(self, image_tokens_bchw: Tensor, mask_hint_bhw: Tensor | None) -> Tensor:
         """
-        If a mask hint is provided, it will be encoded to help adjust the 'prompt'
-        when running the mask decoder. If a hint isn't given, then a learned
-        'no-mask' embedding is used instead.
+        If a mask hint is provided, it will be encoded and added to the image tokens
+        If a hint isn't given, then a learned 'no-mask' embedding is used instead.
 
         The mask hint should ideally be 4x the height & width of the patch grid,
         corresponding to the size of the outputs of the mask decoder itself
         -> This seems to be the original intended usage, to feed back output
            masks as prompts for refinement
+        -> For example, with default (1024x1024px) sizing, the mask should be 256x256px
+
+        Returns:
+            hint_encoded_image_tokens_bchw
+            -> Same shape as input image tokens (BxCxHxW)
         """
 
-        # Return no-mask embedding if no hint is provided
-        grid_h, grid_w = patch_grid_hw
+        # Create no-mask embedding if no hint is provided otherwise process mask to form encoded embedding
+        grid_h, grid_w = image_tokens_bchw.shape[2:]
         if mask_hint_bhw is None:
-            return self.no_mask_embed.reshape(1, -1, 1, 1).expand(1, -1, grid_h, grid_w)
+            encoded_mask_hint = self.no_mask_embed.reshape(1, -1, 1, 1).expand(1, -1, grid_h, grid_w)
 
-        # Add batch dimensions, if needed
-        if mask_hint_bhw.ndim == 2:
-            mask_hint_bhw = mask_hint_bhw.unsqueeze(0)
+        else:
+            # Add batch dimension to incoming mask, if needed
+            if mask_hint_bhw.ndim == 2:
+                mask_hint_bhw = mask_hint_bhw.unsqueeze(0)
 
-        # Encode hint and scale to target size if needed
-        encoded_mask_hint = self.downscaler(mask_hint_bhw.to(self.device_info))
-        _, _, hint_h, hint_w = encoded_mask_hint.shape
-        if hint_h != grid_h or hint_w != grid_w:
-            encoded_mask_hint = nn.functional.interpolate(encoded_mask_hint, size=patch_grid_hw)
+            # Encode hint and scale to target size if needed
+            encoded_mask_hint = self.downscaler(mask_hint_bhw.to(self.device_info))
+            _, _, hint_h, hint_w = encoded_mask_hint.shape
+            if hint_h != grid_h or hint_w != grid_w:
+                encoded_mask_hint = nn.functional.interpolate(encoded_mask_hint, size=(grid_h, grid_w))
 
-        return encoded_mask_hint
+        return image_tokens_bchw + encoded_mask_hint
 
     # .................................................................................................................
 
@@ -472,10 +479,10 @@ class ObjectPointerGen(nn.Module):
 
     # .................................................................................................................
 
-    def make_blank_results(self, mask_tokens, batch_size):
+    def make_blank_results(self, mask_tokens, batch_size_prompts):
         """Helper used to produce 'no object' output when needing blank results"""
         no_obj_score = torch.tensor(-10).to(mask_tokens)
-        no_obj_ptr = self.no_ptr.expand_as(mask_tokens).expand(batch_size, -1, -1)
+        no_obj_ptr = self.no_ptr.expand_as(mask_tokens).expand(batch_size_prompts, -1, -1)
         return no_obj_score, no_obj_ptr
 
     # .................................................................................................................
