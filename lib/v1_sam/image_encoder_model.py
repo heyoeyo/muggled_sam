@@ -87,7 +87,7 @@ class SAMV1ImageEncoder(nn.Module):
         self.stages = nn.Sequential(*stages_list)
 
         # Create layers used to project to target number of output channels
-        self.output_projection = nn.Sequential(
+        self.channel_projection = nn.Sequential(
             nn.Conv2d(features_per_token, output_channels, kernel_size=1, bias=False),
             LayerNorm2d(output_channels),
             nn.Conv2d(output_channels, output_channels, kernel_size=3, padding=1, bias=False),
@@ -119,7 +119,7 @@ class SAMV1ImageEncoder(nn.Module):
         patch_tokens_bhwc = self.stages(patch_tokens_bhwc)
 
         # Run final projection to standard channel size and convert to bchw shape
-        return self.output_projection(patch_tokens_bhwc.permute(0, 3, 1, 2))
+        return self.channel_projection(patch_tokens_bhwc.permute(0, 3, 1, 2))
 
     # .................................................................................................................
 

@@ -47,7 +47,7 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
         if found_key(new_key):
 
             # Correct layernorm2d weight shapes
-            layernorm_key_hints = ("output_projection.1", "output_projection.3")
+            layernorm_key_hints = ("channel_projection.1", "channel_projection.3")
             mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
             imgenc_sd[new_key] = mod_data
@@ -108,7 +108,9 @@ def _reshape_layernorm2d(key, data, *key_hints):
 
     return data
 
+
 # .....................................................................................................................
+
 
 def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
     """
@@ -116,7 +118,7 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
     Takes care of:
         - position embeddings
         - transformer blocks (including re-structuring as stages)
-        - output projection ('neck') layers
+        - channel projection ('neck') layers
     """
 
     # Bail on non-image encoder keys
@@ -132,9 +134,9 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
     if key.startswith("image_encoder.pos_embed"):
         return key.replace("image_encoder.pos_embed", "posenc.base_embedding")
 
-    # Handle output ('neck') layers
+    # Handle 'neck' layers
     if key.startswith("image_encoder.neck"):
-        return key.replace("image_encoder.neck", "output_projection")
+        return key.replace("image_encoder.neck", "channel_projection")
 
     # Handle transformer blocks (bulk of the model)
     if key.startswith("image_encoder.blocks"):
