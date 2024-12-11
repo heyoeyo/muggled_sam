@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="622.44" height="122.646" viewBox="0 0 164.687 32.45">
+  <g transform="translate(777.647 -368.267)">
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="m-741.533 388.863 2.092-1.375-2.092-1.375v1.087h-35.85v.53h35.85zm125.999 0 2.092-1.375-2.092-1.375v1.087h-112.578v.53h112.578z" paint-order="markers stroke fill"/>
+    <g transform="translate(3.254 13.406)">
+      <path id="a" fill="#fc0" stroke="#000" stroke-dasharray="none" stroke-linecap="square" stroke-width=".529" d="M426.011 225.496h38.894v15.346h-38.894z" paint-order="stroke fill markers"/>
+    </g>
+    <g transform="translate(-17.935 -.664)">
+      <use xlink:href="#a" id="b" x="0" y="0" transform="translate(90.145 24.576)"/>
+    </g>
+    <g transform="translate(-27.558 5.671)">
+      <use xlink:href="#b" id="c" x="0" y="0" transform="translate(87.684 -20.142)"/>
+    </g>
+    <text xml:space="preserve" x="-745.467" y="373.385" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;"><tspan x="-745.467" y="373.385" style="Monospace, Bold&quot;;text-align:start;">Vision Transformer</tspan></text>
+    <text xml:space="preserve" x="-762.299" y="385.481" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-762.299" y="385.481" style="text-align:center;">image tokens</tspan></text>
+    <text xml:space="preserve" x="-630.373" y="385.466" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-630.373" y="385.466" style="text-align:center;">image tokens</tspan></text>
+    <text xml:space="preserve" x="-775.558" y="392.293" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-775.558" y="392.293" style="text-align:center;">BxF<tspan baseline-shift="sub" font-size="65%" style="text-align:center;">model</tspan>xHxW</tspan></text>
+    <text xml:space="preserve" x="-643.632" y="392.293" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-643.632" y="392.293" style="text-align:center;">BxF<tspan baseline-shift="sub" font-size="65%" style="text-align:center;">model</tspan>xHxW</tspan></text>
+    <path fill="none" stroke="#fc0" stroke-linecap="square" stroke-width="1.058" d="M-745.045 374.788h97.367v25.4h-97.367z" paint-order="stroke fill markers"/>
+    <use xlink:href="#c" id="d" x="0" y="0" transform="translate(-1100.685 35.374)"/>
+    <g transform="translate(-.665 .278)">
+      <use xlink:href="#d" stroke-width="1.459" transform="matrix(.47 0 0 1 -503.175 114.234)"/>
+      <text xml:space="preserve" x="-727.509" y="385.777" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-727.509" y="385.777" style="Monospace, Bold&quot;;">Stage</tspan><tspan x="-727.509" y="392.833" style="Monospace, Bold&quot;;">1</tspan></text>
+    </g>
+    <g transform="translate(-1.813 -1.761)">
+      <use xlink:href="#d" stroke-width="1.459" transform="matrix(.47 0 0 1 -480.86 116.273)"/>
+      <text xml:space="preserve" x="-705.194" y="387.816" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-705.194" y="387.816" style="Monospace, Bold&quot;;">Stage</tspan><tspan x="-705.194" y="394.872" style="Monospace, Bold&quot;;">2</tspan></text>
+    </g>
+    <g transform="translate(-7.728 .03)">
+      <use xlink:href="#d" stroke-width="1.459" transform="matrix(.47 0 0 1 -453.78 114.482)"/>
+      <text xml:space="preserve" x="-678.113" y="386.026" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-678.113" y="386.026" style="Monospace, Bold&quot;;">Stage</tspan><tspan x="-678.113" y="393.081" style="Monospace, Bold&quot;;">3</tspan></text>
+    </g>
+    <g transform="translate(-14.726)">
+      <use xlink:href="#d" stroke-width="1.459" transform="matrix(.47 0 0 1 -425.614 114.511)"/>
+      <text xml:space="preserve" x="-649.948" y="386.055" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-649.948" y="386.055" style="Monospace, Bold&quot;;">Stage</tspan><tspan x="-649.948" y="393.11" style="Monospace, Bold&quot;;">4</tspan></text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="500.337" height="416.76" viewBox="0 0 132.381 110.268">
+  <g transform="translate(892.133 -428.749)">
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="m-827.279 532.116 26.202.052v-41.074h38.75v1.087l2.093-1.374-2.092-1.376v1.134h-39.333l.053 41.022h-25.144v-4.125h-.529z" paint-order="markers stroke fill"/>
+    <g transform="translate(3.254 13.406)">
+      <path id="a" fill="#fc0" stroke="#000" stroke-dasharray="none" stroke-linecap="square" stroke-width=".529" d="M426.011 225.496h38.894v15.346h-38.894z" paint-order="stroke fill markers"/>
+    </g>
+    <g transform="translate(-17.935 -.664)">
+      <use xlink:href="#a" id="b" x="0" y="0" transform="translate(90.145 24.576)"/>
+    </g>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="M-826.677 474.761v-15.738h-.53v15.738zm0 41.593v-15.74h-.53v15.74z" paint-order="markers stroke fill"/>
+    <g transform="translate(-27.558 5.671)">
+      <use xlink:href="#b" id="c" x="0" y="0" transform="translate(87.684 -20.142)"/>
+    </g>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="M-827.275 445.486h-1.087l1.374 2.093 1.375-2.093h-1.133v-4.544l-26.31-.052v49.68h-38.752v.529h39.333l-.053-49.628h25.253z" paint-order="markers stroke fill"/>
+    <text xml:space="preserve" x="-827.004" y="433.867" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;" text-anchor="middle"><tspan x="-827.004" y="433.867" style="Monospace, Bold&quot;;text-align:start;">Single Transformer Stage</tspan></text>
+    <text xml:space="preserve" x="-876.812" y="488.819" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-876.812" y="488.819" style="text-align:center;">image tokens</tspan></text>
+    <text xml:space="preserve" x="-890.071" y="495.63" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-890.071" y="495.63" style="text-align:center;">BxF<tspan baseline-shift="sub" font-size="65%" style="text-align:center;">model</tspan>xHxW</tspan></text>
+    <text xml:space="preserve" x="-777.165" y="488.819" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-777.165" y="488.819" style="text-align:center;">image tokens</tspan></text>
+    <text xml:space="preserve" x="-790.424" y="495.63" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-790.424" y="495.63" style="text-align:center;">BxF<tspan baseline-shift="sub" font-size="65%" style="text-align:center;">model</tspan>xHxW</tspan></text>
+    <path fill="none" stroke="#fc0" stroke-linecap="square" stroke-width="1.058" d="M-859.486 436.358h65.088v102.129h-65.088z" paint-order="stroke fill markers"/>
+    <use xlink:href="#c" id="d" x="0" y="0" transform="translate(-1100.685 35.374)"/>
+    <g transform="translate(-108.565 -20.39)">
+      <use xlink:href="#d" transform="translate(-240.978 204.396)"/>
+      <text xml:space="preserve" x="-718.199" y="476.099" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-718.199" y="476.099" style="Monospace, Bold&quot;;">Window</tspan><tspan x="-718.199" y="483.155" style="Monospace, Bold&quot;;">Block 1</tspan></text>
+    </g>
+    <g transform="translate(-108.565 -3.457)">
+      <use xlink:href="#d" transform="translate(-240.978 204.396)"/>
+      <text xml:space="preserve" x="-718.199" y="476.099" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-718.199" y="476.099" style="Monospace, Bold&quot;;">Window</tspan><tspan x="-718.199" y="483.155" style="Monospace, Bold&quot;;">Block 2</tspan></text>
+    </g>
+    <g transform="translate(-108.565 23.558)">
+      <use xlink:href="#d" transform="translate(-240.978 204.396)"/>
+      <text xml:space="preserve" x="-718.199" y="476.099" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-718.199" y="476.099" style="Monospace, Bold&quot;;">Window</tspan><tspan x="-718.199" y="483.155" style="Monospace, Bold&quot;;">Block N</tspan></text>
+    </g>
+    <g stroke-width="1.323">
+      <path fill="#ffe581" stroke="#000" d="M-841.152 504.128h38.423v14.875h-38.423z" paint-order="stroke fill markers" style="" transform="translate(-5.002 6.298)"/>
+      <text xml:space="preserve" x="-821.763" y="510.142" stroke-linecap="square" stroke-opacity=".798" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle" transform="translate(-5.002 6.298)"><tspan x="-821.763" y="510.142" style="Monospace, Bold&quot;;">Global</tspan><tspan x="-821.763" y="517.198" style="Monospace, Bold&quot;;">Attention</tspan></text>
+    </g>
+    <g fill="#fff" stroke="#000" paint-order="stroke fill markers" transform="translate(-105.18 -23.783)">
+      <circle cx="-721.761" cy="508.017" r=".823" style=""/>
+      <circle cx="-721.761" cy="511.206" r=".823" style=""/>
+      <circle cx="-721.761" cy="514.395" r=".823" style=""/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="825.825" height="441.51" viewBox="0 0 218.5 116.816">
+  <text xml:space="preserve" x="784.275" y="284.52" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;" transform="translate(-739.002 -279.702)"><tspan x="784.275" y="284.52" style="Monospace, Bold&quot;;text-align:start;">Mask Generator</tspan></text>
+  <text xml:space="preserve" x="943.407" y="351.291" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(-739.002 -279.702)"><tspan x="943.407" y="351.291" style="text-align:center;">masks</tspan></text>
+  <text xml:space="preserve" x="760.808" y="299.667" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(-739.002 -279.702)"><tspan x="760.808" y="299.667" style="text-align:center;">enc. image tokens</tspan></text>
+  <text xml:space="preserve" x="760.734" y="352.555" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(-739.002 -279.702)"><tspan x="760.734" y="352.555" style="text-align:center;">cls mask tokens</tspan></text>
+  <g transform="translate(-735.748 -266.296)">
+    <path id="a" fill="#fc0" stroke="#000" stroke-dasharray="none" stroke-linecap="square" stroke-width=".529" d="M426.011 225.496h38.894v15.346h-38.894z" paint-order="stroke fill markers"/>
+  </g>
+  <g transform="translate(-756.936 -280.366)">
+    <use xlink:href="#a" id="b" x="0" y="0" transform="translate(90.145 24.576)"/>
+  </g>
+  <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="M52.29 65.97h5.113v1.133l2.093-1.375-2.093-1.375v1.088H52.29V48.549h5.113v1.133l2.093-1.375-2.093-1.374v1.087h-5.642v26.131H.917v.529H51.76v26.131h5.642v1.133l2.093-1.375-2.093-1.374v1.087H52.29V83.391h5.113v1.133l2.093-1.375-2.093-1.375v1.087H52.29zm132.159 8.71v26.131h-53.796v-.529h53.267V83.391h-36.863v-.53h36.863V65.97h-20.46v-.53h20.46V48.55h-4.055v-.53h4.584v26.131h31.476v-1.088l2.093 1.375-2.093 1.375V74.68zM57.123 23.362l2.092-1.376-2.092-1.374v1.087H.917v.53h56.206zm68.654 61.162 2.093-1.375-2.093-1.375v1.087h-23.252v.53h23.252zm-18.375 17.421 3.68-1.376-3.68-1.374v1.087h-4.877v.53h4.877zm34.925-34.842 2.093-1.375-2.093-1.375v1.088h-39.802v.529h39.802zm16.404-17.421 2.093-1.375-2.093-1.374v1.087h-56.206v.53h56.206z" paint-order="markers stroke fill"/>
+  <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="M153.858 44.965v.537c0 1.11 2.11 1.469 2.11 2.778s-2.11 1.429-2.11 2.778v3.125h-1.133l1.375 2.092 1.374-2.092h-1.087v-3.125c0-1.016 2.11-1.47 2.11-2.778 0-1.31-2.11-1.588-2.11-2.779V22.25h15.918v14.515h-1.087l1.374 2.092 1.375-2.092h-1.133V21.67l-66.677.052v.53h16.76V45.53c0 1.11 2.093 1.47 2.093 2.779 0 1.308-2.093 1.429-2.093 2.778V62.95c0 1.11 2.093 1.47 2.093 2.778 0 1.31-2.093 1.43-2.093 2.778v11.865c0 1.11 2.093 1.47 2.093 2.778 0 1.309-2.093 1.43-2.093 2.778v3.197h-1.134l1.375 2.093 1.375-2.093h-1.087v-3.197c0-1.016 2.093-1.47 2.093-2.778 0-1.309-2.093-1.587-2.093-2.778V68.506c0-1.016 2.093-1.469 2.093-2.778s-2.093-1.587-2.093-2.778V51.086c0-1.016 2.093-1.47 2.093-2.778 0-1.31-2.093-1.588-2.093-2.779V22.25h15.944v23.325c0 1.11 2.094 1.47 2.094 2.778 0 1.309-2.094 1.43-2.094 2.778v11.865c0 1.11 2.094 1.469 2.094 2.778s-2.094 1.43-2.094 2.778v3.197h-1.133l1.375 2.093 1.375-2.093h-1.088v-3.197c0-1.016 2.094-1.47 2.094-2.778 0-1.309-2.094-1.588-2.094-2.778V51.13c0-1.016 2.094-1.469 2.094-2.778s-2.094-1.587-2.094-2.778V22.25h15.939z" paint-order="markers stroke fill"/>
+  <g transform="translate(-766.56 -274.03)">
+    <use xlink:href="#b" id="c" x="0" y="0" transform="translate(87.684 -20.142)"/>
+  </g>
+  <g transform="translate(-564.64 -227.556)">
+    <use xlink:href="#c" transform="translate(22.316 38.26)"/>
+    <text xml:space="preserve" x="645.602" y="274.393" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="645.602" y="274.393" style="Monospace, Bold&quot;;">Mask Token</tspan><tspan x="645.602" y="281.449" style="Monospace, Bold&quot;;">MLP 0</tspan></text>
+  </g>
+  <g transform="translate(-564.64 -210.135)">
+    <use xlink:href="#c" transform="translate(22.316 38.26)"/>
+    <text xml:space="preserve" x="645.602" y="274.393" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="645.602" y="274.393" style="Monospace, Bold&quot;;">Mask Token</tspan><tspan x="645.602" y="281.449" style="Monospace, Bold&quot;;">MLP 1</tspan></text>
+  </g>
+  <g transform="translate(-564.64 -192.715)">
+    <use xlink:href="#c" transform="translate(22.316 38.26)"/>
+    <text xml:space="preserve" x="645.602" y="274.393" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="645.602" y="274.393" style="Monospace, Bold&quot;;">Mask Token</tspan><tspan x="645.602" y="281.449" style="Monospace, Bold&quot;;">MLP 2</tspan></text>
+  </g>
+  <g transform="translate(-564.64 -175.294)">
+    <use xlink:href="#c" transform="translate(22.316 38.26)"/>
+    <text xml:space="preserve" x="645.602" y="274.393" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="645.602" y="274.393" style="Monospace, Bold&quot;;">Mask Token</tspan><tspan x="645.602" y="281.449" style="Monospace, Bold&quot;;">MLP 3</tspan></text>
+  </g>
+  <g transform="translate(-564.64 -253.926)">
+    <use xlink:href="#c" transform="translate(22.316 38.26)"/>
+    <text xml:space="preserve" x="645.602" y="274.393" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="645.602" y="274.393" style="Monospace, Bold&quot;;">Image</tspan><tspan x="645.602" y="281.449" style="Monospace, Bold&quot;;">Upscaler</tspan></text>
+  </g>
+  <g stroke-linecap="square" stroke-width=".529" paint-order="markers stroke fill" transform="translate(-732.501 -265.652)">
+    <circle cx="901.484" cy="313.959" r="7.673" fill="#0a8" stroke="#000"/>
+    <text xml:space="preserve" x="901.565" y="315.537" fill="#1a1a1a" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center" text-anchor="middle"><tspan x="901.565" y="315.537" style="">dot</tspan></text>
+  </g>
+  <g stroke-linecap="square" stroke-width=".529" paint-order="markers stroke fill" transform="translate(-747.384 -248.231)">
+    <circle cx="901.484" cy="313.959" r="7.673" fill="#0a8" stroke="#000"/>
+    <text xml:space="preserve" x="901.565" y="315.537" fill="#1a1a1a" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center" text-anchor="middle"><tspan x="901.565" y="315.537" style="">dot</tspan></text>
+  </g>
+  <g stroke-linecap="square" stroke-width=".529" paint-order="markers stroke fill" transform="translate(-763.855 -230.81)">
+    <circle cx="901.484" cy="313.959" r="7.673" fill="#0a8" stroke="#000"/>
+    <text xml:space="preserve" x="901.565" y="315.537" fill="#1a1a1a" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center" text-anchor="middle"><tspan x="901.565" y="315.537" style="">dot</tspan></text>
+  </g>
+  <g stroke-linecap="square" stroke-width=".529" paint-order="markers stroke fill" transform="translate(-780.326 -213.39)">
+    <circle cx="901.484" cy="313.959" r="7.673" fill="#0a8" stroke="#000"/>
+    <text xml:space="preserve" x="901.565" y="315.537" fill="#1a1a1a" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center" text-anchor="middle"><tspan x="901.565" y="315.537" style="">dot</tspan></text>
+  </g>
+  <path fill="none" stroke="#fc0" stroke-linecap="square" stroke-width="1.058" d="M45.774 6.22h144.462v110.067H45.774z" paint-order="stroke fill markers"/>
+  <text xml:space="preserve" x="754.307" y="358.859" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" transform="translate(-739.002 -279.702)"><tspan x="754.307" y="358.859" style="text-align:center;">Bx4xF</tspan></text>
+  <text xml:space="preserve" x="751.633" y="306.405" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" transform="translate(-739.002 -279.702)"><tspan x="751.633" y="306.405" style="text-align:center;">BxFxHxW</tspan></text>
+  <text xml:space="preserve" x="931.669" y="359.873" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" transform="translate(-739.002 -279.702)"><tspan x="931.669" y="359.873" style="text-align:center;">Bx4x4Hx4W</tspan></text>
+  <text xml:space="preserve" x="842.41" y="299.792" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:start;" transform="translate(-739.002 -279.702)"><tspan x="842.41" y="299.792" style="text-align:start;">(BxF/8x4Hx4W)</tspan></text>
+  <text xml:space="preserve" x="840.779" y="325.524" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:start;" transform="translate(-739.002 -279.702)"><tspan x="840.779" y="325.524" style="text-align:start;">(BxF/8)</tspan></text>
+</svg>

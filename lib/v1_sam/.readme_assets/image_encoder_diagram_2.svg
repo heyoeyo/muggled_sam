@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="890.221" height="177.95" viewBox="0 0 235.538 47.082">
+  <g transform="translate(563.176 -246.046)">
+    <text xml:space="preserve" x="-561.017" y="278.259" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-561.017" y="278.259" style="text-align:center;">Bx3xH<tspan baseline-shift="sub" font-size="65%" style="text-align:center;">in</tspan>xW<tspan baseline-shift="sub" font-size="65%">in</tspan></tspan></text>
+    <text xml:space="preserve" x="-548.817" y="270.89" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-548.817" y="270.89" style="text-align:center;">Image</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="m-330.212 274.352 2.092-1.376-2.092-1.374v1.087h-232.7v.53h232.7z" paint-order="markers stroke fill"/>
+    <text xml:space="preserve" x="-354.665" y="278.224" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;"><tspan x="-354.665" y="278.224" style="text-align:center;">BxFxHxW</tspan></text>
+    <text xml:space="preserve" x="-345.547" y="270.955" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-345.547" y="270.955" style="text-align:center;">image tokens</tspan></text>
+    <g transform="translate(3.254 13.406)">
+      <path id="a" fill="#fc0" stroke="#000" stroke-dasharray="none" stroke-linecap="square" stroke-width=".529" d="M426.011 225.496h38.894v15.346h-38.894z" paint-order="stroke fill markers"/>
+    </g>
+    <g transform="translate(-17.935 -.664)">
+      <use xlink:href="#a" id="b" x="0" y="0" transform="translate(90.145 24.576)"/>
+    </g>
+    <path fill="none" stroke="#d40055" stroke-linecap="square" stroke-width="1.058" d="M-532.695 253.355h169.842v39.244h-169.842z" paint-order="stroke fill markers"/>
+    <g transform="translate(-27.558 5.671)">
+      <use xlink:href="#b" id="c" x="0" y="0" transform="translate(87.684 -20.142)"/>
+    </g>
+    <text xml:space="preserve" x="-513.278" y="282.63" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-513.278" y="282.63" style="text-align:center;">Patch</tspan><tspan x="-513.278" y="287.921" style="text-align:center;">Embedding</tspan></text>
+    <text xml:space="preserve" x="-533.433" y="250.863" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;"><tspan x="-533.433" y="250.863" style="Monospace, Bold&quot;;text-align:start;">Image Encoder</tspan></text>
+    <use xlink:href="#c" id="d" x="0" y="0" transform="translate(-1100.685 35.374)"/>
+    <text xml:space="preserve" x="-477.399" y="271.703" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-477.399" y="271.703" style="Monospace, Bold&quot;;">Position</tspan><tspan x="-477.399" y="278.759" style="Monospace, Bold&quot;;">Encoder</tspan></text>
+    <g transform="translate(-20.108 8.809)">
+      <use xlink:href="#d" transform="translate(107.39 -8.809)"/>
+      <text xml:space="preserve" x="-370.009" y="262.2" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-370.009" y="262.2" style="Monospace, Bold&quot;;">Channel</tspan><tspan x="-370.009" y="269.256" style="Monospace, Bold&quot;;">Projection</tspan></text>
+    </g>
+    <g stroke-linecap="square" paint-order="markers stroke fill">
+      <path fill="#0fc" stroke="#000" stroke-width=".529" d="M-505.555 291.312h23.283v7.937h-23.283z" style="" transform="translate(-19.322 -22.304)"/>
+      <text xml:space="preserve" x="-493.907" y="296.822" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle" transform="translate(-19.322 -22.304)"><tspan x="-493.907" y="296.822" font-family="Sans" font-size="4.233" font-weight="400" style="Sans, Normal&quot;;">Conv2D</tspan></text>
+    </g>
+    <g transform="translate(-14.381 -7.7)">
+      <use xlink:href="#d" transform="translate(58.022 7.7)"/>
+      <text xml:space="preserve" x="-419.388" y="279.404" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-419.388" y="279.404" style="Monospace, Bold&quot;;">Vision</tspan><tspan x="-419.388" y="286.459" style="Monospace, Bold&quot;;">Transformer</tspan></text>
+    </g>
+  </g>
+</svg>
