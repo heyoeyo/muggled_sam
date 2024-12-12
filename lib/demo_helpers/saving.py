@@ -209,7 +209,7 @@ def make_mask_1ch(original_image_bgr: ndarray, mask_contours_norm: list, is_inve
     img_hw = original_image_bgr.shape[0:2]
     full_mask_1ch = np.full(img_hw, mask_bg_value, dtype=np.uint8)
     mask_contours_px = pixelize_contours(mask_contours_norm, original_image_bgr.shape)
-    full_mask_1ch = cv2.fillPoly(full_mask_1ch, mask_contours_px, mask_fill_value, cv2.LINE_AA)
+    full_mask_1ch = cv2.fillPoly(full_mask_1ch, mask_contours_px, mask_fill_value, cv2.LINE_8)
 
     return full_mask_1ch
 

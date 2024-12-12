@@ -447,6 +447,10 @@ try:
             disp_image = ui_elems.display_block.rerender()
             all_prompts_dict = make_prompt_save_data(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
+            # Make raw result matching input image sizing
+            loaded_hw = loaded_image_bgr.shape[0:2]
+            raw_mask_result_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, loaded_hw, mthresh)
+
             # Generate & save segmentation images!
             save_folder, save_idx = get_save_name(image_path, "manual")
             save_image_segmentation(
@@ -454,7 +458,7 @@ try:
                 save_idx,
                 loaded_image_bgr,
                 disp_image,
-                selected_mask_uint8,
+                raw_mask_result_uint8,
                 mask_contours_norm,
                 all_prompts_dict,
                 use_inverted_mask,
