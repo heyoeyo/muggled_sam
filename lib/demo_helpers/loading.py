@@ -8,6 +8,7 @@
 import os
 import os.path as osp
 import json
+from time import sleep
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -18,7 +19,7 @@ import json
 
 def clean_path_str(path=None):
     """
-    Helper used to interpret user-given pathes correctly
+    Helper used to interpret user-given paths correctly
     Import for Windows, since 'copy path' on file explorer includes quotations!
     """
 
@@ -132,9 +133,16 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
         if not osp.exists(default_path):
             default_path = None
 
-    # Generate list of model selections (ordered by size)
+    # Generate list of model selections, including the default path if it isn't in the folder listing
     model_files_paths = sorted(model_files_paths)
     model_names = [osp.basename(filepath) for filepath in model_files_paths]
+    default_in_listing = any(default_path == path for path in model_files_paths)
+    if not default_in_listing and default_path is not None:
+        model_files_paths.append(default_path)
+        default_name = osp.join("...", osp.basename(osp.dirname(default_path)), osp.basename(default_path))
+        model_names.append(default_name)
+
+    # Create menu listing strings for each model option for display in terminal
     menu_item_strs = []
     for idx, (path, name) in enumerate(zip(model_files_paths, model_names)):
         menu_str = f" {1+idx:>2}: {name}"
@@ -189,6 +197,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
 
             # If we get here, we didn't get a valid input. So warn user and repeat prompt
             print("", "", "Invalid selection!", sep="\n", flush=True)
+            sleep(0.75)
 
     except KeyboardInterrupt:
         quit()
