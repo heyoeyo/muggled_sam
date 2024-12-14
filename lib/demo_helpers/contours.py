@@ -8,6 +8,241 @@
 import cv2
 import numpy as np
 
+# For type hints
+from numpy import ndarray
+
+
+# %% Data types
+
+
+class MaskContourData:
+    """
+    Helper class used to manage hierarchical contouring data
+    Hierarchical meaning that the data can properly represent 'shapes with holes',
+    or even 'shapes with holes that have shapes inside them' etc.
+    """
+
+    contour_norms_list: list[ndarray]
+    area_norms_list: ndarray
+    mask_hw: tuple[int, int]
+
+    # Array which holds information about how contours are related:
+    # Each row (corresponds to each contour) holds: [next_idx, prev_idx, first_child_idx, parent_idx]
+    # See: https://docs.opencv.org/3.4/d9/d8b/tutorial_py_contours_hierarchy.html
+    hierarchy: ndarray
+
+    # Array which stores boolean values indicating whether a contour represents
+    # an 'island' (white regions of a mask) or a 'hole' (black regions)
+    is_island_list: ndarray
+
+    # .................................................................................................................
+
+    def __init__(self, mask_binary_uint8, external_masks_only=False):
+
+        # Force a single-channel channel mask, in case we don't get one (assuming HxWxC shape!)
+        if mask_binary_uint8.ndim == 3:
+            assert mask_binary_uint8.shape[2] < mask_binary_uint8[1], "Mask error, expecting shape: HxWxC"
+            mask_binary_uint8 = mask_binary_uint8[:, :, 0]
+
+        # Generate outlines from the segmentation mask
+        mode = cv2.RETR_EXTERNAL if external_masks_only else cv2.RETR_TREE
+        contours_px_list, hierarchy = cv2.findContours(mask_binary_uint8, mode, cv2.CHAIN_APPROX_SIMPLE)
+        max_area = mask_binary_uint8.shape[0] * mask_binary_uint8.shape[1]
+        area_norms_list = np.float32([cv2.contourArea(c, oriented=False) for c in contours_px_list]) / max_area
+
+        # Normalize contours for storage (now that we calculated area)
+        contours_norm_list = normalize_contours(contours_px_list, mask_binary_uint8.shape)
+
+        # Remove first empty dimension and force hierarchy data to be a numpy array, even if there is no data
+        hierarchy = hierarchy[0] if (hierarchy is not None) else np.empty((0, 4), dtype=np.int32)
+
+        # Figure out which contours should be filled in black vs. white (i.e. holes vs. islands)
+        num_contours = len(contours_norm_list)
+        is_island_list = np.zeros(num_contours, bool)
+        for idx in range(num_contours):
+
+            # Figure out whether the contour is an island or hole
+            # -> Top-most contours (no parent) are always islands. Next child is hole, next-next child is island etc.
+            parent_idx = int(hierarchy[idx, 3])
+            is_topmost = parent_idx == -1
+            is_island_list[idx] = True if is_topmost else (not is_island_list[parent_idx])
+
+        # Store results
+        self.contour_norms_list = contours_norm_list
+        self.hierarchy = hierarchy
+        self.area_norms_list = area_norms_list
+        self.is_island_list = is_island_list
+        self.mask_hw = mask_binary_uint8.shape[0:2]
+
+    # .................................................................................................................
+
+    def __len__(self):
+        return len(self.contour_norms_list)
+
+    # .................................................................................................................
+
+    def index_iter(self):
+        """
+        Helper used to iterator over each contour index & corresponding parent index
+        Use as:
+            for index, parent_index in self.index_iter():
+                is_topmost = parent_index == -1
+                etc.
+                pass
+        """
+
+        for idx in range(len(self.contour_norms_list)):
+            parent_idx = int(self.hierarchy[idx, 3])
+            yield idx, parent_idx
+
+        return
+
+    # .................................................................................................................
+
+    def draw_mask(self, mask_shape_or_hw=None, filter_array=None) -> ndarray:
+        """Function used to draw a mask image from a hierarchical listing of contour data"""
+
+        # Figure out normalized-to-pixel sizing factors
+        mask_shape = mask_shape_or_hw if mask_shape_or_hw is not None else self.mask_hw
+        mask_h, mask_w = mask_shape[0:2]
+        xy_norm_to_px_factor = np.float32((mask_w - 1, mask_h - 1))
+
+        # If no filter is given, then simply allow all contours to be drawn
+        if filter_array is None:
+            filter_array = (True for _ in range(len(self.contour_norms_list)))
+
+        # Draw each (valid, island) contour in sequence to reconstruct mask image
+        mask_1ch = np.zeros((mask_h, mask_w), dtype=np.uint8)
+        for contour, is_island, is_valid in zip(self.contour_norms_list, self.is_island_list, filter_array):
+
+            # Skip invalid contours (for example, filtered by being too small)
+            if not is_valid:
+                continue
+
+            # Convert to pixel units for drawing
+            color = 255 if is_island else 0
+            xy_px = np.int32(np.round(np.float32(contour) * xy_norm_to_px_factor))
+            cv2.fillPoly(mask_1ch, [xy_px], color, cv2.LINE_8)
+            if not is_island:
+                # Due to way 'fillPoly' works, we need additional outline around holes,
+                # in order to match the original mask that produced the contours!
+                cv2.polylines(mask_1ch, [xy_px], True, 255)
+
+        return mask_1ch
+
+    # .................................................................................................................
+
+    def get_bounding_box(self):
+        """
+        Function used to get the outer-most xy coordinates of all the contours
+        Returns:
+            top_left_xy_norm, bottom_right_xy_norm
+        """
+
+        # If we have no contours, consider the whole area as being bounded
+        if len(self) == 0:
+            return np.float32((0, 0)), np.float32((1, 1))
+
+        # Find min/max of every top-most contour (child contours are irrelevant)
+        topmost_contours = []
+        for idx, parent_idx in self.index_iter():
+            is_topmost = parent_idx == -1
+            if is_topmost:
+                topmost_contours.append(self.contour_norms_list[idx])
+
+        tl_xy_norm = np.min([np.min(c.squeeze(1), axis=0) for c in topmost_contours], axis=0)
+        br_xy_norm = np.max([np.max(c.squeeze(1), axis=0) for c in topmost_contours], axis=0)
+
+        return tl_xy_norm, br_xy_norm
+
+    # .................................................................................................................
+
+    def filter_by_size_thresholds(self, hole_size_threshold=0, island_size_threshold=2) -> ndarray:
+        """
+        Create filtering array (used when drawing) that excludes overly small contours
+        Assuming size thresholds are given between 0 and 100
+        (e.g. a hole threshold of 100 would mean that we remove ALL holes)
+        """
+
+        # Convert thresholds (assumed to be 0 to 1) into reasonable range of area values
+        # -> Squaring should give 'area-like' threshold behavior
+        # -> For some reason, raising to power 8 gives more intuitive feeling behavior... not sure why
+        hole_area_thresh = (hole_size_threshold / 100.0) ** 8
+        island_area_thresh = (island_size_threshold / 100.0) ** 8
+
+        # Update per-contour validity based on thresholding
+        is_valid_list = [True] * len(self)
+        for idx, area in enumerate(self.area_norms_list):
+
+            # First check if parent is valid (otherwise, child is invalid by default)
+            parent_idx = int(self.hierarchy[idx, 3])
+            is_topmost = parent_idx == -1
+            is_parent_valid = True if is_topmost else is_valid_list[parent_idx]
+
+            # Decide if the contour is 'valid' based on sizing thresholds & parent status
+            is_valid = is_parent_valid
+            if is_valid:
+                is_island = self.is_island_list[idx]
+                is_small_hole = (not is_island) and (area < hole_area_thresh)
+                is_small_island = is_island and (area < island_area_thresh)
+                is_valid = (not is_small_island) and (not is_small_hole)
+
+            is_valid_list[idx] = is_valid
+
+        return is_valid_list
+
+    # .................................................................................................................
+
+    def filter_by_largest(self):
+        """
+        Create filtering array that excludes all but the largest contour
+        """
+
+        # Find largest contour by area and create filtering area to draw only this contour
+        largest_idx = np.argmax(self.area_norms_list)
+        filter_array = np.zeros(len(self), dtype=bool)
+        filter_array[largest_idx] = True
+
+        # Sanity check... largest is always an outer-most mask, right?
+        assert self.hierarchy[largest_idx, 3] == -1, "Largest contour is not an outer-most contour?!"
+
+        # Include all child contours, if parent was included
+        for idx, parent_idx in self.index_iter():
+
+            # Ignore contours without parent
+            is_topmost = parent_idx == -1
+            if is_topmost:
+                continue
+
+            filter_array[idx] = filter_array[parent_idx]
+
+        return filter_array
+
+    # .................................................................................................................
+
+    def filter_by_containing_xy(self, xy_norm):
+        """
+        Create filtering array that excludes all contours not containing the given xy coord (if any)
+        """
+
+        filter_array = np.zeros(len(self), dtype=bool)
+        for idx, parent_idx in self.index_iter():
+
+            # Ignore non-topmost contours
+            is_topmost = parent_idx == -1
+            if is_topmost:
+                # Record contour index if it contains the target point
+                contains_xy = cv2.pointPolygonTest(self.contour_norms_list[idx], xy_norm, False) > 0
+
+            else:
+                # 'Child' case: Considered to contain xy if parent contains it
+                contains_xy = filter_array[parent_idx]
+
+            # Record parent/child results
+            filter_array[idx] = contains_xy
+
+        return filter_array
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
@@ -18,7 +253,7 @@ def get_largest_contour_from_mask(
     minimum_contour_area_norm=None,
     normalize=True,
     simplification_eps=None,
-) -> [bool, np.ndarray]:
+) -> [bool, ndarray]:
     """
     Helper used to get only the largest contour (by area) from a a given binary mask image.
 
@@ -137,7 +372,7 @@ def get_contours_containing_xy(contours_list, xy) -> [bool, list]:
 # .....................................................................................................................
 
 
-def get_largest_contour(contours_list, reference_shape=None) -> [bool, np.ndarray]:
+def get_largest_contour(contours_list, reference_shape=None) -> [bool, ndarray]:
     """
     Helper used to filter out only the largest contour from a list of contours
 
@@ -168,7 +403,7 @@ def get_largest_contour(contours_list, reference_shape=None) -> [bool, np.ndarra
 # .....................................................................................................................
 
 
-def simplify_contour_px(contour_px, simplification_eps=1.0, scale_to_perimeter=False) -> np.ndarray:
+def simplify_contour_px(contour_px, simplification_eps=1.0, scale_to_perimeter=False) -> ndarray:
     """
     Function used to simplify a contour, without completely altering the overall shape
     (as compared to finding the convex hull, for example). Uses the Ramer–Douglas–Peucker algorithm

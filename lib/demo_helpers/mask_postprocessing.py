@@ -6,17 +6,13 @@
 # %% Imports
 
 import cv2
-import numpy as np
 import torch
 
-from lib.demo_helpers.contours import (
-    get_contours_from_mask,
-    get_largest_contour,
-    get_contours_containing_xy,
-    simplify_contour_px,
-    normalize_contours,
-    pixelize_contours,
-)
+from lib.demo_helpers.contours import MaskContourData
+
+# For type hints
+from numpy import ndarray
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
@@ -27,15 +23,14 @@ class MaskPostProcessor:
     # .................................................................................................................
 
     def __init__(self):
-        self._use_largest_contour = False
-        self._mask_simplify = 0
-        self._mask_rounding = 0
+        self._mask_holes_thresh = 0
+        self._mask_islands_thresh = 0
+        self._mask_bridging = 0
         self._mask_padding = 0
-        self._invert_mask = False
 
-        # Storage for morphological filtering used in rounding contour edges
-        self._round_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
-        self._round_type = cv2.MORPH_OPEN
+        # Storage for morphological filtering used in briding contour edges
+        self._bridge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
+        self._bridge_type = cv2.MORPH_OPEN
 
         # Storage for morphological filtering used in padding
         self._pad_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
@@ -43,56 +38,61 @@ class MaskPostProcessor:
 
     # .................................................................................................................
 
-    def __call__(self, mask_uint8, mask_contours_norm, point_hint_xy_norm=None):
+    def __call__(self, mask_uint8: ndarray, external_masks_only=False) -> tuple[ndarray, MaskContourData]:
+        """
+        Main post-processing function
+        Applies bridging/padding etc. to the given mask image
+        If external_masks_only is True, then the masking will not contain holes
 
-        # Don't do any processing if there are no masks!
-        if len(mask_contours_norm) == 0:
-            return mask_contours_norm, mask_uint8
+        Returns:
+            new_mask_uint8, mask_contour_data
+        """
 
-        # For convenience, get pixel sizing for operations that need it
-        mask_shape = mask_uint8.shape
+        # Apply bridging to open/close gaps between contours
+        output_mask_uint8 = mask_uint8
+        if self._mask_bridging != 0:
+            output_mask_uint8 = self.get_bridged_contours(output_mask_uint8)
 
-        # Keep only the largest contour if needed
-        if self._use_largest_contour:
-            mask_contours_norm = self.get_largest_contour(mask_contours_norm, mask_shape, point_hint_xy_norm)
+        # Get contours and bail early if there aren't any (i.e. no mask segmentation)
+        mask_contour_data = MaskContourData(output_mask_uint8, external_masks_only)
+        if len(mask_contour_data) == 0:
+            return output_mask_uint8, mask_contour_data
+        need_new_contours = False
 
-        # Simplify contour shape if needed
-        if self._mask_simplify > 0.001:
-            mask_contours_norm = self.get_simplfied_contours(mask_contours_norm, mask_shape)
-
-        # Build final mask
-        final_mask_uint8 = self.draw_binary_mask(mask_contours_norm, mask_shape)
-
-        # Apply rounding to get better contour edges if needed
-        if self._mask_rounding != 0:
-            mask_contours_norm, final_mask_uint8 = self.get_rounded_contours(mask_contours_norm, final_mask_uint8)
+        # Filter out small contours
+        if self._mask_holes_thresh != 0 or self._mask_islands_thresh != 0:
+            contour_filter_array = mask_contour_data.filter_by_size_thresholds(
+                self._mask_holes_thresh, self._mask_islands_thresh
+            )
+            output_mask_uint8 = mask_contour_data.draw_mask(mask_uint8.shape, contour_filter_array)
+            need_new_contours = True  # Inefficient but easier...
 
         # Apply mask padding if needed
         if self._mask_padding != 0:
-            mask_contours_norm, final_mask_uint8 = self.get_padded_mask(mask_contours_norm, final_mask_uint8)
+            output_mask_uint8 = self.get_padded_mask(output_mask_uint8)
+            need_new_contours = True
 
-        if self._invert_mask:
-            final_mask_uint8 = np.bitwise_not(final_mask_uint8)
+        # Re-generate contours if mask image was altered
+        if need_new_contours:
+            mask_contour_data = MaskContourData(output_mask_uint8)
 
-        return mask_contours_norm, final_mask_uint8
+        return output_mask_uint8, mask_contour_data
 
     # .................................................................................................................
 
-    def update(
-        self,
-        use_largest_contour: bool,
-        mask_simplify: float,
-        mask_rounding: int,
-        mask_padding: int,
-        invert_mask: bool,
-    ):
+    def update(self, mask_holes_threshold: int, mask_islands_threshold: int, mask_bridging: int, mask_padding: int):
+        """
+        Updates mask post-processing configuration.
+        Includes some 'caching' so repeat values don't lead to repeat computation
+        Returns self
+        """
 
-        # Update rounding kernel if needed
-        round_changed = self._mask_rounding != mask_rounding
-        if round_changed:
-            round_kernel_size = [max(1, abs(mask_rounding))] * 2
-            self._round_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, round_kernel_size)
-            self._round_type = cv2.MORPH_CLOSE if mask_rounding > 0 else cv2.MORPH_OPEN
+        # Update bridging kernel if needed
+        bridge_changed = self._mask_bridging != mask_bridging
+        if bridge_changed:
+            bridge_kernel_size = [max(1, abs(mask_bridging))] * 2
+            self._bridge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, bridge_kernel_size)
+            self._bridge_type = cv2.MORPH_CLOSE if mask_bridging > 0 else cv2.MORPH_OPEN
 
         # Update padding kernel if needed
         pad_changed = self._mask_padding != mask_padding
@@ -102,75 +102,24 @@ class MaskPostProcessor:
             self._pad_type = cv2.MORPH_DILATE if mask_padding > 0 else cv2.MORPH_ERODE
 
         # Store updated settings
-        self._use_largest_contour = use_largest_contour
-        self._mask_rounding = mask_rounding
+        self._mask_holes_thresh = mask_holes_threshold
+        self._mask_islands_thresh = mask_islands_threshold
+        self._mask_bridging = mask_bridging
         self._mask_padding = mask_padding
-        self._mask_simplify = mask_simplify
-        self._invert_mask = invert_mask
 
         return self
 
     # .................................................................................................................
 
-    def get_largest_contour(self, mask_contours_norm, mask_shape_px, point_hint_xy_norm=None):
-
-        # Special case, if we're given a 'point hint' when using the largest contour only, we
-        # should prefer to pick from contours that include the given point!
-        # -> This leads to more intuitive behavior when using interactive system
-        if point_hint_xy_norm is not None:
-            have_result, hinted_contours_norm = get_contours_containing_xy(mask_contours_norm, point_hint_xy_norm)
-            if have_result:
-                mask_contours_norm = hinted_contours_norm
-
-        # Keep only the largest contour
-        _, largest_contour_norm = get_largest_contour(mask_contours_norm, reference_shape=mask_shape_px)
-        mask_contours_norm = [largest_contour_norm]
-
-        return mask_contours_norm
+    def get_bridged_contours(self, mask_uint8: ndarray) -> ndarray:
+        """Helper used to apply morphological open/close operation to mask image"""
+        return cv2.morphologyEx(mask_uint8, self._bridge_type, self._bridge_kernel)
 
     # .................................................................................................................
 
-    def get_simplfied_contours(self, mask_contours_norm, mask_shape):
-
-        # Perform simplification in pixel units (required by opencv) and convert back
-        mask_contours_px = pixelize_contours(mask_contours_norm, mask_shape)
-        mask_contours_px = [simplify_contour_px(contour, self._mask_simplify) for contour in mask_contours_px]
-        mask_contours_norm = normalize_contours(mask_contours_px, mask_shape)
-
-        return mask_contours_norm
-
-    # .................................................................................................................
-
-    def draw_binary_mask(self, mask_contours_norm, mask_shape):
-
-        # Draw mask from contours
-        mask_contours_px = pixelize_contours(mask_contours_norm, mask_shape)
-        final_mask_uint8 = np.zeros(mask_shape, dtype=np.uint8)
-        final_mask_uint8 = cv2.fillPoly(final_mask_uint8, mask_contours_px, 255, cv2.LINE_AA)
-
-        return final_mask_uint8
-
-    # .................................................................................................................
-
-    def get_rounded_contours(self, mask_contours_norm, final_mask_uint8):
-
-        final_mask_uint8 = cv2.morphologyEx(final_mask_uint8, self._round_type, self._round_kernel)
-        ok_pad_contour, rounded_contour_norm = get_contours_from_mask(final_mask_uint8, normalize=True)
-        if ok_pad_contour:
-            mask_contours_norm = rounded_contour_norm
-
-        return mask_contours_norm, final_mask_uint8
-
-    # .................................................................................................................
-
-    def get_padded_mask(self, mask_contours_norm, final_mask_uint8):
-
-        final_mask_uint8 = cv2.morphologyEx(final_mask_uint8, self._pad_type, self._pad_kernel)
-        ok_pad_contour, padded_contour_norm = get_contours_from_mask(final_mask_uint8, normalize=True)
-        if ok_pad_contour:
-            mask_contours_norm = padded_contour_norm
-
-        return mask_contours_norm, final_mask_uint8
+    def get_padded_mask(self, mask_uint8: ndarray) -> ndarray:
+        """Helper used to apply morphological dilation to mask image"""
+        return cv2.morphologyEx(mask_uint8, self._pad_type, self._pad_kernel)
 
     # .................................................................................................................
 

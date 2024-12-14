@@ -14,7 +14,7 @@ from io import BytesIO
 import cv2
 import numpy as np
 
-from .contours import pixelize_contours
+from .contours import MaskContourData
 
 # For type hints
 from numpy import ndarray
@@ -30,7 +30,7 @@ def save_image_segmentation(
     original_image_bgr: ndarray,
     display_image: ndarray,
     raw_result_uint8: ndarray,
-    mask_contours_norm: list,
+    mask_contour_data: MaskContourData,
     all_prompts_dict: dict[str, list],
     is_inverted=False,
     yx_crop_slices: tuple[slice, slice] | None = None,
@@ -38,17 +38,14 @@ def save_image_segmentation(
 ) -> None:
     """Helper used to handle saving of image segmentation results"""
 
-    # Make sure we're only using valid contours!
-    cleaned_contours_norm = remove_invalid_contours(mask_contours_norm)
-
     # Crop (full) input image if needed
     is_precropped = yx_crop_slices is not None
     precrop_img_bgr = original_image_bgr[yx_crop_slices] if is_precropped else original_image_bgr
 
     # Generate all base image results for saving
-    precrop_mask_1ch = make_mask_1ch(precrop_img_bgr, cleaned_contours_norm, is_inverted)
+    precrop_mask_1ch = make_mask_1ch(precrop_img_bgr, mask_contour_data, is_inverted)
     precrop_seg_bgra = make_alpha_masked_image(precrop_img_bgr, precrop_mask_1ch)
-    postcrop_seg_bgra, postcrop_img_bgr = make_cropped_images(precrop_seg_bgra, precrop_img_bgr, cleaned_contours_norm)
+    postcrop_seg_bgra, postcrop_img_bgr = make_cropped_images(precrop_seg_bgra, precrop_img_bgr, mask_contour_data)
 
     # Bundle results for saving
     name_to_image_lut = {
@@ -72,7 +69,7 @@ def save_image_segmentation(
     if is_precropped:
 
         # Make full sized saving results
-        full_mask_1ch = make_mask_1ch(original_image_bgr, [], is_inverted)
+        full_mask_1ch = make_mask_1ch(original_image_bgr, None, is_inverted)
         full_mask_1ch[yx_crop_slices] = precrop_mask_1ch
         full_seg_bgra = make_alpha_masked_image(original_image_bgr, full_mask_1ch)
 
@@ -198,18 +195,17 @@ def get_save_name(
 # .....................................................................................................................
 
 
-def make_mask_1ch(original_image_bgr: ndarray, mask_contours_norm: list, is_inverted=False):
+def make_mask_1ch(original_image_bgr: ndarray, contour_data: MaskContourData | None, is_inverted=False) -> ndarray:
     """Helper used to make a mask matching the original image resolution, in 1 channel. Returns: mask_1ch"""
 
-    # Set appropriate masking values
-    mask_bg_value = 255 if is_inverted else 0
-    mask_fill_value = 255 - mask_bg_value
-
     # Make a mask matching the original image resolution
-    img_hw = original_image_bgr.shape[0:2]
-    full_mask_1ch = np.full(img_hw, mask_bg_value, dtype=np.uint8)
-    mask_contours_px = pixelize_contours(mask_contours_norm, original_image_bgr.shape)
-    full_mask_1ch = cv2.fillPoly(full_mask_1ch, mask_contours_px, mask_fill_value, cv2.LINE_8)
+    mask_hw = original_image_bgr.shape[0:2]
+
+    # Draw contours or blank mask
+    no_contours = contour_data is None
+    full_mask_1ch = np.zeros(mask_hw, dtype=np.uint8) if no_contours else contour_data.draw_mask(mask_hw)
+    if is_inverted:
+        full_mask_1ch = np.bitwise_not(full_mask_1ch)
 
     return full_mask_1ch
 
@@ -232,7 +228,9 @@ def make_alpha_masked_image(original_image_bgr: ndarray, mask_1ch: ndarray):
 # .....................................................................................................................
 
 
-def make_cropped_images(image_bgra: ndarray, image_bgr: ndarray, mask_contours_norm: list) -> tuple[ndarray, ndarray]:
+def make_cropped_images(
+    image_bgra: ndarray, image_bgr: ndarray, contour_data: MaskContourData
+) -> tuple[ndarray, ndarray]:
     """
     Helper used to make a tightly cropped image from a larger (given) image, based on a segmentation mask
     The tightly cropped image uses the segmentation mask as an alpha channel as well.
@@ -243,8 +241,7 @@ def make_cropped_images(image_bgra: ndarray, image_bgr: ndarray, mask_contours_n
     """
 
     # Find bounding coordinates of mask contours
-    tl_xy_norm = np.min([np.min(contour.squeeze(), axis=0) for contour in mask_contours_norm], 0)
-    br_xy_norm = np.max([np.max(contour.squeeze(), axis=0) for contour in mask_contours_norm], 0)
+    tl_xy_norm, br_xy_norm = contour_data.get_bounding_box()
 
     # Create tightly cropped color image with the segmentation mask as an alpha channel
     img_h, img_w = image_bgra.shape[0:2]

@@ -20,12 +20,13 @@ from lib.demo_helpers.ui.layout import HStack, VStack
 from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton
 from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.ui.static import StaticMessageBar
+from lib.demo_helpers.ui.base import force_same_min_width
 
 from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, ReusableBaseImage
 from lib.demo_helpers.crop_ui import run_crop_ui
 from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 
-from lib.demo_helpers.contours import get_contours_from_mask
+from lib.demo_helpers.contours import MaskContourData
 from lib.demo_helpers.mask_postprocessing import MaskPostProcessor
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
@@ -271,26 +272,28 @@ footer_msgbar = StaticMessageBar(
 )
 
 # Set up secondary button controls
-mask_hint_btn, show_preview_btn, invert_mask_btn, large_mask_only_btn, pick_best_btn = ToggleButton.many(
-    "Mask Hint", "Preview", "Invert", "Largest Only", "Pick best", default_state=False, text_scale=0.5
+mask_hint_btn, show_preview_btn, invert_mask_btn, ext_mask_only_btn, pick_best_btn = ToggleButton.many(
+    "Mask Hint", "Preview", "Invert", "External Only", "Pick best", default_state=False, text_scale=0.5
 )
 mask_hint_btn.toggle(use_mask_hint)
-large_mask_only_btn.toggle(True)
 save_btn = ImmediateButton("Save", (60, 170, 20))
 secondary_ctrls = HStack(
     mask_hint_btn if use_mask_hint else None,
     show_preview_btn,
     invert_mask_btn,
-    large_mask_only_btn,
+    ext_mask_only_btn,
     pick_best_btn,
     save_btn,
 )
 
 # Set up slider controls
 thresh_slider = HSlider("Mask Threshold", 0, -8.0, 8.0, 0.1, marker_steps=10)
-rounding_slider = HSlider("Round contours", 0, -50, 50, 1, marker_steps=5)
+bridge_slider = HSlider("Bridge Gaps", 0, -50, 50, 1, marker_steps=5)
+small_hole_slider = HSlider("Remove holes", 0, 0, 100, 1, marker_steps=20)
+small_island_slider = HSlider("Remove islands", 0, 0, 100, 1, marker_steps=20)
 padding_slider = HSlider("Pad contours", 0, -50, 50, 1, marker_steps=5)
-simplify_slider = HSlider("Simplify contours", 0, 0, 10, 0.25, marker_steps=4)
+
+force_same_min_width(small_hole_slider, small_island_slider)
 
 # Set up full display layout
 disp_layout = VStack(
@@ -298,8 +301,8 @@ disp_layout = VStack(
     ui_elems.layout,
     secondary_ctrls,
     thresh_slider,
-    simplify_slider,
-    rounding_slider,
+    bridge_slider,
+    HStack(small_hole_slider, small_island_slider),
     padding_slider,
     footer_msgbar if show_info else None,
 ).set_debug_name("DisplayLayout")
@@ -329,7 +332,7 @@ uictrl.attach_arrowkey_callbacks(window)
 
 # Keypress for secondary controls
 window.attach_keypress_callback("p", show_preview_btn.toggle)
-window.attach_keypress_callback(KEY.TAB, large_mask_only_btn.toggle)
+window.attach_keypress_callback(KEY.TAB, ext_mask_only_btn.toggle)
 window.attach_keypress_callback("i", invert_mask_btn.toggle)
 window.attach_keypress_callback("s", save_btn.click)
 window.attach_keypress_callback("c", ui_elems.tools.clear.click)
@@ -371,17 +374,18 @@ try:
         is_mhint_changed, enable_mask_hint = mask_hint_btn.read()
         _, show_mask_preview = show_preview_btn.read()
         is_invert_changed, use_inverted_mask = invert_mask_btn.read()
-        _, use_largest_contour = large_mask_only_btn.read()
+        _, use_external_contours = ext_mask_only_btn.read()
         _, use_best_mask = pick_best_btn.read()
 
         # Read sliders
         is_mthresh_changed, mthresh = thresh_slider.read()
-        _, msimplify = simplify_slider.read()
-        _, mrounding = rounding_slider.read()
+        _, mholes = small_hole_slider.read()
+        _, mislands = small_island_slider.read()
+        _, mbridge = bridge_slider.read()
         _, mpadding = padding_slider.read()
 
         # Update post-processor based on control values
-        mask_postprocessor.update(use_largest_contour, msimplify, mrounding, mpadding, use_inverted_mask)
+        mask_postprocessor.update(mholes, mislands, mbridge, mpadding)
 
         # Only run the model when an input affecting the output has changed!
         need_prompt_encode = is_prompt_changed or is_mhint_changed
@@ -405,26 +409,17 @@ try:
             if show_iou_preds:
                 uictrl.draw_iou_predictions(iou_preds)
 
-        # Process contour data
-        final_mask_uint8 = selected_mask_uint8
-        ok_contours, mask_contours_norm = get_contours_from_mask(final_mask_uint8, normalize=True)
-        if ok_contours:
-
-            # If only 1 fg point prompt is given, use it to hint at selecting largest masks
-            point_hint = None
-            only_one_fg_pt = len(fg_xy_norm_list) == 1
-            no_box_prompt = len(box_tlbr_norm_list) == 0
-            if only_one_fg_pt and no_box_prompt:
-                point_hint = fg_xy_norm_list[0]
-            mask_contours_norm, final_mask_uint8 = mask_postprocessor(final_mask_uint8, mask_contours_norm, point_hint)
+        # Process contour data, if present
+        final_mask_uint8, contour_data = mask_postprocessor(selected_mask_uint8, use_external_contours)
+        if use_inverted_mask:
+            final_mask_uint8 = np.bitwise_not(final_mask_uint8)
 
         # Re-generate display image at required display size
         # -> Not strictly needed, but can avoid constant re-sizing of base image (helpful for large images)
+        contours_to_draw = contour_data.contour_norms_list
         display_hw = ui_elems.image.get_render_hw()
         disp_img = base_img_maker.regenerate(display_hw)
-
-        # Update the main display image in the UI
-        uictrl.update_main_display_image(disp_img, final_mask_uint8, mask_contours_norm, show_mask_preview)
+        uictrl.update_main_display_image(disp_img, final_mask_uint8, contours_to_draw, show_mask_preview)
 
         # Render final output
         display_image = disp_layout.render(**render_limit_dict)
@@ -459,7 +454,7 @@ try:
                 loaded_image_bgr,
                 disp_image,
                 raw_mask_result_uint8,
-                mask_contours_norm,
+                contour_data,
                 all_prompts_dict,
                 use_inverted_mask,
                 yx_crop_slice,
