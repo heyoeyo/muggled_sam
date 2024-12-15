@@ -90,13 +90,16 @@ class HieraModel(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, patch_tokens_bhwc: Tensor) -> list[Tensor]:
+    def forward(self, patch_tokens_bchw: Tensor) -> list[Tensor]:
+
+        # Convert to channels-last format for transformer stages (e.g. BxCxHxW -> BxHxWxC)
+        tokens_bhwc = patch_tokens_bchw.permute(0, 2, 3, 1)
 
         # Store intermediate results from each stage
         stage_results = []
         for stage in self.stages:
-            patch_tokens_bhwc = stage(patch_tokens_bhwc)
-            stage_results.append(patch_tokens_bhwc)
+            tokens_bhwc = stage(tokens_bhwc)
+            stage_results.append(tokens_bhwc)
 
         # Return results with shape: BxCxHxW
         return [result.permute(0, 3, 1, 2) for result in stage_results]

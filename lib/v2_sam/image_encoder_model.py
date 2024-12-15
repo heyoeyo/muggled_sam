@@ -122,12 +122,12 @@ class SAMV2ImageEncoder(nn.Module):
         """
 
         # Prepare image tokens for transformer
-        patch_tokens_bhwc = self.patch_embed(image_tensor_bchw)
-        patch_tokens_bhwc = self.posenc(patch_tokens_bhwc)
+        patch_tokens_bchw = self.patch_embed(image_tensor_bchw)
+        patch_tokens_bchw = self.posenc(patch_tokens_bchw)
 
         # Encode patches using transformer, then project down to 3 feature maps
-        multires_tokens_list = self.hiera(patch_tokens_bhwc)
-        features_list = self.output_projection(multires_tokens_list)
+        multires_tokens_bchw_list = self.hiera(patch_tokens_bchw)
+        features_list = self.output_projection(multires_tokens_bchw_list)
 
         # Further process high-res features
         lowres_features, hires_features_x2, hires_features_x4 = features_list

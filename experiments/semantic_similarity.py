@@ -89,10 +89,10 @@ def encode_image_samv2(model, image_bgr, max_side_length=1024, use_square_sizing
         flipped_image_bchw = sammodel.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
         result_tokens = []
         for input_img in [image_tensor_bchw, flipped_image_bchw]:
-            patch_tokens_bhwc = sammodel.image_encoder.patch_embed(input_img)
-            patch_tokens_bhwc = sammodel.image_encoder.posenc(patch_tokens_bhwc)
-            multires_tokens_list = sammodel.image_encoder.hiera(patch_tokens_bhwc)
-            result_tokens.append(multires_tokens_list)
+            patch_tokens_bchw = sammodel.image_encoder.patch_embed(input_img)
+            patch_tokens_bchw = sammodel.image_encoder.posenc(patch_tokens_bchw)
+            multires_tokens_bchw_list = sammodel.image_encoder.hiera(patch_tokens_bchw)
+            result_tokens.append(multires_tokens_bchw_list)
 
         # Combine regular 'raw' encodings with horizontal flips
         reg_rawenc_list, flip_rawenc_list = result_tokens
@@ -142,10 +142,9 @@ def encode_image_samv1(model, image_bgr, max_side_length=1024, use_square_sizing
         flipped_image_bchw = sammodel.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
         result_tokens = []
         for input_img in [image_tensor_bchw, flipped_image_bchw]:
-            patch_tokens_bhwc = sammodel.image_encoder.patch_embed(input_img)
-            patch_tokens_bhwc = sammodel.image_encoder.posenc(patch_tokens_bhwc)
-            patch_tokens_bhwc = sammodel.image_encoder.stages(patch_tokens_bhwc)
-            raw_encoded_bchw = patch_tokens_bhwc.permute(0, 3, 1, 2)
+            patch_tokens_bchw = sammodel.image_encoder.patch_embed(input_img)
+            tokens_bhwc = sammodel.image_encoder.posenc(patch_tokens_bchw).permute(0, 2, 3, 1)
+            raw_encoded_bchw = sammodel.image_encoder.stages(tokens_bhwc).permute(0, 3, 1, 2)
             result_tokens.append(raw_encoded_bchw)
 
         # Combine regular 'raw' encodings with horizontal flips

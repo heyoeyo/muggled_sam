@@ -74,16 +74,14 @@ class HalfStepPatchEmbed(nn.Module):
 
     def forward(self, image_tensor_bchw: Tensor) -> Tensor:
         """
-        Reshapes & projects image tensor: BxCxHxW -> BxhxwxF
+        Collapses input image into smaller 'tokens': BxCxHinxWin -> BxFxHxW
             -> Where B is batch size
             -> C is image channels (i.e. 3 for RGB image)
+            -> Hin, Win are input image size (both 1024 by default)
+            -> H, W are output patch token size (both 64 by default)
             -> F is features per token
-            -> H, W are the height & width of the image
-            -> h, w are the size of the patch grid
         """
-
-        patch_tokens = self.proj(image_tensor_bchw)
-        return patch_tokens.permute(0, 2, 3, 1)
+        return self.proj(image_tensor_bchw)
 
     # .................................................................................................................
 
@@ -121,7 +119,7 @@ class WindowTiledPositionEncoding(nn.Module):
         self.base_window_tile = nn.Parameter(torch.zeros(1, features_per_token, *window_tile_hw))
 
         # Allocate storage for caching positional encoding, so we don't keep re-calculating them
-        self.register_buffer("cached_encoding_bhwc", torch.empty((1, 1, 1, features_per_token)), persistent=False)
+        self.register_buffer("cached_encoding_bchw", torch.empty((1, features_per_token, 1, 1)), persistent=False)
 
     # .................................................................................................................
 
@@ -135,10 +133,10 @@ class WindowTiledPositionEncoding(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, patch_tokens_bhwc: Tensor) -> Tensor:
+    def forward(self, patch_tokens_bchw: Tensor) -> Tensor:
         """Adds positional encoding to patch tokens"""
-        _, grid_h, grid_w, _ = patch_tokens_bhwc.shape
-        return patch_tokens_bhwc + self._scale_to_patch_grid((grid_h, grid_w))
+        _, _, grid_h, grid_w = patch_tokens_bchw.shape
+        return patch_tokens_bchw + self._scale_to_patch_grid((grid_h, grid_w))
 
     # .................................................................................................................
 
@@ -150,7 +148,7 @@ class WindowTiledPositionEncoding(nn.Module):
 
         # If sizing is different from the cache, then re-compute it
         grid_h, grid_w = patch_grid_hw
-        _, cache_h, cache_w, _ = self.cached_encoding_bhwc.shape
+        _, _, cache_h, cache_w = self.cached_encoding_bchw.shape
         if grid_h != cache_h or grid_w != cache_w:
 
             # Scale base embedding to match patch grid size
@@ -169,10 +167,10 @@ class WindowTiledPositionEncoding(nn.Module):
             if not (is_int_x_tiles and is_int_y_tiles):
                 tiled_win_embed = tiled_win_embed[:, :, :grid_h, :grid_w]
 
-            # Add tiled window embedding and convert to channels-last shape: BxCxHxW -> BxHxWxC
-            self.cached_encoding_bhwc = (scaled_base + tiled_win_embed).permute(0, 2, 3, 1)
+            # Add tiled window embedding & store for re-use
+            self.cached_encoding_bchw = scaled_base + tiled_win_embed
 
-        return self.cached_encoding_bhwc
+        return self.cached_encoding_bchw
 
     # .................................................................................................................
 

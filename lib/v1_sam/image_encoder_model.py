@@ -112,14 +112,16 @@ class SAMV1ImageEncoder(nn.Module):
         """
 
         # Convert to patch tokens with positional encoding
-        patch_tokens_bhwc = self.patch_embed(image_tensor_bchw)
-        patch_tokens_bhwc = self.posenc(patch_tokens_bhwc)
+        patch_tokens_bchw = self.patch_embed(image_tensor_bchw)
+        patch_tokens_bchw = self.posenc(patch_tokens_bchw)
 
-        # Run transformer layers
-        patch_tokens_bhwc = self.stages(patch_tokens_bhwc)
+        # Run transformer layers (with shape conversion for use in transformer)
+        tokens_bhwc = patch_tokens_bchw.permute(0, 2, 3, 1)
+        tokens_bhwc = self.stages(tokens_bhwc)
+        img_tokens_bchw = tokens_bhwc.permute(0, 3, 1, 2)
 
-        # Run final projection to standard channel size and convert to bchw shape
-        return self.channel_projection(patch_tokens_bhwc.permute(0, 3, 1, 2))
+        # Run final projection to standard channel size
+        return self.channel_projection(img_tokens_bchw)
 
     # .................................................................................................................
 
@@ -239,10 +241,10 @@ class TransformerStage(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, patch_tokens: Tensor):
+    def forward(self, patch_tokens_bhwc: Tensor):
         """Encodes patch tokens using sequence of windowed-attention blocks followed by global attention"""
-        patch_tokens = self.windowed_attn_blocks(patch_tokens)
-        return self.global_attn_block(patch_tokens)
+        patch_tokens_bhwc = self.windowed_attn_blocks(patch_tokens_bhwc)
+        return self.global_attn_block(patch_tokens_bhwc)
 
     # .................................................................................................................
 
@@ -285,15 +287,14 @@ class PatchEmbed(nn.Module):
 
     def forward(self, image_tensor_bchw: Tensor) -> Tensor:
         """
-        Reshapes & projects image tensor: BxCxHxW -> BxHxWxF
+        Collapses input image into smaller 'tokens': BxCxHinxWin -> BxFxHxW
             -> Where B is batch size
             -> C is image channels (i.e. 3 for RGB image)
+            -> Hin, Win are input image size (both 1024 by default)
+            -> H, W are output patch token size (both 64 by default)
             -> F is features per token
-            -> H, W are the height & width of the image
         """
-
-        patch_tokens = self.proj(image_tensor_bchw)
-        return patch_tokens.permute(0, 2, 3, 1)
+        return self.proj(image_tensor_bchw)
 
     # .................................................................................................................
 
@@ -309,25 +310,25 @@ class PositionEncoding(nn.Module):
 
         # Storage for fixed-size learned position embedding
         grid_h, grid_w = base_patch_grid_hw
-        self.base_embedding = nn.Parameter(torch.zeros(1, grid_h, grid_w, features_per_token))
+        self.base_embedding_bchw = nn.Parameter(torch.zeros(1, features_per_token, grid_h, grid_w))
 
     # .................................................................................................................
 
     def extra_repr(self) -> str:
-        _, grid_h, grid_w, features_per_token = self.base_embedding.shape
+        _, features_per_token, grid_h, grid_w = self.base_embedding_bchw.shape
         return f"features_per_token={features_per_token}, base_grid_hw=({grid_h}, {grid_w})"
 
     # .................................................................................................................
 
-    def forward(self, patch_tokens_bhwc: Tensor) -> Tensor:
+    def forward(self, patch_tokens_bchw: Tensor) -> Tensor:
 
         # Resize embedding if needed
-        _, in_h, in_w, _ = patch_tokens_bhwc.shape
-        _, embed_h, embed_w, _ = self.base_embedding.shape
+        _, _, in_h, in_w = patch_tokens_bchw.shape
+        _, embed_h, embed_w, _ = self.base_embedding_bchw.shape
         if (in_h != embed_h) or (in_w != embed_w):
-            return patch_tokens_bhwc + self._scale_to_patch_grid((in_h, in_w))
+            return patch_tokens_bchw + self._scale_to_patch_grid((in_h, in_w))
 
-        return patch_tokens_bhwc + self.base_embedding
+        return patch_tokens_bchw + self.base_embedding_bchw
 
     # .................................................................................................................
 
@@ -337,25 +338,20 @@ class PositionEncoding(nn.Module):
         to match the input patch sizing, by linear interpolation.
         """
 
-        # Get original shape/data type, so we can restore this on the output
-        _, base_h, base_w, C = self.base_embedding.shape
-        orig_dtype = self.base_embedding.dtype
-
         # Force embedding to float32 for computing interpolation
         # -> If we don't do this, we could get bad results/errors on lower precision dtypes
-        pos_embed_f32 = self.base_embedding.float()
+        pos_embed_f32 = self.base_embedding_bchw.float()
 
         # Convert to shape needed by interpolation function and then convert back
-        pos_embed_bchw = pos_embed_f32.permute(0, 3, 1, 2)
-        pos_embed_bchw = nn.functional.interpolate(
-            pos_embed_bchw,
+        resized_embedding_bchw = nn.functional.interpolate(
+            pos_embed_f32,
             size=patch_grid_hw,
             mode="bilinear",
             antialias=True,
         )
-        resized_embedding_bhwc = pos_embed_bchw.permute(0, 2, 3, 1)
 
-        # Convert back to channels-last format
-        return resized_embedding_bhwc.to(orig_dtype)
+        # Restore original data type
+        original_dtype = self.base_embedding_bchw.dtype
+        return resized_embedding_bchw.to(original_dtype)
 
     # .................................................................................................................

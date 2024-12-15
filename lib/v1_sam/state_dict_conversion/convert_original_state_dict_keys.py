@@ -50,6 +50,10 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             layernorm_key_hints = ("channel_projection.1", "channel_projection.3")
             mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
+            # Reshape base-position encoding (from 1xHxWxC to 1xCxHxW)
+            if new_key == "posenc.base_embedding_bchw":
+                mod_data = mod_data.permute(0, 3, 1, 2)
+
             imgenc_sd[new_key] = mod_data
             continue
 
@@ -132,7 +136,7 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
 
     # Handle position embedding
     if key.startswith("image_encoder.pos_embed"):
-        return key.replace("image_encoder.pos_embed", "posenc.base_embedding")
+        return key.replace("image_encoder.pos_embed", "posenc.base_embedding_bchw")
 
     # Handle 'neck' layers
     if key.startswith("image_encoder.neck"):

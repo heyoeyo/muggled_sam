@@ -164,8 +164,8 @@ class PosencExtractor:
     def make_new_encodings(self, patch_height, patch_width):
         """Re-computes positional encodings for the given height & width"""
         with torch.inference_mode():
-            posencoding = self._posenc_func((patch_height, patch_width))
-        return posencoding
+            posencoding_bchw = self._posenc_func((patch_height, patch_width))
+        return posencoding_bchw
 
     def toggle_window_tiling(self):
         """
@@ -200,16 +200,16 @@ class PosencExtractor:
 
 # Set up extractor and create example encoding for feature size information
 posextract = PosencExtractor(sammodel)
-example_posenc = posextract.make_new_encodings(64, 64)
-_, _, _, features_per_token = example_posenc.shape
+example_posenc_bchw = posextract.make_new_encodings(64, 64)
+_, features_per_token, _, _ = example_posenc_bchw.shape
 is_v2_model = posextract.is_v2_model
 
 # Calculate initial position encoding
-posenc_tensor = example_posenc.clone()
-posenc_norm = posenc_tensor.norm(dim=-1).squeeze(0)
+posenc_bchw_tensor = example_posenc_bchw.clone()
+posenc_norm = posenc_bchw_tensor.norm(dim=1).squeeze(0)
 
 # Calculate initial display results
-feats_uint8 = normalize_to_npuint8(posenc_tensor[0, :, :, 0])
+feats_uint8 = normalize_to_npuint8(posenc_bchw_tensor[0, 0, :, :])
 posenc_norm_uint8 = normalize_to_npuint8(posenc_norm)
 
 
@@ -281,12 +281,12 @@ window.attach_keypress_callback(KEY.UP_ARROW, feature_slider.increment)
 KEY_ZOOM_OUT, KEY_ZOOM_IN = ord("-"), ord("=")
 
 # Calculate initial position encoding
-posenc_tensor = example_posenc.clone()
-posenc_norm = posenc_tensor.norm(dim=-1).squeeze(0)
+posenc_bchw_tensor = example_posenc_bchw.clone()
+posenc_norm = posenc_bchw_tensor.norm(dim=1).squeeze(0)
 
 # Calculate initial display results
 posenc_norm_uint8 = normalize_to_npuint8(posenc_norm)
-feats_uint8 = normalize_to_npuint8(posenc_tensor[0, :, :, 0])
+feats_uint8 = normalize_to_npuint8(posenc_bchw_tensor[0, 0, :, :])
 
 # *** Main display loop ***
 try:
@@ -307,15 +307,15 @@ try:
         if regen_posenc:
 
             # Generate new position encodings
-            posenc_tensor = posextract.make_new_encodings(patch_h, patch_w)
+            posenc_bchw_tensor = posextract.make_new_encodings(patch_h, patch_w)
 
             # Calculate token norms
-            posenc_norm = posenc_tensor.norm(dim=-1).squeeze(0)
+            posenc_norm = posenc_bchw_tensor.norm(dim=1).squeeze(0)
             posenc_norm_uint8 = normalize_to_npuint8(posenc_norm)
 
         # Switch feature channel we're displaying
         if f_changed or regen_posenc:
-            feats_uint8 = normalize_to_npuint8(posenc_tensor[0, :, :, feat_idx])
+            feats_uint8 = normalize_to_npuint8(posenc_bchw_tensor[0, feat_idx, :, :])
 
         # Scale to fixed display size
         renderdisp_h, renderdisp_w = image_elem.get_render_hw()
