@@ -28,7 +28,7 @@ def make_sam_from_state_dict(path_to_state_dict: str, strict_load=True, weights_
         model_type = determine_model_type_from_state_dict(path_to_state_dict, state_dict)
 
     # Error out if we don't understand the model type
-    known_model_types = ["sam_v2", "sam_v1"]
+    known_model_types = ["sam_v2", "sam_v1", "sam_hq_v1"]
     if model_type not in known_model_types:
         print("Accepted model types:", *known_model_types, sep="\n")
         raise NotImplementedError(f"Bad model type: {model_type}, no support for this yet!")
@@ -51,6 +51,10 @@ def determine_model_type_from_state_dict(model_path, state_dict):
     """
 
     sd_keys = state_dict.keys()
+
+    sam_hq_v1_target_key = "mask_decoder.hf_token.weight"
+    if sam_hq_v1_target_key in sd_keys:
+        return "sam_hq_v1"
 
     samv2_target_key = "model"
     if samv2_target_key in sd_keys:
@@ -79,6 +83,8 @@ def import_model_functions(model_type):
     elif model_type == "sam_v1":
         from .v1_sam.make_sam_v1 import make_samv1_from_original_state_dict as make_sam_func
 
+    elif model_type == "sam_hq_v1":
+        from .v1_sam_hq.make_sam_hq_v1 import make_samv1_from_original_state_dict as make_sam_func
     else:
         raise TypeError(f"Cannot import model functions, Unknown model type: {model_type}")
 
