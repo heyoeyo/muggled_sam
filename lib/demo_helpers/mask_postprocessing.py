@@ -48,33 +48,39 @@ class MaskPostProcessor:
             new_mask_uint8, mask_contour_data
         """
 
-        # Apply bridging to open/close gaps between contours
+        # Re-draw mask according to contour data when using external only,
+        # since it is generally very different than the original mask!
+        mask_contour_data = MaskContourData(mask_uint8, external_masks_only)
         output_mask_uint8 = mask_uint8
-        if self._mask_bridging != 0:
-            output_mask_uint8 = self.get_bridged_contours(output_mask_uint8)
+        if external_masks_only:
+            output_mask_uint8 = mask_contour_data.draw_mask(mask_uint8.shape)
 
         # Get contours and bail early if there aren't any (i.e. no mask segmentation)
-        mask_contour_data = MaskContourData(output_mask_uint8, external_masks_only)
         if len(mask_contour_data) == 0:
             return output_mask_uint8, mask_contour_data
-        need_new_contours = False
+
+        # Apply bridging to open/close gaps between contours
+        need_bridging = self._mask_bridging != 0
+        if need_bridging:
+            output_mask_uint8 = self.get_bridged_contours(output_mask_uint8)
+            mask_contour_data = MaskContourData(output_mask_uint8, external_masks_only)
 
         # Filter out small contours
-        if self._mask_holes_thresh != 0 or self._mask_islands_thresh != 0:
+        need_size_filtering = self._mask_holes_thresh != 0 or self._mask_islands_thresh != 0
+        if need_size_filtering:
             contour_filter_array = mask_contour_data.filter_by_size_thresholds(
                 self._mask_holes_thresh, self._mask_islands_thresh
             )
             output_mask_uint8 = mask_contour_data.draw_mask(mask_uint8.shape, contour_filter_array)
-            need_new_contours = True  # Inefficient but easier...
 
         # Apply mask padding if needed
-        if self._mask_padding != 0:
+        need_padding = self._mask_padding != 0
+        if need_padding:
             output_mask_uint8 = self.get_padded_mask(output_mask_uint8)
-            need_new_contours = True
 
         # Re-generate contours if mask image was altered
-        if need_new_contours:
-            mask_contour_data = MaskContourData(output_mask_uint8)
+        if need_size_filtering or need_padding:
+            mask_contour_data = MaskContourData(output_mask_uint8, external_masks_only)
 
         return output_mask_uint8, mask_contour_data
 
