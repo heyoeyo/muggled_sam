@@ -163,10 +163,17 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
         windowed_prefix = f"stages.{stage_idx}.windowed_attn_blocks.{block_idx_within_stage}"
         new_key = replace_prefix(key, target_prefix, global_prefix if is_global_block else windowed_prefix)
 
+        # Rename attention block norm layers to be more descriptive
+        if "norm1" in new_key:
+            return new_key.replace("norm1", "norm_preattn")
+
+        if "norm2" in new_key:
+            return new_key.replace("norm2", "norm_premlp")
+
         # Further handle updates to specific layer names
         if "rel_pos" in new_key:
-            new_key = new_key.replace("rel_pos_h", "relpos.rel_pos_h")
-            new_key = new_key.replace("rel_pos_w", "relpos.rel_pos_w")
+            new_key = new_key.replace("rel_pos_h", "relpos.relpos_h_1d")
+            new_key = new_key.replace("rel_pos_w", "relpos.relpos_w_1d")
             return new_key
 
         # Handle mlp linear layers

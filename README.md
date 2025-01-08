@@ -8,8 +8,8 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
 
 While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
-> [!Note]
-> This repo is a (messy) work-in-progress! The end goal is to have something resembling [MuggledDPT](https://github.com/heyoeyo/muggled_dpt).
+There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam), with documentation for v2 on the way!
+
 
 ## Getting started
 
@@ -165,8 +165,6 @@ The code in this repo is entirely based off the original segment-anything github
 
 
 # TODOs
-- Clean up code base (especially the image encoder, which is unfinished)
 - Add interactive script replicating the original 'automatic mask geneartor'
 - Add model structure documentation
-- Add various experiment scripts (onnx export, mask prompts, attention vis etc.)
 - Inevitable bugfixes

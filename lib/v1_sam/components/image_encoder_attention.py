@@ -5,8 +5,9 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-import torch
 import torch.nn as nn
+
+from .decomposed_relative_position_encoder import DecomposedRelativePositionEncoder
 
 # For type hints
 from torch import Tensor
@@ -19,6 +20,13 @@ from torch import Tensor
 class GlobalAttentionBlock(nn.Module):
     """
     A single transformer 'global' block layer (i.e. no windowing)
+
+    The original code does not have a dedicated 'global' attention block, instead
+    both global & windowed attention use the same code, with branches to enable/disable
+    the windowing. The two blocks have been separated here to better indicate the model structure.
+
+    The original attention block code can be found here:
+    https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L166
 
     Adapted from segment-anything model (SAM):
     https://github.com/facebookresearch/segment-anything
@@ -33,19 +41,30 @@ class GlobalAttentionBlock(nn.Module):
         super().__init__()
 
         # Set up nn processing components
-        self.norm1 = nn.LayerNorm(features_per_token, eps=norm_eps)
+        self.norm_preattn = nn.LayerNorm(features_per_token, eps=norm_eps)
         self.attn = RelPosAttention(features_per_token, num_heads, base_patch_grid_hw)
-        self.norm2 = nn.LayerNorm(features_per_token, eps=norm_eps)
+        self.norm_premlp = nn.LayerNorm(features_per_token, eps=norm_eps)
         self.mlp = MLP2Layers_GELU(features_per_token, mlp_ratio)
 
     # .................................................................................................................
 
-    def forward(self, x_in: Tensor) -> Tensor:
+    def forward(self, imagelike_bhwc: Tensor) -> Tensor:
+        """
+        Computes self-attention followed by MLP with pre-layernorms.
+        See "An Image is Worth 16x16 Words" @ https://arxiv.org/abs/2010.11929
+        Returns:
+            encoded_image_tokens_bhwc (same shape as input)
+        """
 
-        x = x_in + self.attn(self.norm1(x_in))
-        x = x + self.mlp(self.norm2(x))
+        # Attention (global, no windowing)
+        attn = self.norm_preattn(imagelike_bhwc)
+        attn = self.attn(attn) + imagelike_bhwc
 
-        return x
+        # MLP
+        output = self.norm_premlp(attn)
+        output = self.mlp(output) + attn
+
+        return output
 
     # .................................................................................................................
 
@@ -56,24 +75,30 @@ class GlobalAttentionBlock(nn.Module):
     # .................................................................................................................
 
 
-class WindowedAttentionBlock(GlobalAttentionBlock):
+class WindowedAttentionBlock(nn.Module):
     """
-    Transformer block with support for windowed attention.
-    This functions similar to regular attention, but operates on smaller HxW 'windows'
-    of image tokens. This can greatly reduce computational requirements at the
-    cost of limiting the mixing of information across the entire image.
+    This module is a variant of the global attention block, which
+    adds support for windowing of image tokens prior to the attention
+    calculation. Aside from the extra windowing steps, it is otherwise
+    identical to the global attention block.
 
-    Adapted from segment-anything model (SAM):
-    https://github.com/facebookresearch/segment-anything
+    The original windowed attention block functionality can be found here:
+    https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L166
     """
 
     # .................................................................................................................
 
-    def __init__(self, features_per_token, num_heads, base_window_size) -> None:
+    def __init__(self, features_per_token, num_heads, base_window_size, mlp_ratio=4, norm_eps=1e-6) -> None:
 
-        # Initialize as parent, with window-sized patch grid
+        # Inherit from parent
+        super().__init__()
+
+        # Set up nn processing components
         window_grid_hw = (base_window_size, base_window_size)
-        super().__init__(features_per_token, num_heads, window_grid_hw)
+        self.norm_preattn = nn.LayerNorm(features_per_token, eps=norm_eps)
+        self.attn = RelPosAttention(features_per_token, num_heads, window_grid_hw)
+        self.norm_premlp = nn.LayerNorm(features_per_token, eps=norm_eps)
+        self.mlp = MLP2Layers_GELU(features_per_token, mlp_ratio)
 
         # Store window size (+ backup of initial size, in case we change and need a reset!)
         self._init_window_size = base_window_size
@@ -81,23 +106,31 @@ class WindowedAttentionBlock(GlobalAttentionBlock):
 
     # .................................................................................................................
 
-    def forward(self, x_in: Tensor) -> Tensor:
+    def forward(self, imagelike_bhwc: Tensor) -> Tensor:
+        """
+        Computes self-attention, like global attention block, but
+        with windowing used before attention step (and reversed after).
+        This reduces the amount of computation compared to global attention
+        Returns:
+            encoded_image_tokens_bhwc (same shape as input)
+        """
 
-        x = self.norm1(x_in)
+        # Prenorm (same as global attention)
+        attn = self.norm_preattn(imagelike_bhwc)
 
-        # Window partition
-        hw_in = (x.shape[1], x.shape[2])
-        x, pad_hw = window_partition(x, self._window_size)
+        # Windowing
+        attn_windows, num_windows_xy = self._partition_into_windows(attn)
+        attn_windows = self.attn(attn_windows)
+        attn = self._unpartition_windows(attn_windows, imagelike_bhwc.shape, num_windows_xy)
 
-        x = self.attn(x)
+        # Residual connection (same as global attention)
+        attn = attn + imagelike_bhwc
 
-        # Reverse window partition
-        x = window_unpartition(x, self._window_size, pad_hw, hw_in)
+        # MLP (same as global attention)
+        output = self.norm_premlp(attn)
+        output = self.mlp(output) + attn
 
-        x = x_in + x
-        x = x + self.mlp(self.norm2(x))
-
-        return x
+        return output
 
     # .................................................................................................................
 
@@ -115,13 +148,140 @@ class WindowedAttentionBlock(GlobalAttentionBlock):
 
     # .................................................................................................................
 
+    def _partition_into_windows(self, imagelike_bhwc: Tensor) -> tuple[Tensor, tuple[int, int]]:
+        """
+        Reshape/partition image-like input into a stack of window tiles.
+
+        ┌─────┐       ┌─┐┌─┐         ┌─┐
+        │     │  ──>  └─┘└─┘  ──>   ┌─┐┘
+        │     │       ┌─┐┌─┐       ┌─┐┘
+        └─────┘       └─┘└─┘      ┌─┐┘
+                                  └─┘
+        (graphical example where input breaks into 2x2 windows)
+
+        For an input of shape: BxHxWxC, the output will have a shape of:
+            (B*Ny*Nx)xSxSxC
+            -> Where B is batch size
+            -> Nx and Ny are the number of windows in x & y
+            -> S is window size (shared for x & y)
+            -> C channels per image token
+
+        The input is padded with zeros to fit an integer number of windows in both x & y.
+
+        This implementation is slightly modified compared to the original, only to make
+        the code easier to follow. The changes do not affect the overall behavior.
+
+        The original code can be found here:
+        https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L243
+
+        Returns:
+            window_tiles, num_windows_xy
+        """
+
+        # For convenience
+        b, h, w, c = imagelike_bhwc.shape
+        wsize = self._window_size
+
+        # Figure out how much padding is needed to have an integer number of windows in x & y
+        h_pad_amt = (wsize - (h % wsize)) % wsize
+        w_pad_amt = (wsize - (w % wsize)) % wsize
+        if h_pad_amt > 0 or w_pad_amt > 0:
+            imagelike_bhwc = nn.functional.pad(imagelike_bhwc, (0, 0, 0, w_pad_amt, 0, h_pad_amt))
+
+        # Figure out how many windows we have after padding (if any), for reshaping
+        padded_h, padded_w = h + h_pad_amt, w + w_pad_amt
+        num_y_windows = padded_h // wsize
+        num_x_windows = padded_w // wsize
+
+        # Reshape input into windowed shape from BxHxWxC -to-> (B*Ny*Nx)xSxSxC
+        # -> B batch size, Ny/Nx number of windows, S window size and C image channels/features
+        # -> This happens in 3 steps:
+        #    1. Split H & W dimensions into (Ny, S) & (Nx, S) respectively
+        #    2. Re-arrange dimension ordering so that Ny & Nx are 'beside' batch dimension,
+        #       and last 3 channels are like HxWxC ordering (except H & W are now window Y & X size!)
+        #    3. Merge/flatten the B, Ny & Nx dimensions together so result has an 'image-like' shape
+        window_tiles = imagelike_bhwc.view(b, num_y_windows, wsize, num_x_windows, wsize, c)
+        window_tiles = window_tiles.permute(0, 1, 3, 2, 4, 5)
+        window_tiles = window_tiles.flatten(0, 2)
+
+        return window_tiles, (num_x_windows, num_y_windows)
+
+    # .................................................................................................................
+
+    def _unpartition_windows(
+        self,
+        window_tiles: Tensor,
+        original_shape_bhwc: tuple[int, int, int, int],
+        num_windows_xy: tuple[int, int],
+    ) -> Tensor:
+        """
+        Reverses windowing partitioning step, including removal of padding.
+        Expects window-tiles-like input with shape:
+            (B*Ny*Nx)xSxSxC
+            -> B batch size
+            -> Nx and Ny are the number of windows in x & y
+            -> S is window size (shared for x & y)
+            -> C channels per image token
+
+        Compared to the original, this implementation is modified slightly to
+        account for changes to the window partitioning function and to make the
+        code easier to follow.
+
+        The original unpartition function can be found here:
+        https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L267
+
+        Returns:
+            imagelike_tokens_bhwc (shape matching the given 'original_shape')
+        """
+
+        # For convenience
+        b, h, w, c = original_shape_bhwc
+        num_x_windows, num_y_windows = num_windows_xy
+        wsize = self._window_size
+
+        # Figure out the padded input size that was used prior to window partitioning
+        padded_h = num_y_windows * wsize
+        padded_w = num_x_windows * wsize
+
+        # Reverse the 3 window partitioning steps
+        # 1. Un-merge B, Ny, Nx dimensions
+        # 2. Un-rearrange dimensions from (B, Ny, Nx, S, S, C) -to-> (B, Ny, S, Nx, S, C) ordering
+        # 3. Merge (Ny, S) into H and (Nx, S) into W to get final BxHxWxC shape
+        window_tiles = window_tiles.unflatten(0, (b, num_y_windows, num_x_windows))
+        window_tiles = window_tiles.permute(0, 1, 3, 2, 4, 5).contiguous()
+        imagelike_bhwc = window_tiles.view(b, padded_h, padded_w, c)
+
+        # Reverse the padding step, if needed
+        if padded_h > h or padded_w > w:
+            imagelike_bhwc = imagelike_bhwc[:, :h, :w, :].contiguous()
+
+        return imagelike_bhwc
+
+    # .................................................................................................................
+
 
 class RelPosAttention(nn.Module):
     """
-    Multi-head Attention block with relative position embeddings
+    Modified implementation of the image encoder 'Attention' model/component used in:
+        "Segment Anything"
+        By: Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson,
+            Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, Ross Girshick
+        @ https://arxiv.org/abs/2304.02643
 
-    Adapted from segment-anything model (SAM):
-    https://github.com/facebookresearch/segment-anything
+    This module implements a variation of the attention calculation (see "Attention is all you need"),
+    which includes additive relative position encodings, following the equation:
+
+        Attention = softmax(s*Q*K + P) * V
+        -> Where s, Q, K & V are the scaling factor and query/key/value tensors from 'typical' attention
+           and P is the (additive) position encoding term
+
+    This implementation is mostly identical to the original implementation, but
+    the code has been broken into more distinct steps, with more detailed comments to
+    help explain each of the transformations.
+    The position encodings have also been moved to a dedicated module.
+
+    The original implementation can be found here:
+    https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L185
     """
 
     # .................................................................................................................
@@ -131,146 +291,72 @@ class RelPosAttention(nn.Module):
         # Inherit from parent
         super().__init__()
 
-        features_per_head = features_per_token // num_heads
-
+        # Store sizing info, mostly for use in reshaping ops during attention
+        self.features_per_head = features_per_token // num_heads
         self.num_heads = num_heads
-        self.scale = features_per_head**-0.5
+        self.scale = self.features_per_head**-0.5
 
+        # Set up standard modules for performing attention
         self.qkv = nn.Linear(features_per_token, features_per_token * 3, bias=True)
         self.proj = nn.Linear(features_per_token, features_per_token)
 
-        # Initialize relative positional embeddings, if needed
-        self.relpos = RelativePositionEncoder(features_per_head, base_patch_grid_hw)
-        # has_input_size = (input_w is not None) and (input_h is not None)
-        # assert has_input_size, "Input WH must be provided if using relative positional encoding."
-        # self.rel_pos_w = nn.Parameter(torch.zeros((2 * input_w) - 1, head_dim))
-        # self.rel_pos_h = nn.Parameter(torch.zeros((2 * input_h) - 1, head_dim))
+        # Set up special additive relative position encoder, used inside attention calculation
+        self.relpos = DecomposedRelativePositionEncoder(self.features_per_head, base_patch_grid_hw)
 
         # Set up softmax as dedicated 'module' so that we can hook into it for debugging/analysis!
         self.softmax = nn.Softmax(dim=-1)
 
     # .................................................................................................................
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, imagelike_bhwc: Tensor) -> Tensor:
+        """Performs attention calculation on an image-like input. The output has the same shape as the input"""
 
         # For clarity
-        B, H, W, _ = x.shape
-        num_input_elements = H * W
+        B, H, W, _ = imagelike_bhwc.shape
+        num_tokens = H * W
         qkv_size = 3
 
-        # Linear input mapping to make query, key, value vectors, for each head
-        # -> input x has shape: (B, H, W, C)
-        # -> linear mapping has shape: (B, H, W, 3*C)
-        # -> reshape has shape: (B, num_elems, 3, num_heads, C)  <- duplicates parameters for each head?
-        # -> after permutation has shape (3, B, num_heads, num_elems, C)
-        qkv = self.qkv(x).reshape(B, num_input_elements, qkv_size, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        # Produce Q, K, V tensors from input, shape goes from: (B,H,W,F) -to-> (B,H,W,3*F)
+        qkv = self.qkv(imagelike_bhwc)
 
-        # q, k, v with shape (B * nHead, H * W, C)
-        q, k, v = qkv.reshape(qkv_size, B * self.num_heads, num_input_elements, -1).unbind(0)
+        # Break Q,K,V into 'multi-headed' shape, each tensor reshapes from (B,H,W,F) -to-> (B,N,heads,f)
+        # -> Where big 'F' is features per token, small 'f' is features per head, 'N' is number of tokens
+        # -> Two operations happening here: (1) Merge HxW into 'N' tokens, (2) Split F into (heads, f) shape
+        # -> Actual code does all 3 tensors together, so shape is: (B,H,W,3*F) -to-> (B,N,3,heads,f)
+        qkv = qkv.reshape(B, num_tokens, qkv_size, self.num_heads, self.features_per_head)
+
+        # Now group 'heads' with batch dimension: (B,N,3,heads,f) -to-> (3,B,heads,N,f) -to-> (3,B*heads,N,f)
+        # -> This means attention happens independently across heads, just like batches are handled independently
+        qkv = qkv.permute(2, 0, 3, 1, 4)
+        qkv = qkv.reshape(qkv_size, B * self.num_heads, num_tokens, self.features_per_head)
+
+        # Break apart Q,K,V components for attention steps. Each tensor has shape: (B*heads, N, f)
+        q, k, v = qkv.unbind(0)
 
         # Perform query-key 'scaled dot-product' for all heads
+        # -> Matrix multiply between shapes: Nxf * fxN. With batching gives result shape: (B*heads, N, N)
         attn = (q * self.scale) @ k.transpose(-2, -1)
 
-        # Add position encodings
-        in_hw = (H, W)
-        attn = self.relpos(attn, q, in_hw)
+        # Add relative-position encodings (this is the only difference compared to 'normal' attention)
+        attn = attn + self.relpos(q, (H, W))
 
-        # Value weighting + concatenation
-        attn = self.softmax(attn)
-        x = (attn @ v).view(B, self.num_heads, H, W, -1).permute(0, 2, 3, 1, 4).reshape(B, H, W, -1)
+        # Finish attention calculation
+        # -> Matrix multiply between shapes: NxN * Nxf. With batching gives result shape: (B*heads, N, f)
+        attn = self.softmax(attn) @ v
 
-        # Final linear mapping
-        x = self.proj(x)
+        # Convert back to original image-like shape and apply linear (per token) mapping
+        imagelike_bhwc = attn.view(B, self.num_heads, H, W, -1).permute(0, 2, 3, 1, 4).reshape(B, H, W, -1)
+        imagelike_bhwc = self.proj(imagelike_bhwc)
 
-        return x
-
-    # .................................................................................................................
-
-
-class RelativePositionEncoder(nn.Module):
-
-    # .................................................................................................................
-
-    def __init__(self, features_per_head, base_patch_grid_hw):
-
-        # Inherit from parent
-        super().__init__()
-
-        self.base_h, self.base_w = base_patch_grid_hw
-        num_h_idxs = self._get_num_relative_indexes(self.base_h)
-        num_w_idxs = self._get_num_relative_indexes(self.base_w)
-        self.rel_pos_h = nn.Parameter(torch.zeros(num_w_idxs, features_per_head))
-        self.rel_pos_w = nn.Parameter(torch.zeros(num_h_idxs, features_per_head))
-
-    # .................................................................................................................
-
-    def forward(self, attention, query_tokens, patch_grid_hw):
-
-        rel_h = self.rel_pos_h
-        rel_w = self.rel_pos_w
-
-        # Check if we need to re-size the relative position encodings
-        # (this happens if the patch grid size doesn't match the base embeddings!)
-        grid_h, grid_w = patch_grid_hw
-        if (grid_h != self.base_h) or (grid_w != self.base_w):
-            rel_h = self._scale_to_new_size(self.rel_pos_h, grid_h)
-            rel_w = self._scale_to_new_size(self.rel_pos_w, grid_w)
-
-        attn = add_decomposed_rel_pos(attention, query_tokens, rel_h, rel_w, patch_grid_hw, patch_grid_hw)
-
-        return attn
-
-    # .................................................................................................................
-
-    @staticmethod
-    def _get_num_relative_indexes(size):
-        """
-        Helper used to figure out how many relative position indexes would exist
-        for a given grid/window size. For example, for a grid with a side length of 4,
-        the furthest possible grid points would be +/- 3 indices away. Therefore the relative
-        indexing will range from: -3, -2, -1, 0, 1, 2, 3
-        For a total of 7 (or 2*4 - 1) possible relative indices
-        """
-
-        return (2 * size) - 1
-
-    # .................................................................................................................
-
-    def _scale_to_new_size(self, base_embedding, new_size):
-        """
-        Helper used to make sure the position embeddings are scaled
-        to match the input patch sizing, by linear interpolation.
-        """
-
-        # Get original shape/data type, so we can restore this on the output
-        _, C = base_embedding.shape
-        orig_dtype = base_embedding.dtype
-        new_rel_count = (2 * new_size) - 1
-
-        # Force embedding to float32 for computing interpolation
-        # -> If we don't do this, we could get bad results/errors on lower precision dtypes
-        embed_f32 = base_embedding.float()
-
-        # Convert to shape needed by interpolation function and then convert back
-        resized_embedding = (
-            nn.functional.interpolate(
-                embed_f32.permute(1, 0).unsqueeze(0),
-                size=new_rel_count,
-                mode="linear",
-            )
-            .squeeze(0)
-            .permute(1, 0)
-        )
-
-        return resized_embedding.to(orig_dtype)
+        return imagelike_bhwc
 
     # .................................................................................................................
 
 
 class MLP2Layers_GELU(nn.Module):
     """
-    Modified implementation of the 2-layer MLP model used by the image-encoder attention blocks in SAM:
-    https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/modeling/image_encoder.py#L162
+    Slightly modified implementation of the 2-layer MLP model used by the image-encoder attention blocks in SAM:
+    https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/common.py#L13
     """
 
     # .................................................................................................................
@@ -286,145 +372,5 @@ class MLP2Layers_GELU(nn.Module):
             nn.Linear(num_hidden_features, num_features),
         )
 
-    # .................................................................................................................
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.layers(x)
-
-    # .................................................................................................................
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# %% Functions
-
-
-def window_partition(x: Tensor, window_size: int) -> tuple[Tensor, tuple]:
-    """
-    Partition into non-overlapping windows with padding if needed.
-    Args:
-        x (tensor): input tokens with [B, H, W, C].
-        window_size (int): window size.
-
-    Returns:
-        windows: windows after partition with [B * num_windows, window_size, window_size, C].
-        (Hp, Wp): padded height and width before partition
-    """
-    B, H, W, C = x.shape
-
-    pad_h = (window_size - H % window_size) % window_size
-    pad_w = (window_size - W % window_size) % window_size
-    if pad_h > 0 or pad_w > 0:
-        x = nn.functional.pad(x, (0, 0, 0, pad_w, 0, pad_h))
-    Hp, Wp = H + pad_h, W + pad_w
-
-    x = x.view(B, Hp // window_size, window_size, Wp // window_size, window_size, C)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
-    return windows, (Hp, Wp)
-
-
-# .....................................................................................................................
-
-
-def window_unpartition(windows: Tensor, window_size: int, pad_hw: tuple[int, int], hw: tuple[int, int]) -> Tensor:
-    """
-    Window unpartition into original sequences and removing padding.
-    Args:
-        windows (tensor): input tokens with [B * num_windows, window_size, window_size, C].
-        window_size (int): window size.
-        pad_hw (Tuple): padded height and width (Hp, Wp).
-        hw (Tuple): original height and width (H, W) before padding.
-
-    Returns:
-        x: unpartitioned sequences with [B, H, W, C].
-    """
-    Hp, Wp = pad_hw
-    H, W = hw
-    B = windows.shape[0] // (Hp * Wp // window_size // window_size)
-    x = windows.view(B, Hp // window_size, Wp // window_size, window_size, window_size, -1)
-    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, Hp, Wp, -1)
-
-    if Hp > H or Wp > W:
-        x = x[:, :H, :W, :].contiguous()
-    return x
-
-
-# .....................................................................................................................
-
-
-def get_rel_pos(q_size: int, k_size: int, rel_pos: Tensor) -> Tensor:
-    """
-    Get relative positional embeddings according to the relative positions of
-        query and key sizes.
-    Args:
-        q_size (int): size of query q.
-        k_size (int): size of key k.
-        rel_pos (Tensor): relative position embeddings (L, C).
-
-    Returns:
-        Extracted positional embeddings according to relative positions.
-    """
-    max_rel_dist = int(2 * max(q_size, k_size) - 1)
-    # Interpolate rel pos if needed.
-    if rel_pos.shape[0] != max_rel_dist:
-        # Interpolate rel pos.
-        rel_pos_resized = nn.functional.interpolate(
-            rel_pos.reshape(1, rel_pos.shape[0], -1).permute(0, 2, 1),
-            size=max_rel_dist,
-            mode="linear",
-        )
-        rel_pos_resized = rel_pos_resized.reshape(-1, max_rel_dist).permute(1, 0)
-    else:
-        rel_pos_resized = rel_pos
-
-    # Scale the coords with short length if shapes for q and k are different.
-    device = rel_pos_resized.device
-    q_coords = torch.arange(q_size, device=device)[:, None] * max(k_size / q_size, 1.0)
-    k_coords = torch.arange(k_size, device=device)[None, :] * max(q_size / k_size, 1.0)
-    relative_coords = (q_coords - k_coords) + (k_size - 1) * max(q_size / k_size, 1.0)
-
-    return rel_pos_resized[relative_coords.long()]
-
-
-# .....................................................................................................................
-
-
-def add_decomposed_rel_pos(
-    attn: Tensor,
-    q: Tensor,
-    rel_pos_h: Tensor,
-    rel_pos_w: Tensor,
-    q_size: tuple[int, int],
-    k_size: tuple[int, int],
-) -> Tensor:
-    """
-    Calculate decomposed Relative Positional Embeddings from :paper:`mvitv2`.
-    https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py
-    Args:
-        attn (Tensor): attention map.
-        q (Tensor): query q in the attention layer with shape (B, q_h * q_w, C).
-        rel_pos_h (Tensor): relative position embeddings (Lh, C) for height axis.
-        rel_pos_w (Tensor): relative position embeddings (Lw, C) for width axis.
-        q_size (tuple): spatial sequence size of query q with (q_h, q_w).
-        k_size (tuple): spatial sequence size of key k with (k_h, k_w).
-
-    Returns:
-        attn (Tensor): attention map with added relative positional embeddings.
-    """
-    q_h, q_w = q_size
-    k_h, k_w = k_size
-    Rh = get_rel_pos(q_h, k_h, rel_pos_h)
-    Rw = get_rel_pos(q_w, k_w, rel_pos_w)
-
-    B, _, dim = q.shape
-    r_q = q.reshape(B, q_h, q_w, dim)
-    rel_h = torch.einsum("bhwc,hkc->bhwk", r_q, Rh)
-    rel_w = torch.einsum("bhwc,wkc->bhwk", r_q, Rw)
-
-    attn = (attn.view(B, q_h, q_w, k_h, k_w) + rel_h[:, :, :, :, None] + rel_w[:, :, :, None, :]).view(
-        B, q_h * q_w, k_h * k_w
-    )
-
-    return attn
-
-
-# .....................................................................................................................
+    def forward(self, imagelike_bhwc: Tensor) -> Tensor:
+        return self.layers(imagelike_bhwc)
