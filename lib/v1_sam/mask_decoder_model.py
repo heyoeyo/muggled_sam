@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .components.cross_attention_transformer import CrossAttentionTransformer
-from .components.shared import LayerNorm2d
+from .components.shared import LayerNorm2d, Conv1x1
 
 # For type hints
 from torch import Tensor
@@ -259,7 +259,7 @@ class MaskHintEncoder(nn.Module):
             nn.Conv2d(num_hidden_ch_1, num_hidden_ch_2, kernel_size=2, stride=2),
             LayerNorm2d(num_hidden_ch_2),
             nn.GELU(),
-            nn.Conv2d(num_hidden_ch_2, output_channels, kernel_size=1),
+            Conv1x1(num_hidden_ch_2, output_channels),
         )
 
         # Helper variable used to keep track of the model device/dtype (need for mask hints)

@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .components.shared import LayerNorm2d
+from .components.shared import LayerNorm2d, Conv1x1
 from .components.image_encoder_attention import GlobalAttentionBlock, WindowedAttentionBlock
 
 # For type hints
@@ -88,7 +88,7 @@ class SAMV1ImageEncoder(nn.Module):
 
         # Create layers used to project to target number of output channels
         self.channel_projection = nn.Sequential(
-            nn.Conv2d(features_per_token, output_channels, kernel_size=1, bias=False),
+            Conv1x1(features_per_token, output_channels, bias=False),
             LayerNorm2d(output_channels),
             nn.Conv2d(output_channels, output_channels, kernel_size=3, padding=1, bias=False),
             LayerNorm2d(output_channels),
