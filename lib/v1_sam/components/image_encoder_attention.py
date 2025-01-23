@@ -27,10 +27,6 @@ class GlobalAttentionBlock(nn.Module):
 
     The original attention block code can be found here:
     https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L166
-
-    Adapted from segment-anything model (SAM):
-    https://github.com/facebookresearch/segment-anything
-    https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/modeling/image_encoder.py
     """
 
     # .................................................................................................................
@@ -93,12 +89,9 @@ class WindowedAttentionBlock(nn.Module):
         # Inherit from parent
         super().__init__()
 
-        # Set up nn processing components
+        # Set up 'global' block to act on windowed tokens
         window_grid_hw = (base_window_size, base_window_size)
-        self.norm_preattn = nn.LayerNorm(features_per_token, eps=norm_eps)
-        self.attn = RelPosAttention(features_per_token, num_heads, window_grid_hw)
-        self.norm_premlp = nn.LayerNorm(features_per_token, eps=norm_eps)
-        self.mlp = MLP2Layers_GELU(features_per_token, mlp_ratio)
+        self.global_attn = GlobalAttentionBlock(features_per_token, num_heads, window_grid_hw)
 
         # Store window size (+ backup of initial size, in case we change and need a reset!)
         self._init_window_size = base_window_size
@@ -115,20 +108,10 @@ class WindowedAttentionBlock(nn.Module):
             encoded_image_tokens_bhwc (same shape as input)
         """
 
-        # Prenorm (same as global attention)
-        attn = self.norm_preattn(imagelike_bhwc)
-
-        # Windowing
-        attn_windows, num_windows_xy = self._partition_into_windows(attn)
-        attn_windows = self.attn(attn_windows)
-        attn = self._unpartition_windows(attn_windows, imagelike_bhwc.shape, num_windows_xy)
-
-        # Residual connection (same as global attention)
-        attn = attn + imagelike_bhwc
-
-        # MLP (same as global attention)
-        output = self.norm_premlp(attn)
-        output = self.mlp(output) + attn
+        # Break image tokens into separate smaller windows, do attention, then undo windowing!
+        attn_windows, num_windows_xy = self._image_to_windows(imagelike_bhwc)
+        output = self.global_attn(attn_windows)
+        output = self._windows_to_image(output, imagelike_bhwc.shape, num_windows_xy)
 
         return output
 
@@ -148,7 +131,7 @@ class WindowedAttentionBlock(nn.Module):
 
     # .................................................................................................................
 
-    def _partition_into_windows(self, imagelike_bhwc: Tensor) -> tuple[Tensor, tuple[int, int]]:
+    def _image_to_windows(self, imagelike_bhwc: Tensor) -> tuple[Tensor, tuple[int, int]]:
         """
         Reshape/partition image-like input into a stack of window tiles.
 
@@ -208,7 +191,7 @@ class WindowedAttentionBlock(nn.Module):
 
     # .................................................................................................................
 
-    def _unpartition_windows(
+    def _windows_to_image(
         self,
         window_tiles: Tensor,
         original_shape_bhwc: tuple[int, int, int, int],

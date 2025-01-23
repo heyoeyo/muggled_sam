@@ -171,6 +171,12 @@ captures = ModelOutputCapture(sammodel, target_modules=target_modules)
 encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
 assert len(captures) > 0, "Error! No block data was captured... likely targeting the wrong blocks?"
 
+# For SAMv1, windowed blocks will include a captured global block internally. We need to remove these!
+# -> The internal global blocks have many 'windows' in the batch dimension
+# -> So we remove any captured data with a batch size that isn't just 1 (assumes we don't batch more than 1 image!)
+if not is_v2_model:
+    captures = [cap for cap in captures if cap.shape[0] == 1]
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]

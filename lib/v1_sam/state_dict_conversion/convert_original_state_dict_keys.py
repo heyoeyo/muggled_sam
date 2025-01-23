@@ -156,11 +156,11 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
         is_global_block = block_idx_within_stage == global_block_idx_within_stage
 
         # Update key to account for stage indexing
-        # image_encoder.blocks.6.norm1.weight -> stages.2.windowed_attn_blocks.0.norm1.weight
+        # image_encoder.blocks.6.norm1.weight -> stages.2.windowed_attn_blocks.0.global_attn.norm1.weight
         # image_encoder.blocks.11.mlp.lin2.bias -> stages.3.global_attn_block.mlp.layers.2.bias
         target_prefix = "image_encoder.blocks.#"
         global_prefix = f"stages.{stage_idx}.global_attn_block"
-        windowed_prefix = f"stages.{stage_idx}.windowed_attn_blocks.{block_idx_within_stage}"
+        windowed_prefix = f"stages.{stage_idx}.windowed_attn_blocks.{block_idx_within_stage}.global_attn"
         new_key = replace_prefix(key, target_prefix, global_prefix if is_global_block else windowed_prefix)
 
         # Rename attention block norm layers to be more descriptive
