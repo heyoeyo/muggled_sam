@@ -14,7 +14,7 @@ Both the global and windowed attention blocks both use a slight variation of the
 
 $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + P \right ) \times V$$
 
-$$ \text{Where} \thickspace P \thickspace \text{is the decomposed relative position encoding term}.$$
+$$ \text{Where } P \text{ is the decomposed relative position encoding term}.$$
 
 Note here that the Q, K and V terms are the standard query, key and value tensors for the [attention calculation](#what-is-attention), only the position encoding term (P) is unique to this variant of attention.
 
@@ -34,7 +34,7 @@ As mentioned above, 'attention' really just refers to an equation. The most basi
 
 $$\text{Attention}(X) = \text{SoftMax}((XC_q + B_q)(XC_k + B_k)^T) \times (XC_v + B_v)$$
 
-$$ \text{Where} \thickspace X \thickspace \text{is the input (e.g. image tokens)} $$
+$$ \text{Where } X \text{ is the input (e.g. image tokens)} $$
 
 For the SAM image encoder the input, X, would be the image tokens arranged into a 2D 'rows-of-tokens' matrix (i.e. each row of X is an image token). The terms: C<sub>q</sub>, C<sub>k</sub>, C<sub>v</sub> are matrices (weights) which are _learned_ as part of the training process, likewise for the bias terms: B<sub>q</sub>, B<sub>k</sub>, B<sub>v</sub>. Typically the [XC + B] patterns are combined into new terms called: **query** (Q = XC<sub>q</sub> + B<sub>q</sub>), **key** (K = XC<sub>k</sub> + B<sub>k</sub>) and **value** (V = XC<sub>v</sub> + B<sub>v</sub>), giving the equation:
 
@@ -98,7 +98,7 @@ Despite the exotic appearance of diagrams like these, the mathematical implement
 
 $$ \text{MLP}(X) = \text{GELU}(X \cdot A) \cdot B $$
 
-$$\text{Where} \thickspace X \thickspace \text{is an image token,} \thickspace A \thinspace \text{\&} \thinspace B \thickspace \text{are (learned) 2D matrices}$$
+$$\text{Where } X \text{ is an image token, } A \text{ and } B \text{ are (learned) 2D matrices}$$
 
 In the context of the attention block, it's a somewhat mysterious component, especially because it acts on each token independently (e.g. it isn't mixing information spatially). There's an interesting video by the YouTube channel [3Blue1Brown](https://www.youtube.com/watch?v=9-Jl0dxWQs8) about how the MLP may be used to 'store facts' in _language models_. For SAM (and image encoding more generally), the equivalent functionality may be to store an understanding of specific image pieces, for example like recognizing the sky or whether an image patch describes the front or back of a particular object.
 
@@ -117,9 +117,9 @@ The use of relative position encodings is nothing new, however the specific impl
 
 $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T + E}{\sqrt{d_{k}}} \right ) \times V$$
 
-$$\text{where} \thickspace E_{ij} = Q_i \times R_{p(i)p(j)} $$
+$$\text{where } E_{ij} = Q_i \times R_{p(i)p(j)} $$
 
-$$\text{and} \thickspace R_{p(i)p(j)} = R^h_{h(i)h(j)} + R^w_{w(i)w(j)} $$
+$$\text{and } R_{p(i)p(j)} = R^h_{h(i)h(j)} + R^w_{w(i)w(j)} $$
 
 The Q, K, V and d<sub>k</sub> terms are all the same as in 'regular' attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)"), with the unique modification being the additive position encoding term they call: E. To be clear, this additive term is just a square 2D matrix, with the number of rows and columns equaling the total number of image tokens. The word 'decomposed' refers to the fact that there are not unique (learned) encodings for every possible (∆x, ∆y) relative positioning. Instead, encodings are only learned for all possible ∆x values and, separately, all ∆y values. Then, for any given (∆x, ∆y) position, the encoding is produced by adding the separate ∆x and ∆y learned encodings.
 
@@ -163,7 +163,7 @@ This file contains generic model components that are used throughout various par
 
 This is a combination of a 'per-token' normalization with linear scaling and offset. It's used to improve the training process as described in the paper "[Layer Normalization](https://arxiv.org/abs/1607.06450)". PyTorch has a built-in [LayerNorm](https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html) implementation, however the '2D' version here is modified to support 'channels-first' image-like shapes. That is, tensors with a shape like: BxCxHxW, where B is the batch dimension, C is channels (or features per token) and H & W are the height and width of the grid of tokens. This layernorm also uses a smaller `eps` value compared to the PyTorch default, which is used to prevent divide-by-zero errors. The equation used for LayerNorm2D, when applied to a single token (i.e. a vector) is as follows:
 
-$$\text{Let} \thickspace Z = Token - \text{mean}(Token) $$
+$$\text{Let } Z = Token - \text{mean}(Token) $$
 
 $$\text{LayerNorm2D}_{(\text{applied to each token})} = \frac{Z}{\sqrt{\text{mean}(Z^2) + 1e^{-6}}} \times W + B $$
 
