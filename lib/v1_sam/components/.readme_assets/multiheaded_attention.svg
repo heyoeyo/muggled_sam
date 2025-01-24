@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="755.832" height="201.852" viewBox="0 0 199.98 53.407">
+  <g stroke-linecap="square">
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m45.983 29.646 2.092-1.375-2.092-1.375v1.088h-5.157v.529h5.157z" paint-order="markers stroke fill"/>
+    <text xml:space="preserve" x="-1027.7" y="-66.635" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(1046.246 72.741)"><tspan x="-1027.7" y="-66.635" style="text-align:center;">input tokens</tspan></text>
+    <text xml:space="preserve" x="-864.719" y="-66.606" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(1046.246 72.741)"><tspan x="-864.719" y="-66.606" style="text-align:center;">output tokens</tspan></text>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#c87137" d="M.264 8.206h36.513v8.731H.264z"/>
+      <path fill="#aca793" d="M.264 29.373h36.513v8.731H.264z"/>
+      <path fill="#bcd35f" d="M.264 39.956h36.513v8.731H.264z"/>
+      <path fill="#d35f5f" d="M.264 18.79h36.513v8.73H.264z"/>
+    </g>
+    <path fill="#fc0" stroke="#000" stroke-width="1.058" d="M80.523 22.847h38.63v10.848h-38.63z" paint-order="stroke fill markers"/>
+    <text xml:space="preserve" x="-936.316" y="-36.49" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(1036.332 67.016)"><tspan x="-936.316" y="-36.49" style="Monospace, Bold&quot;;text-align:center;">Attention</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m71.857 29.646 2.092-1.375-2.092-1.375v1.088h-5.158v.529h5.158zm58.321 0 2.093-1.375-2.093-1.375v1.088h-5.157v.529h5.157zM67.623 12.448l2.093-1.375-2.093-1.375v1.088h-5.157v.529h5.157zm59.38.398 2.093-1.375-2.093-1.374v1.087h-5.157v.53h5.157z" paint-order="markers stroke fill"/>
+    <path fill="#fc0" stroke="#000" stroke-width="1.058" d="M80.523 40.045h38.63v10.848h-38.63z" paint-order="stroke fill markers"/>
+    <text xml:space="preserve" x="-936.316" y="-36.49" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(1036.332 84.214)"><tspan x="-936.316" y="-36.49" style="Monospace, Bold&quot;;text-align:center;">Attention</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m76.09 46.844 2.092-1.375-2.092-1.375v1.087h-5.157v.53h5.157zm58.85-.104 2.093-1.376-2.092-1.374v1.087h-5.157v.529h5.157zm21.699-17.094 2.092-1.375-2.092-1.375v1.088h-5.158v.529h5.158z" paint-order="markers stroke fill"/>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#c87137" d="M163.203 8.206h36.513v8.731h-36.513z"/>
+      <path fill="#aca793" d="M163.203 29.373h36.513v8.731h-36.513z"/>
+      <path fill="#bcd35f" d="M163.203 39.956h36.513v8.731h-36.513z"/>
+      <path fill="#d35f5f" d="M163.203 18.79h36.513v8.73h-36.513z"/>
+    </g>
+    <text xml:space="preserve" x="-946.408" y="-69.105" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(1046.246 72.741)"><tspan x="-946.408" y="-69.105" style="text-align:center;">(Multi-Headed)</tspan></text>
+    <path fill="#fc0" stroke="#000" stroke-width="1.058" d="M80.523 5.649h38.63v10.848h-38.63z" paint-order="stroke fill markers"/>
+    <text xml:space="preserve" x="-936.316" y="-36.49" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(1036.332 49.818)"><tspan x="-936.316" y="-36.49" style="Monospace, Bold&quot;;text-align:center;">Attention</tspan></text>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M44.556 15.306h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M44.556 11.338h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M44.556 7.37h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M44.556 3.4h7.408v3.44h-7.408z"/>
+    </g>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M52.494 32.504h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M52.494 28.536h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M52.494 24.567h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M52.494 20.598h7.408v3.44h-7.408z"/>
+    </g>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M60.431 49.702h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M60.431 45.734h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M60.431 41.765h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M60.431 37.796h7.408v3.44h-7.408z"/>
+    </g>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M131.34 15.306h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M131.34 11.338h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M131.34 7.37h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M131.34 3.4h7.408v3.44h-7.408z"/>
+    </g>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M139.277 32.504h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M139.277 28.536h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M139.277 24.567h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M139.277 20.598h7.408v3.44h-7.408z"/>
+    </g>
+    <g stroke="#000" stroke-width=".529" paint-order="stroke fill markers">
+      <path fill="#bcd35f" d="M147.215 49.702h7.408v3.44h-7.408z"/>
+      <path fill="#aca793" d="M147.215 45.734h7.408v3.44h-7.408z"/>
+      <path fill="#d35f5f" d="M147.215 41.765h7.408v3.44h-7.408z"/>
+      <path fill="#c87137" d="M147.215 37.796h7.408v3.44h-7.408z"/>
+    </g>
+  </g>
+</svg>

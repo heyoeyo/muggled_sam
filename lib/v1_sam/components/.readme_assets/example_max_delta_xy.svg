@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="173.909" height="158.748" viewBox="0 0 46.013 42.002">
+  <g transform="translate(1338.764 287.962)">
+    <text xml:space="preserve" x="-1323.38" y="-251.644" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle"><tspan x="-1323.38" y="-251.644" style="text-align:center">∆x</tspan><tspan x="-1323.38" y="-246.352" style="text-align:center">+/-2</tspan></text>
+    <text xml:space="preserve" x="-1297.56" y="-280.445" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle"><tspan x="-1297.56" y="-275.153" style="text-align:center">∆y</tspan><tspan x="-1297.56" y="-269.862" style="text-align:center">+/-1</tspan></text>
+    <text xml:space="preserve" x="-1323.443" y="-284.349" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-1323.443" y="-284.349" style="text-align:center;">image tokens</tspan></text>
+    <path id="a" fill="#b3b3b3" fill-opacity="1" stroke="#000" stroke-linecap="square" stroke-width=".794" d="M-1336.566-282.116h7.144v7.144h-7.144z" paint-order="markers stroke fill" style=""/>
+    <use xlink:href="#a"/>
+    <use xlink:href="#a" transform="translate(0 9.525)"/>
+    <use xlink:href="#a" transform="translate(9.525)"/>
+    <use xlink:href="#a" transform="translate(9.525 9.525)"/>
+    <use xlink:href="#a" transform="translate(19.05)"/>
+    <use xlink:href="#a" transform="translate(19.05 9.525)"/>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="m-1306.1-267.232-2.925-.241 1.476-2.667.557.976.321-.119a5.026 5.026 0 0 0 0-9.111l-.35-.096-.452 1.145-1.514-2.743 2.925-.242-.644 1.302.258.154a5.558 5.558 0 0 1 0 10.072l-.27.132zm-27.677 6.284.328-3.088 2.698 1.834-1.37.552.17.29c1.712 2.372 4.916 3.865 8.391 3.865 3.476 0 6.678-1.493 8.39-3.865l.123-.28-1.136-.504 2.699-1.833.328 3.087-1.371-.486-.25.338c-1.831 2.54-5.174 4.072-8.783 4.072-3.608 0-6.95-1.533-8.782-4.072l-.32-.402z" paint-order="markers stroke fill"/>
+  </g>
+</svg>

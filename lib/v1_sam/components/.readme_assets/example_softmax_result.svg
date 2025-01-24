@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<svg
+   width="500"
+   height="320"
+   viewBox="0 0 100 64"
+   version="1.1"
+   id="softmaxresult"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+>
+
+  <style>
+    text {
+      font-family: Monospace;
+      font-size: 0.3em;
+      fill: white;
+      stroke: black;
+      stroke-width: 1px;
+      paint-order: stroke;
+      white-space:pre;
+      text-anchor: middle;
+      alignment-baseline: middle;
+    }
+    
+    .title_text {
+      font-size: 0.4em;
+      font-weight: bold;
+    }
+     
+    .subtitle_text {
+      font-size: 0.3em;
+      font-weight: bold;
+    }
+     
+    path {
+      fill: white;
+      stroke: black;
+      stroke-width: 1px;
+      paint-order: stroke;
+    }
+  </style>
+  
+  <!--<rect width="100%" height="100%" fill="green" /> -->
+  
+  <text x="50" y="5" class="title_text">SoftMax result (example)</text>
+  <g transform="translate(50, 15)">
+    <text y="0">0.1  0.0  0.3  0.1  0.5  0.0</text>
+    <text y="8">0.0  0.0  0.0  0.4  0.2  0.4</text>
+    <text y="16">0.8  0.0  0.1  0.0  0.0  0.1</text>
+    <text y="24">0.4  0.2  0.2  0.1  0.0  0.1</text>
+    <text y="32">0.0  0.1  0.4  0.0  0.2  0.3</text>
+    <text y="40">0.3  0.3  0.0  0.3  0.1  0.0</text>
+  </g>
+  
+  <path
+    transform="translate(16, 10)"
+    id="bracket"
+    d="M0 0 l -5 0 l 0 51 l 5 0
+       l 0 -0.5 l -4.5 0 l 0 -50 l 4.5 0 z"
+    />
+  <path
+    transform="translate(84,10) scale(-1,1)"
+    id="bracket"
+    d="M0 0 l -5 0 l 0 51 l 5 0
+       l 0 -0.5 l -4.5 0 l 0 -50 l 4.5 0 z"
+    />
+
+</svg>

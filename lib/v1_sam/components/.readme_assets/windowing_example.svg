@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="433.044" height="207.383" viewBox="0 0 114.576 54.87">
+  <g stroke-linecap="square" paint-order="markers stroke fill">
+    <text xml:space="preserve" x="-1167.447" y="-154.176" fill="#f60" stroke-width=".265" font-family="Monospace" font-size="4.233" style="text-align:center" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1167.447" y="-154.176" style="text-align:center">windowing</tspan><tspan x="-1167.447" y="-148.884" style="text-align:center">+</tspan><tspan x="-1167.447" y="-143.593" style="text-align:center">padding</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m48.556 28.81 2.093-1.375-2.093-1.375v1.087h-9.39v.53h9.39z"/>
+    <text xml:space="preserve" x="-1197.339" y="-179.021" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1197.339" y="-179.021" style="text-align:center;">input tokens</tspan></text>
+    <path fill="#bf3939" stroke="#000" stroke-width=".794" d="M-1211.52-176.818h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#39bf3f" stroke="#000" stroke-width=".794" d="M-1190.354-176.818h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#bfb439" stroke="#000" stroke-width=".794" d="M-1200.937-176.818h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#bfac98" stroke="#000" stroke-width=".794" d="M-1211.52-155.651h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#c2d1d9" stroke="#000" stroke-width=".794" d="M-1190.354-155.651h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#778c7a" stroke="#000" stroke-width=".794" d="M-1200.937-155.651h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#39bf9a" stroke="#000" stroke-width=".794" d="M-1211.52-166.234h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#bf39bf" stroke="#000" stroke-width=".794" d="M-1190.354-166.234h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#394dbf" stroke="#000" stroke-width=".794" d="M-1200.937-166.234h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <text xml:space="preserve" x="-1140.144" y="-186.484" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1140.144" y="-186.484" style="text-align:center;">Window 0</tspan></text>
+    <path fill="#bf3939" stroke="#000" stroke-width=".794" d="M-1149.146-185.101h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#bfb439" stroke="#000" stroke-width=".794" d="M-1138.562-185.101h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#39bf9a" stroke="#000" stroke-width=".794" d="M-1149.146-174.518h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#394dbf" stroke="#000" stroke-width=".794" d="M-1138.562-174.518h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <text xml:space="preserve" x="-1108.388" y="-186.484" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1108.388" y="-186.484" style="text-align:center;">Window 1</tspan></text>
+    <path fill="#39bf3f" stroke="#000" stroke-width=".794" d="M-1117.395-185.101h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#bf39bf" stroke="#000" stroke-width=".794" d="M-1117.395-174.518h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path stroke="#000" stroke-width=".794" d="M-1106.812-174.518h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <text xml:space="preserve" x="-1108.373" y="-154.734" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1108.373" y="-154.734" style="text-align:center;">Window 3</tspan></text>
+    <path fill="#c2d1d9" stroke="#000" stroke-width=".794" d="M-1117.395-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path stroke="#000" stroke-width=".794" d="M-1106.812-142.768h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144zm-10.583 10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <text xml:space="preserve" x="-1140.102" y="-154.734" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1140.102" y="-154.734" style="text-align:center;">Window 2</tspan></text>
+    <path fill="#bfac98" stroke="#000" stroke-width=".794" d="M-1149.145-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#778c7a" stroke="#000" stroke-width=".794" d="M-1138.562-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path stroke="#000" stroke-width=".794" d="M-1138.562-142.768h7.144v7.144h-7.144zm-10.583 0h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+  </g>
+</svg>

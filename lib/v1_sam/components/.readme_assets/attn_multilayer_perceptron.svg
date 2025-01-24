@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="484.588" height="357.781" viewBox="0 0 128.214 94.663">
+  <g transform="translate(1244.419 35.468)">
+    <path id="a" fill="#fff" stroke="#000" stroke-dasharray="none" stroke-linecap="square" stroke-opacity="1" stroke-width=".529" d="m-1208.305 10.981 2.092-1.375-2.092-1.375V9.32h-35.849v.529h35.849z" paint-order="markers stroke fill"/>
+    <text xml:space="preserve" x="-1217.289" y="-30.35" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;"><tspan x="-1217.289" y="-30.35" style="Monospace, Bold&quot;;text-align:start;">Multilayer Perceptron</tspan></text>
+    <text xml:space="preserve" x="-1227.368" y="7.599" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-1227.368" y="7.599" style="text-align:center;">input token</tspan></text>
+    <text xml:space="preserve" x="-1134.688" y="7.599" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-1134.688" y="7.599" style="text-align:center;">output token</tspan></text>
+    <path fill="none" stroke="#f60" stroke-linecap="square" stroke-width=".265" d="m-1181.709-19.73-20.133 23.016m20.052-13.82-19.87 13.639m20.014-4.219-20.257 4.28m20.153 5.13-20.092-5.191m20.092 14.372-20.092-14.312m20.198 23.583-20.198-23.583m20.198 32.839-20.259-32.9m20.073 42.301-20.073-42.058" paint-order="stroke fill markers" style=""/>
+    <path fill="#d42aff" stroke="#d42aff" stroke-linecap="square" stroke-width=".265" d="m-1181.597-19.548 22.858 22.688m-22.899-13.503 22.735 13.613m-22.913-4.442 22.913 4.442m-22.776 4.935 22.776-5.045m-22.748 14.325 22.912-14.215m-23.008 23.523 22.844-23.633m-22.68 32.887 22.625-32.722m-22.817 41.975 22.982-42.03" paint-order="stroke fill markers" style=""/>
+    <use xlink:href="#a" transform="translate(89.526)"/>
+    <use xlink:href="#b" transform="translate(42.901 12.857)"/>
+    <use xlink:href="#b" transform="translate(42.901)"/>
+    <circle id="b" cx="-1201.762" cy="3.178" r="3.704" fill="#fff" fill-opacity="1" stroke="#000" stroke-dasharray="none" stroke-dashoffset="0" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="1" stroke-width=".529" paint-order="markers stroke fill" stop-color="#000" style=""/>
+    <use xlink:href="#b" transform="translate(0 12.857)"/>
+    <text xml:space="preserve" x="-1181.712" y="53.807" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-1181.712" y="53.807" style="text-align:center;">(GELU activations)</tspan></text>
+    <use xlink:href="#b" transform="translate(20.05 -22.895)"/>
+    <use xlink:href="#b" transform="translate(20.05 -13.61)"/>
+    <use xlink:href="#b" transform="translate(20.05 -4.326)"/>
+    <use xlink:href="#b" transform="translate(20.05 4.959)"/>
+    <use xlink:href="#b" transform="translate(20.05 14.243)"/>
+    <use xlink:href="#b" transform="translate(20.05 23.528)"/>
+    <use xlink:href="#b" transform="translate(20.05 32.813)"/>
+    <use xlink:href="#b" transform="translate(20.05 42.097)"/>
+    <path fill="none" stroke="#0fc" stroke-linecap="square" stroke-width="1.058" d="M-1212.271-27.589h61.119v86.254h-61.119z" paint-order="stroke fill markers"/>
+  </g>
+</svg>

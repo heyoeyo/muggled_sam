@@ -1,0 +1,186 @@
+# SAMv1 Components
+
+This folder contains code mostly related to the [attention calculations](https://arxiv.org/abs/1706.03762) used in both the [image encoder](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#image-encoder) and [mask decoder](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#mask-decoder) models. This code has been separated from the main model implementations to help simplify the codebase, as well as providing space for more dedicated documentation around the attention/transformer implementations.
+
+
+## Image Encoder Attention
+
+This file contains code related to the attention calculations used within the SAM image encoder. This includes the global and windowed attention blocks, as well as the attention calculation itself. Each of these is described in more detail below.
+
+
+### Attention (with relative position encodings)
+
+Both the global and windowed attention blocks both use a slight variation of the 'standard' attention calculation, which includes an additive relative position encoding term. While the inclusion this term is conceptually simple, [the implementation](#decomposed-relative-position-encoder) is complicated and even prevents the use of more [efficient forms](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html) of the attention computation. Unfortunately, the SAMv1 models are therefore slower and use significantly more VRAM as a result of using this variation of attention. The modified equation is as follows:
+
+$$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + P \right ) \times V$$
+
+$$ \text{Where} \thickspace P \thickspace \text{is the decomposed relative position encoding term}.$$
+
+Note here that the Q, K and V terms are the standard query, key and value tensors for the [attention calculation](#what-is-attention), only the position encoding term (P) is unique to this variant of attention.
+
+#### Multi-headed attention
+
+In practice, multiple instances of Q, K and V are generated from the input image tokens. The additional instances usually come from partitioning the features of the input tokens, so that each instance of Q, K, V has a reduced feature count. This helps to offset the increase in computation from computing attention multiple times. Each instance independently goes through the attention equation above and the results are then re-combined to restore the original input feature count/shape. This procedure of splitting the input into multiple pieces, computing attention and then re-combining the results is known as 'multi-headed attention'. There is also an extra linear layer applied to the re-combined results (not shown), which likely helps to 'mix' the information contained in the separately processed features.
+
+<p align="center">
+  <img src=".readme_assets/multiheaded_attention.svg" alt="">
+</p>
+
+#### What is 'attention'?
+
+While this repo isn't trying to explain every operation from scratch, the attention calculation is a prominent part of transformer models and can seem a bit mysterious, so it's worth discussing briefly here. The explanation here will be very simple, for more details consider checking out the [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) or the [Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) blog posts.
+
+As mentioned above, 'attention' really just refers to an equation. The most basic form of this equation, without fancy scaling or position encodings, is something like:
+
+$$\text{Attention}(X) = \text{SoftMax}((XC_q + B_q)(XC_k + B_k)^T) \times (XC_v + B_v)$$
+
+$$ \text{Where} \thickspace X \thickspace \text{is the input (e.g. image tokens)} $$
+
+For the SAM image encoder the input, X, would be the image tokens arranged into a 2D 'rows-of-tokens' matrix (i.e. each row of X is an image token). The terms: C<sub>q</sub>, C<sub>k</sub>, C<sub>v</sub> are matrices (weights) which are _learned_ as part of the training process, likewise for the bias terms: B<sub>q</sub>, B<sub>k</sub>, B<sub>v</sub>. Typically the [XC + B] patterns are combined into new terms called: **query** (Q = XC<sub>q</sub> + B<sub>q</sub>), **key** (K = XC<sub>k</sub> + B<sub>k</sub>) and **value** (V = XC<sub>v</sub> + B<sub>v</sub>), giving the equation:
+
+$$\text{Attention}(Q, K, V) = \text{SoftMax}(QK^T) \times V$$
+
+While this still looks a bit cryptic, we can oversimplify by saying that the equation can be thought of as a 'find-and-replace' operation. The [softmax](https://en.wikipedia.org/wiki/Softmax_function) and everything inside it is the 'find part', while the multiplication with V is the 'replace part'. The terminology used to describe the components hints at this, for example the query (Q in the equation) is like the 'thing you're trying to find', the keys (K) is the 'thing you're searching in' and the value (V) is the 'replacement value'. So for example, if you had a text document containing the word "hello" and you wanted to replace every instance in the document with the word "world", then the query is "hello", the key is the entire document and the value is "world".
+
+In the context of the SAM model, everything is a token, specifically an [image token](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#patch-embedding-model) which is a bit like a pixel of an image. So for the attention calculation, the thing we're searching _for_ is a set of image tokens (the query Q), we're searching _in_ image tokens (the key K) and we'll replace values _with_ image tokens (the value tokens V). So the input to the attention calculation is a set of image tokens and the output is a set of modified image tokens.
+
+<p align="center">
+  <img src=".readme_assets/image_token_arrangements.svg" alt="Image showing two common image-token arrangement formats. On the left is an 'image-like' arrangement, on the right is a 'rows-of-tokens' arrangement. The image-like format is inherently 3D, arranging the tokens in a grid that can be described using a height, width and 'depth' (or channel count aka feature count). The rows-of-tokens format is inherently 2D, and is described by the number of rows (total number of tokens) and columns (channel or feature count). The 2D format is mathematically convenient, since the tokens can be manipulated using matrix math.">
+</p>
+
+It's very helpful to understand what the inputs and softmax result actually 'look like'. The Q, K and V tokens are just an alternate arrangement of the image tokens, with each also undergoing a linear transformation (i.e. XC + B). This arrangement can be described as a 'rows-of-tokens' format, where each row is one image token and the columns hold the feature values. Each of the Q, K and V inputs are therefore just 2D matrices, with N (number of tokens) rows and F (features per token) columns.
+
+The result of the softmax is a _square_ matrix, and it has a special property which is that the values of each row add up to 1 and every value is positive. This means that each row acts like a weighting vector when used in matrix multiplication. This matrix has side lengths equal to the total number of image tokens and each entry in the matrix can be thought of as holding the answer to the question "how similar is this image token to this other token?". Specifically, the i<sub>th</sub> row and j<sub>th</sub> column says how similar the i<sub>th</sub> query token (from Q in the equation above) is to the j<sub>th</sub> key token (from K).
+
+<p align="center">
+  <img src=".readme_assets/example_softmax_result.svg" alt="Example of the result output from the softmax function. All values are positive and each row sums to 1, so that each row acts like a weighting vector when performing matrix multiplication.">
+</p>
+
+
+Since the softmax result is like a set of weightings and these are multiplied into the value tokens, it's as if the multiplication 'picks out' parts of the value tokens based on which values are most highly weighted. Hence the 'find' (compute weightings) and 'replace' (output weighted value tokens) analogy. It's important to note however, that this find-and-replace is not binary (e.g. found a match or not) like searching in a text document. Each token 'finds' some amount of what it's looking for in _all_ other tokens and is replaced by a mixture of _all_ value tokens. So attention can introduce a sort of spatial mixing of information across tokens.
+
+### Global & windowed attention blocks
+
+The global and windowed attention blocks include the attention calculation described above, along with some relatively simple [layernorms](https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html) and [residual connections](https://en.wikipedia.org/wiki/Residual_neural_network) (also called 'skip' connections). The diagram below depicts both the global and windowed attention blocks:
+
+<p align="center">
+  <img src=".readme_assets/global_attn_block.svg" alt="">
+</p>
+
+<p align="center">
+  <img src=".readme_assets/windowed_attn_block.svg" alt="">
+</p>
+
+As indicated, the windowed blocks are simply global blocks with a windowing step before and after to undo the windowing.
+
+
+#### Windowing
+
+Windowing is an optimization technique used to reduce the amount of computation and memory needed to execute an attention block. The idea is based off a simple observation: each token must 'attend' to every other token, which means that for N tokens, there are N<sup>2</sup> comparisons (computations) required. This scales poorly with the number of tokens! At the same time, it seems reasonable to assume that for any given token, only tokens which are 'close by' are most relevant for processing. Therefore, the idea of windowed attention is simply to have every token only attend to some fraction of the total token count.
+
+<p align="center">
+  <img src=".readme_assets/windowing_example.svg" alt="">
+</p>
+
+There are many ways to do this, but the most common approach is to break the image tokens apart into equally sized regions, called windows, then compute attention on each of these as stand-alone regions. The results on each region are then stitched back together into the original input shape to form the final output. It's possible (and even quite likely due to the model configuration) that the input image cannot be broken into equally sized regions, in these cases the tokens are zero-padded (on the bottom and/or right) in order to get a shape which divides evenly into the chosen window sizing. For exanple, in the image above, the input grid is 3x3 and the window size is 2. The input must be padded on both the right and bottom edges to make it 4x4, so that it can be broken into 4 windows, each 2x2 in size.
+
+By comparison, in the original SAMv1 model all stages use a window size of 14. This means that the default 64x64 token grid must be padded to a size of 70x70 to be cleanly divisible by 14. The 70x70 token grid is then broken into 25 windows each 14x14 in size. The attention calculation updates each of these 14x14 windows independently, which are then recombined back into a 70x70 grid. Finally, the 70x70 grid is cropped back to 64x64 before proceeding through the rest of the model. A [pull request](https://github.com/facebookresearch/segment-anything/pull/594) on the original SAMv1 repo suggests that a window size of 16 (which avoids the need for padding) may improve overall performance. It's possible to adjust the window sizing, per stage, and view the effects on segmentation results using the [window sizing experiment script](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#window-size-visualization).
+
+#### MLP
+
+The [multilayer perceptron](https://en.wikipedia.org/wiki/Multilayer_perceptron) (MLP) near the end of the attention block corresponds to the commonly depicted picture of a [neural network](https://en.wikipedia.org/wiki/Neural_network_(machine_learning)) with multiple nodes connecting from left-to-right. In the case of the attention block, the left-most nodes correspond to the feature values for a single token. For the SAMv1 image encoder, every attention block ends with one of these MLP models, which itself contains 2 linear layers with the first using a [GELU](https://pytorch.org/docs/stable/generated/torch.nn.GELU.html) activation function. The first layer also quadruples the feature count, while the second layer restores the original feature count. The diagram below depicts an input feature count of only 2 (in practice there are hundreds!), with quadrupling on the first layer, and only one set of input/output connections is shown to reduce visual clutter:
+
+<p align="center">
+  <img src=".readme_assets/attn_multilayer_perceptron.svg" alt="">
+</p>
+
+Despite the exotic appearance of diagrams like these, the mathematical implementation is rather simple and boring... It's just matrix multiplication, followed by a [GELU function](https://paperswithcode.com/method/gelu), followed by another matrix multiplication:
+
+$$ \text{MLP}(X) = \text{GELU}(X \cdot A) \cdot B $$
+
+$$\text{Where} \thickspace X \thickspace \text{is an image token,} \thickspace A \thinspace \text{\&} \thinspace B \thickspace \text{are (learned) 2D matrices}$$
+
+In the context of the attention block, it's a somewhat mysterious component, especially because it acts on each token independently (e.g. it isn't mixing information spatially). There's an interesting video by the YouTube channel [3Blue1Brown](https://www.youtube.com/watch?v=9-Jl0dxWQs8) about how the MLP may be used to 'store facts' in _language models_. For SAM (and image encoding more generally), the equivalent functionality may be to store an understanding of specific image pieces, for example like recognizing the sky or whether an image patch describes the front or back of a particular object.
+
+<p align="center">
+  <img src=".readme_assets/attention_mlp_anim.gif" alt="">
+</p>
+
+Progressively reducing the influence of the MLP (by simply [scaling it](https://github.com/heyoeyo/muggled_sam/blob/dbf5c187d78717b3606559fb86fb11fe3c666aff/lib/v1_sam/components/image_encoder_attention.py#L61) within the attention blocks) produces results which maintain a correspondence with the prompt positioning, but which steadily corrupt the object segmentation boundary as seen in the animation above. Interestingly, the MLP must be scaled by a factor of around 0.4 or lower before any obvious signs of degradation begin to appear. The 'blurring' of the mask prediction (especially visible in the background elements in the animation above) while still adhereing to the box prompt region does hint that the MLP may play a role in 'understanding' object boundaries.
+
+
+## Decomposed Relative Position Encoder
+
+This script contains an implementation of the 'decomposed' relative position encodings used inside the image encoder attention calculation. This component is arguably the single most complex piece of the entire SAM model, so it has been separated for clarity.
+
+The use of relative position encodings is nothing new, however the specific implementation used here _is_ unusual and seems to originate from the paper: "[MViTv2: Improved Multiscale Vision Transformers for Classification and Detection](https://arxiv.org/abs/2112.01526)". In this paper, they (quite briefly!) describe the concept of a 'decomposed relative position embedding' (see page 3 of the paper). This is meant to be a term added within the attention calculation, following the given equations:
+
+$$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T + E}{\sqrt{d_{k}}} \right ) \times V$$
+
+$$\text{where} \thickspace E_{ij} = Q_i \times R_{p(i)p(j)} $$
+
+$$\text{and} \thickspace R_{p(i)p(j)} = R^h_{h(i)h(j)} + R^w_{w(i)w(j)} $$
+
+The Q, K, V and d<sub>k</sub> terms are all the same as in 'regular' attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)"), with the unique modification being the additive position encoding term they call: E. To be clear, this additive term is just a square 2D matrix, with the number of rows and columns equaling the total number of image tokens. The word 'decomposed' refers to the fact that there are not unique (learned) encodings for every possible (∆x, ∆y) relative positioning. Instead, encodings are only learned for all possible ∆x values and, separately, all ∆y values. Then, for any given (∆x, ∆y) position, the encoding is produced by adding the separate ∆x and ∆y learned encodings.
+
+<p align="center">
+  <img src=".readme_assets/example_max_delta_xy.svg" alt="">
+</p>
+
+As an example, consider a set of image tokens with a grid height of 2: then the furthest any pair of tokens could be away from each other is +/- 1 cell in the height (or y) direction. If the grid width is 3, the furthest distance is +/- 2 cells in the width (or x) direction. All other distances are also possible, so for example in the height direction two cells could be -1, 0 or + 1 cells apart, in width they could be -2, -1, 0, +1 or +2. Each of these values corresponds to a unique 'relative position' for pairs of tokens.
+
+### Example
+
+(wip)
+
+#### A slightly different equation
+
+Finally, it's worth noting that in the [SAMv1 implementation](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L231-L234) (and even the [MViT2 code](https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py#L281-L291)!) the equation used for attention does **not** scale the position encoding (E) term by d<sub>k</sub> as suggested by the equation presented in the MViT2 paper. Instead, the position encodings are added _after_ the Q, K multiplication and scaling. To avoid confusion with the original equation, in this repo, the equation is therefore given and computing using:
+
+$$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + P \right ) \times V$$
+
+Where P is the additive position encoding term (without any scaling).
+
+## Mask Decoder Attention
+
+This file contains the code which implements the attention calculation within the mask decoder (or more specifically, the cross-attention transformer within the decoder). Unlike the attention calculations inside the image encoder, the mask decoder makes use of both self-attention as well as cross-attention. These implementations will be detailed below.
+
+(wip)
+
+
+## Cross-Attention Transformer
+
+The cross-attention transformer is used to mix information between the encoded prompts and encoded image data. This is the reason why the segmentation seems to 'respond intuitively' to input prompts, for example segmenting things near a given point prompt and not an unrelated object elsewhere in the image. The transformer consists of only 2 sequential blocks and a final cross-attention block to further enrich the prompt tokens.
+
+(wip)
+
+
+## Shared
+
+This file contains generic model components that are used throughout various parts of SAM.
+
+### LayerNorm2D
+
+This is a combination of a 'per-token' normalization with linear scaling and offset. It's used to improve the training process as described in the paper "[Layer Normalization](https://arxiv.org/abs/1607.06450)". PyTorch has a built-in [LayerNorm](https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html) implementation, however the '2D' version here is modified to support 'channels-first' image-like shapes. That is, tensors with a shape like: BxCxHxW, where B is the batch dimension, C is channels (or features per token) and H & W are the height and width of the grid of tokens. This layernorm also uses a smaller `eps` value compared to the PyTorch default, which is used to prevent divide-by-zero errors. The equation used for LayerNorm2D, when applied to a single token (i.e. a vector) is as follows:
+
+$$\text{Let} \thickspace Z = Token - \text{mean}(Token) $$
+
+$$\text{LayerNorm2D}_{(\text{applied to each token})} = \frac{Z}{\sqrt{\text{mean}(Z^2) + 1e^{-6}}} \times W + B $$
+
+$$\text{Where the mean is taken along the channels/features of each token} $$
+
+$$\text{and the W, B terms are applied point-wise} $$
+
+Note that this is a bit like a normalization and linear scaling + offset, if we instead write:
+
+$$\text{LayerNorm2D}_{(Token)} = \text{normalize}(Token) \times W + B $$
+
+It's important to note that the layernorm is applied to all tokens, so each token is normalized independently, but they all use the same weights (W) and bias (B) values. It's also important to recognize that the weights are only a _vector_ of values which are point-wise multiplied into the token values. This is in contrast to a [linear layer](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html), where the weights would normally be a full matrix of values.
+
+
+### Conv1x1
+
+This module is provided purely for readability in the codebase. It's simply a regular (built-in) [Conv2D layer](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html), with the kernel size and stride hard-coded to a value of 1. The reason for giving this a distinct name is that 1x1 convolutions don't really _do_ convolution. They're equivalent to linear layers acting on the channel values of the tokens, and so don't perform the spatial mixing of information implied by seeing a 2D convolution layer in a model.
+
+So why not just use a linear layer? A 1x1 convolution layer acts on image-like inputs with 'channels-first' shapes, that is: BxCxHxW. While a linear layer would require a 'channels-last' ordering: BxHxWxC. In cases where the input already has a channels-first shape, it's convenient to use a 1x1 convolution instead of re-arranging the dimensions to work with a linear layer.
+
