@@ -70,8 +70,8 @@ class DecomposedRelativePositionEncoder(nn.Module):
         #    most 'positive' relative difference and the middle entry, which
         #    is always guaranteed by odd-length sizing, is the 'no difference'
         #    relative position (i.e. when token pairs occupy the same H/W position)
-        self.relpos_h_1d = nn.Parameter(torch.zeros(num_w_idxs, features_per_head))
-        self.relpos_w_1d = nn.Parameter(torch.zeros(num_h_idxs, features_per_head))
+        self.relpos_h_1d = nn.Parameter(torch.zeros(num_h_idxs, features_per_head))
+        self.relpos_w_1d = nn.Parameter(torch.zeros(num_w_idxs, features_per_head))
 
         # Store the base sizing, so we know what grid size was used for the learned embeddings
         self.base_h = base_h
@@ -106,7 +106,7 @@ class DecomposedRelativePositionEncoder(nn.Module):
 
         # Form 2D indexing 'deltas matrix', which stores an index corresponding to the relative
         # (horizontal or vertical) positioning of all possible pairs of tokens.
-        # Simple example: For a tensor with a height of 4, the H deltas matrix looks like:
+        # Simple example: For a tensor with a height of 4, the H deltas matrix is 4x4 and looks like:
         #         ┌              ┐                 ┌              ┐
         #         │  0 -1 -2 -3  │                 │  3  2  1  0  │
         #         │  1  0 -1 -2  │     Offset      │  4  3  2  1  │
