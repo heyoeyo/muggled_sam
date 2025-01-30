@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="490.971" height="413.625" viewBox="0 0 129.903 109.438">
+  <g stroke-linecap="square" paint-order="markers stroke fill">
+    <text xml:space="preserve" x="-776.788" y="-313.467" fill="#f60" stroke-width=".265" font-family="Monospace" font-size="4.233" style="text-align:center" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-776.788" y="-313.467" style="text-align:center">Each token is</tspan><tspan x="-776.788" y="-308.175" style="text-align:center">of the form:</tspan><tspan x="-776.788" y="-297.592" style="text-align:center">label</tspan><tspan x="-776.788" y="-292.3" style="text-align:center">(x,y)</tspan></text>
+    <text xml:space="preserve" x="-729.989" y="-340.182" fill="#f60" stroke-width=".265" font-family="Monospace" font-size="4.233" style="text-align:center" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-729.989" y="-340.182" style="text-align:center">&apos;flatten&apos;</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m82.54 25.135 2.092-1.375-2.092-1.375v1.087H66.799v.53h15.74z"/>
+    <text xml:space="preserve" x="-776.876" y="-366.006" fill="#fff" stroke="#000" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" style="Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-776.876" y="-366.006" style="Monospace, Bold&quot;;text-align:center;">Image Tokens (2D)</tspan></text>
+    <text xml:space="preserve" x="-704.272" y="-366.006" fill="#fff" stroke="#000" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" style="Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-704.272" y="-366.006" style="Monospace, Bold&quot;;text-align:center;">Image Tokens (1D)</tspan></text>
+    <g stroke-opacity=".798" stroke-width=".529">
+      <path fill="#b3b3b3" stroke="#000" d="M2.563 7.31h15.875v15.874H2.563z"/>
+      <text xml:space="preserve" x="-795.315" y="-357.209" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-795.315" y="-357.209">A</tspan><tspan x="-795.315" y="-351.036">(0,0)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M21.084 7.31H36.96v15.874H21.084z"/>
+      <text xml:space="preserve" x="-776.795" y="-357.207" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-776.795" y="-357.207">B</tspan><tspan x="-776.795" y="-351.033">(1,0)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M39.605 7.31H55.48v15.874H39.605z"/>
+      <text xml:space="preserve" x="-758.274" y="-357.177" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-758.274" y="-357.177">C</tspan><tspan x="-758.274" y="-351.003">(2,0)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M2.563 25.83h15.875v15.875H2.563z"/>
+      <text xml:space="preserve" x="-795.315" y="-338.689" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-795.315" y="-338.689">D</tspan><tspan x="-795.315" y="-332.515">(0,1)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M21.084 25.83H36.96v15.875H21.084z"/>
+      <text xml:space="preserve" x="-776.795" y="-338.689" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-776.795" y="-338.689">E</tspan><tspan x="-776.795" y="-332.515">(1,1)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M39.605 25.83H55.48v15.875H39.605z"/>
+      <text xml:space="preserve" x="-758.274" y="-338.689" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(805.816 370.823)"><tspan x="-758.274" y="-338.689">F</tspan><tspan x="-758.274" y="-332.515">(2,1)</tspan></text>
+    </g>
+    <g stroke-opacity=".798" stroke-width=".529">
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 93.298h15.875v15.875H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-337.366" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-337.366">F</tspan><tspan x="-689.482" y="-331.192">(2,1)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 76.101h15.875v15.875H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-354.564" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-354.564">E</tspan><tspan x="-689.482" y="-348.39">(1,1)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 58.903h15.875v15.875H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-371.762" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-371.762">D</tspan><tspan x="-689.482" y="-365.588">(0,1)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 41.705h15.875V57.58H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-388.927" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-388.927">C</tspan><tspan x="-689.482" y="-382.753">(2,0)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 24.507h15.875v15.875H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-406.155" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-406.155">B</tspan><tspan x="-689.482" y="-399.981">(1,0)</tspan></text>
+      <path fill="#b3b3b3" stroke="#000" d="M93.315 7.31h15.875v15.874H93.315z"/>
+      <text xml:space="preserve" x="-689.482" y="-423.355" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(790.735 436.97)"><tspan x="-689.482" y="-423.355">A</tspan><tspan x="-689.482" y="-417.182">(0,0)</tspan></text>
+    </g>
+  </g>
+</svg>

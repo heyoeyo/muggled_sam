@@ -20,13 +20,13 @@
     <text xml:space="preserve" x="-1108.388" y="-186.484" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1108.388" y="-186.484" style="text-align:center;">Window 1</tspan></text>
     <path fill="#39bf3f" stroke="#000" stroke-width=".794" d="M-1117.395-185.101h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
     <path fill="#bf39bf" stroke="#000" stroke-width=".794" d="M-1117.395-174.518h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
-    <path stroke="#000" stroke-width=".794" d="M-1106.812-174.518h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#222" stroke="#000" stroke-width=".794" d="M-1106.812-174.518h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
     <text xml:space="preserve" x="-1108.373" y="-154.734" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1108.373" y="-154.734" style="text-align:center;">Window 3</tspan></text>
     <path fill="#c2d1d9" stroke="#000" stroke-width=".794" d="M-1117.395-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
-    <path stroke="#000" stroke-width=".794" d="M-1106.812-142.768h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144zm-10.583 10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#222" stroke="#000" stroke-width=".794" d="M-1106.812-142.768h7.144v7.144h-7.144zm0-10.583h7.144v7.144h-7.144zm-10.583 10.583h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
     <text xml:space="preserve" x="-1140.102" y="-154.734" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" style="text-align:center;" text-anchor="middle" transform="translate(1212.66 190.097)"><tspan x="-1140.102" y="-154.734" style="text-align:center;">Window 2</tspan></text>
     <path fill="#bfac98" stroke="#000" stroke-width=".794" d="M-1149.145-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
     <path fill="#778c7a" stroke="#000" stroke-width=".794" d="M-1138.562-153.351h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
-    <path stroke="#000" stroke-width=".794" d="M-1138.562-142.768h7.144v7.144h-7.144zm-10.583 0h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
+    <path fill="#222" stroke="#000" stroke-width=".794" d="M-1138.562-142.768h7.144v7.144h-7.144zm-10.583 0h7.144v7.144h-7.144z" style="" transform="translate(1212.66 190.097)"/>
   </g>
 </svg>

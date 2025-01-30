@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="583.147" height="191.917" viewBox="0 0 154.291 50.778">
+  <g stroke-linecap="square">
+    <text xml:space="preserve" x="-311.217" y="-572.92" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-311.217" y="-572.92" style="text-align:center;">Duplicated</tspan><tspan x="-311.217" y="-567.628" style="text-align:center;">(depth)</tspan></text>
+    <text xml:space="preserve" x="-354.943" y="-586.969" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-354.943" y="-586.969" style="text-align:center;">image tokens</tspan></text>
+    <text xml:space="preserve" x="-429.046" y="-586.969" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-427.772" y="-586.969" style="text-align:center;">∆y encodings </tspan></text>
+    <text xml:space="preserve" x="-391.999" y="-563.417" fill="#fff" stroke="#000" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-391.999" y="-563.417" style="text-align:center;">dot</tspan><tspan x="-391.999" y="-558.126" style="text-align:center;">product</tspan></text>
+    <g fill="#b3b3b3" stroke="#000" stroke-linejoin="round" stroke-width=".529">
+      <path d="m85.32 44.188.07-11.096 6.882-6.068v11.111z"/>
+      <path d="M85.32 44.188 74.348 41.03V29.923l11.042 3.169zm.07-11.096-11.042-3.17 7.035-6.024 10.89 3.126zm7-6.031.07-11.096 6.882-6.068V21.01z"/>
+      <path d="m92.39 27.061-10.972-3.156V12.796l11.042 3.169z"/>
+      <path d="m92.46 15.965-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+      <path d="m85.39 33.092.07-11.096 6.882-6.068v11.111z"/>
+      <path d="m85.39 33.092-10.972-3.157V18.827l11.042 3.169z"/>
+      <path d="m85.46 21.996-11.042-3.17 7.034-6.024 10.89 3.126zm28.827 22.465.07-11.096 6.882-6.068v11.112z"/>
+      <path d="m114.287 44.461-10.972-3.157V30.196l11.042 3.169z"/>
+      <path d="m114.357 33.365-11.042-3.169 7.035-6.024 10.89 3.125zM96.328 47.35l.07-11.096 6.882-6.067v11.111zm0 0-10.973-3.156V33.086l11.043 3.168z"/>
+      <path d="m96.398 36.254-11.043-3.168 7.035-6.025 10.89 3.126zm10.937 14.259.07-11.096 6.882-6.068v11.112z"/>
+      <path d="m107.335 50.513-10.972-3.156V36.248l11.042 3.17z"/>
+      <path d="m107.405 39.417-11.042-3.169 7.035-6.024 10.89 3.125zm-4.007-9.193.07-11.096 6.882-6.068v11.112zm0 0-10.973-3.157V15.96l11.042 3.169zm.069-11.096-11.042-3.17 7.035-6.024 10.89 3.126z"/>
+      <path d="m114.287 33.35.07-11.097 6.882-6.068v11.112z"/>
+      <path d="m114.287 33.35-10.972-3.157V19.084l11.042 3.17z"/>
+      <path d="m114.357 22.253-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+      <path d="m96.398 36.254.07-11.096 6.882-6.068v11.112zm0 0-10.973-3.156V21.989l11.042 3.17z"/>
+      <path d="M96.467 25.158 85.425 21.99l7.035-6.024 10.89 3.125zm10.938 14.259.07-11.096 6.882-6.068v11.112z"/>
+      <path d="m107.405 39.417-10.972-3.156V25.152l11.042 3.17z"/>
+      <path d="m107.475 28.321-11.042-3.169 7.034-6.024 10.89 3.125z"/>
+    </g>
+    <text xml:space="preserve" x="-350.779" y="-545.127" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-350.779" y="-545.127">F</tspan></text>
+    <text xml:space="preserve" x="-361.79" y="-548.331" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-361.79" y="-548.331">E</tspan></text>
+    <text xml:space="preserve" x="-373.052" y="-551.535" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-373.052" y="-551.535">D</tspan></text>
+    <text xml:space="preserve" x="-350.706" y="-556.538" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-350.706" y="-556.538">C</tspan></text>
+    <text xml:space="preserve" x="-361.812" y="-559.406" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-361.812" y="-559.406">B</tspan></text>
+    <text xml:space="preserve" x="-372.998" y="-562.979" stroke-opacity=".798" stroke-width=".529" font-family="Monospace-Bold,Monospace" font-size="4.939" font-weight="700" paint-order="markers stroke fill" style="Monospace-Bold, Monospace, Bold&quot;;text-align:center;" text-anchor="middle" transform="translate(452.763 590.582)"><tspan x="-372.998" y="-562.979">A</tspan></text>
+    <g stroke="#000" stroke-linejoin="round" stroke-width=".529">
+      <g fill="#5aa02c">
+        <path d="m11.237 44.188.07-11.096 6.882-6.068v11.111z"/>
+        <path d="M11.237 44.188.265 41.03V29.923l11.042 3.169zm.07-11.096L.265 29.922l7.034-6.024 10.89 3.126z"/>
+      </g>
+      <g fill="#8d5fd3">
+        <path d="m18.307 27.061.07-11.096 6.882-6.068V21.01z"/>
+        <path d="M18.307 27.061 7.334 23.905V12.796l11.043 3.169z"/>
+        <path d="M18.377 15.965 7.334 12.796l7.035-6.024 10.89 3.125z"/>
+      </g>
+      <g fill="#c83737">
+        <path d="m11.307 33.092.07-11.096 6.882-6.068v11.111zm0 0L.334 29.935V18.827l11.043 3.169z"/>
+        <path d="M11.377 21.996.334 18.826l7.035-6.024 10.89 3.126z"/>
+      </g>
+      <g fill="#c83737">
+        <path d="m40.204 44.461.07-11.096 6.882-6.068v11.112z"/>
+        <path d="m40.204 44.461-10.973-3.157V30.196l11.043 3.169z"/>
+        <path d="M40.274 33.365 29.23 30.196l7.035-6.024 10.89 3.125z"/>
+      </g>
+      <g fill="#5aa02c">
+        <path d="m22.245 47.35.07-11.096 6.882-6.067v11.111zm0 0-10.973-3.156V33.086l11.042 3.168z"/>
+        <path d="m22.314 36.254-11.042-3.168 7.035-6.025 10.89 3.126z"/>
+      </g>
+      <g fill="#5aa02c">
+        <path d="m33.252 50.513.07-11.096 6.882-6.068v11.112z"/>
+        <path d="m33.252 50.513-10.973-3.156V36.248l11.043 3.17z"/>
+        <path d="m33.322 39.417-11.043-3.169 7.035-6.024 10.89 3.125z"/>
+      </g>
+      <g fill="#8d5fd3">
+        <path d="m29.314 30.224.07-11.096 6.882-6.068v11.112z"/>
+        <path d="m29.314 30.224-10.972-3.157V15.96l11.042 3.169zm.07-11.096-11.042-3.17 7.035-6.024 10.89 3.126z"/>
+      </g>
+      <g fill="#8d5fd3">
+        <path d="m40.204 33.35.07-11.097 6.882-6.068v11.112z"/>
+        <path d="m40.204 33.35-10.973-3.157V19.084l11.043 3.17z"/>
+        <path d="M40.274 22.253 29.23 19.084l7.035-6.024 10.89 3.125z"/>
+      </g>
+      <g fill="#c83737">
+        <path d="m22.314 36.254.07-11.096 6.882-6.068v11.112z"/>
+        <path d="m22.314 36.254-10.972-3.156V21.989l11.042 3.17z"/>
+        <path d="M22.384 25.158 11.342 21.99l7.035-6.024 10.89 3.125z"/>
+      </g>
+      <g fill="#c83737">
+        <path d="m33.322 39.417.07-11.096 6.882-6.068v11.112zm0 0-10.973-3.156V25.152l11.042 3.17z"/>
+        <path d="M33.391 28.321 22.35 25.152l7.035-6.024 10.89 3.125z"/>
+      </g>
+    </g>
+    <path fill="#fff" stroke="#000" stroke-width=".529" d="m127.128 20.7.709-2.402-2.485.302.702.83-12.823 10.853.342.404 12.823-10.853zm-75.473.98v1.133l-2.092-1.376 2.092-1.374v1.087h18.194v-1.087l2.092 1.374-2.092 1.376v-1.134z" paint-order="markers stroke fill"/>
+  </g>
+</svg>

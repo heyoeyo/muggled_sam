@@ -121,21 +121,119 @@ $$\text{where } E_{ij} = Q_i \times R_{p(i)p(j)} $$
 
 $$\text{and } R_{p(i)p(j)} = R^h_{h(i)h(j)} + R^w_{w(i)w(j)} $$
 
-The Q, K, V and d<sub>k</sub> terms are all the same as in 'regular' attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)"), with the unique modification being the additive position encoding term they call: E. To be clear, this additive term is just a square 2D matrix, with the number of rows and columns equaling the total number of image tokens. The word 'decomposed' refers to the fact that there are not unique (learned) encodings for every possible (∆x, ∆y) relative positioning. Instead, encodings are only learned for all possible ∆x values and, separately, all ∆y values. Then, for any given (∆x, ∆y) position, the encoding is produced by adding the separate ∆x and ∆y learned encodings.
+The Q, K, V and d<sub>k</sub> terms are all the same as in 'regular' attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)"), with the unique modification being the additive position encoding term they call: E. To be clear, this additive term is just a square 2D matrix, with the number of rows and columns equaling the total number of image tokens. The word 'decomposed' refers to the fact that there are not uniquely learned encodings for every possible (∆x, ∆y) relative positioning. Instead, encodings are only learned for all possible ∆x values and, separately, all ∆y values. Then, for any given (∆x, ∆y) position, the encoding is produced by adding the separate ∆x and ∆y learned encodings.
 
 <p align="center">
-  <img src=".readme_assets/example_max_delta_xy.svg" alt="">
+  <img src=".readme_assets/example_max_delta_xy.svg" alt="Simple example showing range of delta x and delta y values, for a sets of image tokens with a grid width of 3 and height of 2. The delta x values range between +2 and -2, while delta y values range between +1 and -1.">
 </p>
 
-As an example, consider a set of image tokens with a grid height of 2: then the furthest any pair of tokens could be away from each other is +/- 1 cell in the height (or y) direction. If the grid width is 3, the furthest distance is +/- 2 cells in the width (or x) direction. All other distances are also possible, so for example in the height direction two cells could be -1, 0 or + 1 cells apart, in width they could be -2, -1, 0, +1 or +2. Each of these values corresponds to a unique 'relative position' for pairs of tokens.
+Relative position can sometimes be a confusing idea, but it simply refers to row or column spacing between one token and another in the 2D grid of tokens. Consider a set of image tokens with a grid height of 2: then the furthest any pair of tokens could be away from each other is +/- 1 cell in the height (or y) direction. If the grid width is 3, the furthest distance is +/- 2 cells in the width (or x) direction. All other distances are also possible, so for example in the height direction two cells could be -1, 0 or + 1 cells apart, in width they could be -2, -1, 0, +1 or +2. Each of these values corresponds to a unique 'relative position' for pairs of tokens. The positive and negative values account for fact that one token is always thought of as the 'origin', so that the other token could to the left (-) or right (+) or above/below.
 
 ### Example
 
-(wip)
+The table below shows hard-coded (as opposed to learned) 'position encoding' values that will be used for this example. This table includes values for each of the possible ∆x and ∆y offsets of a 2x3 set of image tokens:
+
+<p align="center">
+  <img src=".readme_assets/example_deltaxy_encodings_table.svg" alt="">
+</p>
+
+In practice, the position encodings are not single integer values but instead each encoding is an entire vector of values (e.g. an embedding). Integers are used here to make it easier to see how the final encodings are constructed. Also note that there are no encodings for ∆y values of +/- 2, since these offsets aren't possible if we assume a grid height of only 2.
+
+From these two listings, we can construct a table (the **pair encodings matrix**) of all possible ∆x and ∆y combinations by adding (see the R<sub>p(i)p(j)</sub> equation above) the corresponding encoding from the two listings above:
+
+<p align="center">
+  <img src=".readme_assets/relpos_pair_encodings_matrix.svg" alt="">
+</p>
+
+For example, the second row, fourth column entry (48) would be the position encoding for any pair of tokens which have a relative x distance of +1 (corresponding to a query token being one cell to the right of a key token) and a relative y distance of 0 (query and key occupying the same row). Notice that there is a clear 'counting pattern' occuring both left-to-right and top-to-bottom in this table, due to the patterns in the individual ∆x and ∆y encoding values from the previous table. This is a consequence of this 'decomposed' approach to the position encodings. To be clear, this matrix is _not the same_ as the E<sub>ij</sub> matrix from the equations above (but is required to produce it).
+
+So far, so good, however what makes these decomposed position encodings especially complicated is both the multiplication of the encodings by the query tokens (see the E<sub>ij</sub> equation above), as well as the arrangement of the encodings needed to match the attention matrix layout.
+
+<p align="center">
+  <img src=".readme_assets/unravel_2d_to_1d_example.svg" alt="">
+</p>
+
+To understand the attention matrix layout, it's important to realize that the rows and columns correspond to a 1D 'flattening' of the 2D arrangement of image tokens (i.e. from the 'rows-of-tokens' format). The image above indicates this flattening process, along with showing how the (x,y) coordinates are distributed in the resulting 1D arrangement. The (∆x, ∆y) values associated with each cell can be obtained by subtracting the x & y coordinates of a given row by the x & y coordinates of a given column:
+
+<p align="center">
+  <img src=".readme_assets/attn_matrix_dxdy_layout.webp" alt="">
+</p>
+
+Note that the listings along the top row/left column corresponds to the 'flattened' image token sequence. Each cell holds the ∆x and ∆y positions of each query token (rows) compared to every key token (columns).
+
+Each of the (∆x, ∆y) pairs in this matrix is used as an _index_ into the **pair encodings matrix** we computed earlier. For example, the relative position of query token B to key token D is (∆x = 1, ∆y = -1) according to the matrix above. Looking this up in our ∆x/∆y table from earlier, we would say that the position encoding for this cell should be the value: 47, and this can of course be repeated for all other cells. Finally, to complete the construction of the 'decomposed relative position encodings', the query tokens must be multiplied into these values according to the equation from MViT2, which says that the query token associated with each row must be multiplied into the value we get from the pair encodings matrix, giving us something like:
+
+<p align="center">
+  <img src=".readme_assets/full_decomposed_position_encoding_example.webp" alt="">
+</p>
+
+Notice that on each row, the same query token (for example, query token A, written as Q<sub>A</sub>) is multiplied into each of the values we get from the pair encodings matrix. In practice, the multiplication is actually a _dot product_ between the query token and the position encoding. The result is that each cell contains a single scalar value. And at last, the position encoding is complete!
+
+#### Efficient implementation
+
+Surprisingly, there's even more to the decomposed position encodings! The approach described above would be too memory hungry to implement in practice, due to maintaining multiple large matrices (each encoding is a large vector in practice!), so the actual implementation is quite a bit more [cryptic](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L349-L359) in order to improve efficiency.
+
+The insight for reducing memory usage comes from recognizing that many of the position encodings are repeated, and therefore don't need to be stored multiple times. For example, looking at the query-key (∆x, ∆y) matrix from earlier, we can see that in the top-most row, the ∆y value only ever takes on a value of 0 or -1. Similarly, along the left-most column, the ∆x values of 0, 1 and 2 are repeated twice. In fact, this pattern of 3 ∆x values repeating twice and 2 ∆y values repeating three times holds for any row or column! We originally computed the results following something like:
+
+$$ Q_i * (\Delta x + \Delta y)$$
+
+Where we compute all (36) of the ∆x + ∆y terms first (and stored them) and then multiplied in the Q<sub>i</sub> values. Instead, we could imagine the operation as:
+
+$$ (Q_i * \Delta x) + (Q_i * \Delta y)$$
+
+Though this produces the same result, it can be done with far less storage. For example, we can see that for any given Q<sub>i</sub> there are only 3 ∆x values and only 2 ∆y values that need to be considered. Since the dot product gives a single number as a result, it's also far more memory efficient way to build up to the final output. The way this is done is extremely unintuitive however! It begins by forming two matrices out of all possible ∆x and ∆y, which can be done using a similar 'subtract the column indices from the row indices' trick from earlier:
+
+<p align="center">
+  <img src=".readme_assets/deltas_matrices.svg" alt="">
+</p>
+
+Then each of these needs to be multiplied (via dot product) with the appropriate Q<sub>i</sub> tokens. For example, using the table we already constructed earlier, we saw that Q<sub>A</sub> needs to be multipled by the ∆x encodings of 0, -1, and -2 and the 0, -1 ∆y encodings. The Q<sub>B</sub> token needs to be multiplied by the 1, 0 and -1 ∆x encodings and the 0, -1 ∆y encodings and so on. Figuring out which ∆x/∆y values pair with which tokens and efficiently performing the dot products is tricky without constructing the full table like we did earlier. However, it's possible to figure out by imagining the operation in 3D:
+
+<p align="center">
+  <img src=".readme_assets/efficient_dx_3dtable.svg" alt="">
+</p>
+
+<p align="center">
+  <img src=".readme_assets/efficient_dy_3dtable.svg" alt="">
+</p>
+
+The diagrams above show the ∆x and ∆y tables, where the tables have been duplicated along one axis to create a 3D structure. The orientation of these shapes (relative to the original tables) may be counter-intuitive (especially the ∆x structure), so color coding has been added to help make sense of things. The shapes of the original tables as well as the 3D shapes is shown, where the dimensions: H* and W* are used to indicate duplicated dimensions. The shape ordering, in 3D, is meant to be interpreted as: (height, width, depth).
+
+<p align="center">
+  <img src=".readme_assets/dx_dotprod_image_tokens.svg" alt="">
+</p>
+
+<p align="center">
+  <img src=".readme_assets/dy_dotprod_image_tokens.svg" alt="">
+</p>
+
+The image tokens are duplicated in the 'depth' dimension to match these 3D structures and a dot product is imagined being performed between the image tokens and ∆x or ∆y blocks in matching positions. In reality, the values don't actually need to be duplicated, instead the operation can be performed efficiently using an [einsum](https://pytorch.org/docs/stable/generated/torch.einsum.html) operation, the idea of duplicating is just here to help with intuition.
+
+Since we don't actually need the duplication, this approach only requires forming an HxH (ex. 2x2 in this example) grid of ∆y encodings and a WxW (ex. 3x3) grid of ∆x encodings. In total, we need to store (H<sup>2</sup> + W<sup>2</sup>) embeddings in this approach compared to  (H*W)<sup>2</sup> in the (simpler to explain) implementation earlier. So 13 vs. 36 in this example, though this is an especially significant reduction as the grid size is increased!
+
+After performing these dot products, we end up with results shaped like: HxWxW and HxWxH (for ∆x and ∆y respectively) of scalar values. These results still need to be added together to form the final 6x6 attention-shaped grid that we ended with in the simpler explanation. A similar 3D interpretation can be used to understand how this addition step works, though it's more mind-boggling than before. To get the 6x6 shaping, we first start by 'flattening' the 3D structures into a rows-of-tokens format, but only for the height and width dimensions. Flattening results in 2D arrangements, but we keep the data in 3D since it helps imagine another duplication step:
+
+<p align="center">
+  <img src=".readme_assets/dx_flatten_3dtable.svg" alt="">
+</p>
+
+<p align="center">
+  <img src=".readme_assets/dy_flatten_3dtable.svg" alt="">
+</p>
+
+These structures are now thought of as having an Nx1xW or NxHx1 shaping (6x1x3 and 6x2x1 in this case). Next, we again imagine duplicating these structures along one axis so that they both have a NxHxW shape. As before, the duplication isn't literally needed, though we're dealing with scalar values now so storage isn't much of a concern anyways:
+
+<p align="center">
+  <img src=".readme_assets/add_3d_dxdy.svg" alt="">
+</p>
+
+Since both structures have matching shapes, they can be pointwise added together. And lastly, the now combined NxHxW (here: 6x2x3) result can _again_ be flattened, this time along the trailing HxW dimensions, so that we get our final 6x6 position encoding. This will produce a result exactly matching the 'inefficient' approach we described earlier, but with far less memory use!
+
+It seems fair to say that this is an overcomplicated approach to position encodings and may partly explain why [SAMv2](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v2_sam) switched to a different image encoder (which claims to work '[without the bells and whistles](https://github.com/facebookresearch/hiera)').
 
 #### A slightly different equation
 
-Finally, it's worth noting that in the [SAMv1 implementation](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L231-L234) (and even the [MViT2 code](https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py#L281-L291)!) the equation used for attention does **not** scale the position encoding (E) term by d<sub>k</sub> as suggested by the equation presented in the MViT2 paper. Instead, the position encodings are added _after_ the Q, K multiplication and scaling. To avoid confusion with the original equation, in this repo, the equation is therefore given and computing using:
+Finally, it's worth noting that in the [SAMv1 implementation](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/image_encoder.py#L231-L234) (and even the [MViT2 code](https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py#L281-L291)!) the equation used for attention does **not** scale the position encoding (E) term by d<sub>k</sub> as suggested by the equation presented in the MViT2 paper. Instead, the position encodings are added _after_ the Q, K multiplication and scaling. To avoid confusion with the original equation, in this repo, the equation is therefore given and computed using:
 
 $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + P \right ) \times V$$
 
@@ -183,4 +281,3 @@ It's important to note that the layernorm is applied to all tokens, so each toke
 This module is provided purely for readability in the codebase. It's simply a regular (built-in) [Conv2D layer](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html), with the kernel size and stride hard-coded to a value of 1. The reason for giving this a distinct name is that 1x1 convolutions don't really _do_ convolution. They're equivalent to linear layers acting on the channel values of the tokens, and so don't perform the spatial mixing of information implied by seeing a 2D convolution layer in a model.
 
 So why not just use a linear layer? A 1x1 convolution layer acts on image-like inputs with 'channels-first' shapes, that is: BxCxHxW. While a linear layer would require a 'channels-last' ordering: BxHxWxC. In cases where the input already has a channels-first shape, it's convenient to use a 1x1 convolution instead of re-arranging the dimensions to work with a linear layer.
-

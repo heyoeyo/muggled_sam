@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="494.271" height="199.094" viewBox="0 0 130.776 52.677">
+  <text xml:space="preserve" x="-656.529" y="-623.014" fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(774.56 630.727)"><tspan x="-656.529" y="-623.014" style="text-align:center;">Duplicated</tspan><tspan x="-656.529" y="-617.723" style="text-align:center;">(width)</tspan></text>
+  <g stroke-width=".949" paint-order="markers stroke fill">
+    <path fill="#c83737" d="M-722.755-597.041h11.906v9.26h-11.906zm11.906 9.26h11.906v9.26h-11.906z" style="" transform="matrix(1.111 0 0 1 812.322 620.109)"/>
+    <path fill="#5aa02c" d="M-722.755-587.781h11.906v9.26h-11.906z" style="" transform="matrix(1.111 0 0 1 812.322 620.109)"/>
+    <path fill="#8d5fd3" d="M-710.849-597.041h11.906v9.26h-11.906z" style="" transform="matrix(1.111 0 0 1 812.322 620.109)"/>
+  </g>
+  <path fill="#333" d="M9.26 13.807h26.458v9.26H9.26zm0-9.26h26.458v9.26H9.26zM0 23.068h9.26v18.52H0z"/>
+  <text xml:space="preserve" x="-681.971" y="-633.272" fill="#fff" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-681.971" y="-633.272" style="Monospace, Bold&quot;;text-align:start;">y index</tspan></text>
+  <path fill="#e0e0e0" d="M9.504 13.807h26.458v.265H9.504zM0 23.068h35.72v.265H0zm0 9.26h35.72v.265H0zm0 9.261h35.72v.265H0z"/>
+  <text x="-685.504" y="-615.428" fill="#fff" stroke-width=".265" font-family="Monospace-Regular, Monospace" font-size="3.528" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-688.58" y="-615.428" style="text-align:center">0</tspan></text>
+  <text x="-685.614" y="-606.168" fill="#fff" stroke-width=".265" font-family="Monospace-Regular, Monospace" font-size="3.528" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-688.672" y="-606.168" style="text-align:center">1</tspan></text>
+  <text x="-672.442" y="-615.428" fill="#fff" stroke-width=".265" font-family="Monospace-Regular, Monospace" font-size="3.528" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-675.538" y="-615.428" style="text-align:center">-1</tspan></text>
+  <text x="-672.224" y="-606.168" fill="#fff" stroke-width=".265" font-family="Monospace-Regular, Monospace" font-size="3.528" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-675.351" y="-606.168" style="text-align:center">0</tspan></text>
+  <path fill="#e0e0e0" d="M22.49 13.807h.264v27.78h-.265zm13.228-9.26h.265v37.306h-.265z"/>
+  <text x="-686.776" y="-624.14" fill="#fff" stroke-width=".265" font-family="Monospace-Bold, Monospace" font-size="4.939" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-688.58" y="-624.14" font-weight="700" style="text-align:center">0</tspan></text>
+  <text x="-673.59" y="-624.172" fill="#fff" stroke-width=".265" font-family="Monospace-Bold, Monospace" font-size="4.939" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-675.46" y="-624.172" font-weight="700" style="text-align:center">1</tspan></text>
+  <text x="-697.956" y="-614.912" fill="#fff" stroke-width=".265" font-family="Monospace-Bold, Monospace" font-size="4.939" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-699.825" y="-614.912" font-weight="700" style="text-align:center">0</tspan></text>
+  <text x="-699.041" y="-605.654" fill="#fff" stroke-width=".265" font-family="Monospace-Bold, Monospace" font-size="4.939" style="text-align:center" text-anchor="middle" transform="translate(704.455 644.41)"><tspan x="-699.933" y="-605.654" font-weight="700" style="text-align:center">1</tspan></text>
+  <path fill="#e0e0e0" d="M9.26 4.547h.265v37.042H9.26zM0 23.068h.265v18.52H0z"/>
+  <path fill="#e0e0e0" d="M9.504 4.547h26.458v.265H9.504z"/>
+  <g stroke="#000" stroke-linecap="square" stroke-width=".529">
+    <g fill="#5aa02c" stroke-linejoin="round">
+      <path d="m65.907 40.402.07-11.096 6.881-6.068V34.35zm0 0-10.973-3.156V26.137l11.042 3.17z"/>
+      <path d="m65.976 29.306-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+    </g>
+    <g fill="#8d5fd3" stroke-linejoin="round">
+      <path d="m72.976 23.276.07-11.096 6.882-6.068v11.111z"/>
+      <path d="m72.976 23.276-10.972-3.157V9.011l11.042 3.169zm.07-11.096L62.004 9.01l7.035-6.024 10.89 3.126z"/>
+    </g>
+    <g fill="#c83737" stroke-linejoin="round">
+      <path d="m65.976 29.306.07-11.096 6.882-6.068v11.112z"/>
+      <path d="M65.976 29.306 55.004 26.15V15.04l11.042 3.17z"/>
+      <path d="m66.046 18.21-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+    </g>
+    <g fill="#c83737" stroke-linejoin="round">
+      <path d="m94.873 40.675.07-11.096 6.882-6.068v11.112z"/>
+      <path d="M94.873 40.675 83.901 37.52V26.41l11.042 3.17zm.07-11.095-11.042-3.17 7.035-6.024 10.89 3.125z"/>
+    </g>
+    <g fill="#5aa02c" stroke-linejoin="round">
+      <path d="m76.914 43.565.07-11.096 6.882-6.068v11.112z"/>
+      <path d="m76.914 43.565-10.973-3.157V29.3l11.043 3.169z"/>
+      <path d="M76.984 32.469 65.94 29.3l7.035-6.024 10.89 3.125z"/>
+    </g>
+    <g fill="#5aa02c" stroke-linejoin="round">
+      <path d="m87.921 46.728.07-11.096 6.882-6.068v11.111z"/>
+      <path d="M87.921 46.728 76.95 43.57V32.463l11.042 3.169z"/>
+      <path d="m87.991 35.632-11.042-3.17 7.035-6.024 10.89 3.126z"/>
+    </g>
+    <g fill="#8d5fd3" stroke-linejoin="round">
+      <path d="m83.984 26.438.07-11.096 6.882-6.068v11.112zm0 0L73.01 23.282V12.173l11.042 3.17z"/>
+      <path d="m84.053 15.342-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+    </g>
+    <g fill="#8d5fd3" stroke-linejoin="round">
+      <path d="m94.873 29.564.07-11.096 6.882-6.068v11.11z"/>
+      <path d="m94.873 29.564-10.972-3.157V15.3l11.042 3.169zm.07-11.096-11.042-3.17 7.035-6.024 10.89 3.126z"/>
+    </g>
+    <path fill="#c83737" stroke-linejoin="round" d="m76.984 32.469.07-11.096 6.882-6.068v11.112zm0 0L66.01 29.312V18.204l11.042 3.169zm.069-11.096-11.042-3.169 7.035-6.024 10.89 3.125z"/>
+    <g fill="#c83737" stroke-linejoin="round">
+      <path d="m87.991 35.632.07-11.096 6.882-6.068v11.111z"/>
+      <path d="M87.991 35.632 77.02 32.475V21.367l11.042 3.169z"/>
+      <path d="m88.06 24.536-11.041-3.17 7.034-6.024 10.89 3.126z"/>
+    </g>
+    <path fill="#fff" d="m101.345 10.39 2.384-.765-1.648-1.885-.29 1.048L71.327.326l-.142.51 30.463 8.462z" paint-order="markers stroke fill"/>
+  </g>
+  <text xml:space="preserve" x="-754.262" y="-584.599" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle" transform="translate(774.56 630.727)"><tspan x="-754.262" y="-584.599" style="text-align:center">shape: (H, H)</tspan></text>
+  <text xml:space="preserve" x="-682.066" y="-578.931" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle" transform="translate(774.56 630.727)"><tspan x="-682.066" y="-578.931" style="text-align:center">shape: (H, W*, H)</tspan></text>
+</svg>
