@@ -122,9 +122,9 @@ class CrossAttentionNormed(nn.Module):
         self.norm = nn.LayerNorm(features_per_token)
 
     def forward(self, a_tokens, a_posenc, b_tokens, b_posenc):
-        a_embed = a_tokens + a_posenc
-        b_embed = b_tokens + b_posenc
-        attn_result = self.attn(a_embed, b_embed, b_tokens)
+        query_tokens = a_tokens + a_posenc
+        key_tokens = b_tokens + b_posenc
+        attn_result = self.attn(query_tokens, key_tokens, b_tokens)
         return self.norm(a_tokens + attn_result)
 
     # .................................................................................................................
@@ -144,8 +144,8 @@ class SelfAttentionNormed(nn.Module):
         self.norm = nn.LayerNorm(features_per_token)
 
     def forward(self, a_tokens, a_posenc):
-        a_embed = a_tokens + a_posenc
-        attn_result = self.attn(a_embed, a_embed, a_tokens)
+        qk_tokens = a_tokens + a_posenc
+        attn_result = self.attn(qk_tokens, qk_tokens, a_tokens)
         return self.norm(a_tokens + attn_result)
 
     # .................................................................................................................

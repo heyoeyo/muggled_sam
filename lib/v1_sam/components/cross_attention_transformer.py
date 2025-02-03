@@ -43,7 +43,9 @@ class CrossAttentionTransformer(nn.Module):
         self.layers = nn.ModuleList()
         for idx in range(depth):
             skip_self_attn_posenc = idx == 0
-            attn_block = CrossAttentionBlock(num_heads, features_per_token, downsample_features, skip_self_attn_posenc)
+            attn_block = PromptToImageAttentionBlock(
+                num_heads, features_per_token, downsample_features, skip_self_attn_posenc
+            )
             self.layers.append(attn_block)
 
         # Create final output attention layer
@@ -90,7 +92,7 @@ class CrossAttentionTransformer(nn.Module):
     # .................................................................................................................
 
 
-class CrossAttentionBlock(nn.Module):
+class PromptToImageAttentionBlock(nn.Module):
     """
     Simplified implementation of the 'TwoWayAttentionBlock' model/component described in:
         "Segment Anything"
@@ -138,7 +140,9 @@ class CrossAttentionBlock(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, prompt_tokens, prompt_posenc, image_tokens, image_posenc):
+    def forward(
+        self, prompt_tokens: Tensor, prompt_posenc: Tensor, image_tokens: Tensor, image_posenc: Tensor
+    ) -> tuple[Tensor, Tensor]:
         """
         Encodes prompt & image tokens using cross-attention
         Returns:
@@ -181,7 +185,7 @@ class MLP2LayersNormed(nn.Module):
         )
         self.norm = nn.LayerNorm(num_features)
 
-    def forward(self, tokens):
+    def forward(self, tokens: Tensor) -> Tensor:
         mlp_out = self.mlp(tokens)
         return self.norm(tokens + mlp_out)
 

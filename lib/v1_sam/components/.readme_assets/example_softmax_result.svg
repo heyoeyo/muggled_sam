@@ -17,6 +17,7 @@
       fill: white;
       stroke: black;
       stroke-width: 1px;
+      stroke-linejoin: bevel;
       paint-order: stroke;
       white-space:pre;
       text-anchor: middle;

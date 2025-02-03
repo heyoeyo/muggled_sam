@@ -28,7 +28,7 @@ In practice, multiple instances of Q, K and V are generated from the input image
 
 #### What is 'attention'?
 
-While this repo isn't trying to explain every operation from scratch, the attention calculation is a prominent part of transformer models and can seem a bit mysterious, so it's worth discussing briefly here. The explanation here will be very simple, for more details consider checking out the [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) or the [Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) blog posts.
+While this repo isn't trying to explain every operation from scratch, the attention calculation is a prominent part of transformer models and can seem a bit mysterious, so it's worth discussing briefly here. The explanation here will be very simple, and will only cover the special (but common) case of 'self-attention'. For more details consider checking out the [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) or the [Annotated Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html) blog posts.
 
 As mentioned above, 'attention' really just refers to an equation. The most basic form of this equation, without fancy scaling or position encodings, is something like:
 
@@ -82,7 +82,7 @@ Windowing is an optimization technique used to reduce the amount of computation 
   <img src=".readme_assets/windowing_example.svg" alt="">
 </p>
 
-There are many ways to do this, but the most common approach is to break the image tokens apart into equally sized regions, called windows, then compute attention on each of these as stand-alone regions. The results on each region are then stitched back together into the original input shape to form the final output. It's possible (and even quite likely due to the model configuration) that the input image cannot be broken into equally sized regions, in these cases the tokens are zero-padded (on the bottom and/or right) in order to get a shape which divides evenly into the chosen window sizing. For exanple, in the image above, the input grid is 3x3 and the window size is 2. The input must be padded on both the right and bottom edges to make it 4x4, so that it can be broken into 4 windows, each 2x2 in size.
+There are many ways to do this, but the most common approach is to break the image tokens apart into equally sized regions, called windows, then compute attention on each of these as stand-alone inputs. The results on each window are then stitched back together into the original input shape to form the final output. It's possible (and even quite likely due to the model configuration) that the input image cannot be broken into equally sized regions, in these cases the tokens are zero-padded (on the bottom and/or right) in order to get a shape which divides evenly into the chosen window sizing. For example, in the image above, the input grid is 3x3 and the window size is 2. The input must be padded on both the right and bottom edges to make it 4x4, so that it can be broken into 4 windows, each 2x2 in size.
 
 By comparison, in the original SAMv1 model all stages use a window size of 14. This means that the default 64x64 token grid must be padded to a size of 70x70 to be cleanly divisible by 14. The 70x70 token grid is then broken into 25 windows each 14x14 in size. The attention calculation updates each of these 14x14 windows independently, which are then recombined back into a 70x70 grid. Finally, the 70x70 grid is cropped back to 64x64 before proceeding through the rest of the model. A [pull request](https://github.com/facebookresearch/segment-anything/pull/594) on the original SAMv1 repo suggests that a window size of 16 (which avoids the need for padding) may improve overall performance. It's possible to adjust the window sizing, per stage, and view the effects on segmentation results using the [window sizing experiment script](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#window-size-visualization).
 
@@ -239,18 +239,77 @@ $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + 
 
 Where P is the additive position encoding term (without any scaling).
 
-## Mask Decoder Attention
-
-This file contains the code which implements the attention calculation within the mask decoder (or more specifically, the cross-attention transformer within the decoder). Unlike the attention calculations inside the image encoder, the mask decoder makes use of both self-attention as well as cross-attention. These implementations will be detailed below.
-
-(wip)
-
 
 ## Cross-Attention Transformer
 
-The cross-attention transformer is used to mix information between the encoded prompts and encoded image data. This is the reason why the segmentation seems to 'respond intuitively' to input prompts, for example segmenting things near a given point prompt and not an unrelated object elsewhere in the image. The transformer consists of only 2 sequential blocks and a final cross-attention block to further enrich the prompt tokens.
+The cross-attention transformer inside the mask decoder is used to mix information between the encoded prompts and encoded image data. This is the reason why the segmentation seems to 'respond intuitively' to input prompts, for example segmenting things near a given point prompt and not an unrelated object elsewhere in the image. The transformer consists of only 2 sequential blocks and a final cross-attention block to further enrich the prompt tokens:
 
-(wip)
+<p align="center">
+  <img src=".readme_assets/cross_attn_transformer.svg" alt="">
+</p>
+
+The data flow through the cross-attention transformer is somewhat complex. Importantly, the prompt tokens, prompt position encodings, image tokens and image position encodings are used repeatedly through the model, in both the prompt-to-image attention blocks as well as the final cross-attention block, with the ordering listed in the diagram above. Confusingly, the prompt position encodings are the [tokens themselves](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/modeling/transformer.py#L95)! The prompt tokens do contain positioning information, via the [coordinate encoder](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#coordinate-encoder), but also include [additive embeddings](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#prompt-encoder) which makes them a strange choice to use directly as position encodings. Most likely, it would be better to just use the coordinate encodings (which is exactly what the image position encoding is), but the tokens were used instead because the coordinate encoder and prompt encoder are combined in the original implementation and separating them would have been difficult.
+
+### Prompt-to-image attention block
+
+As the name suggests, the prompt-to-image attention block is responsible for mixing information between the image tokens and prompt tokens. It consists of several attention block variations (described in the section below) chained in sequence:
+
+<p align="center">
+  <img src=".readme_assets/prompt_to_image_attn_block.svg" alt="">
+</p>
+
+For clarity, the diagram above avoids criss-crossing the inputs, but it's important to note that the first and last cross-attention blocks have different input orderings! The cross-attention block can be thought of as outputting 'enriched query tokens'. So the first block uses the prompt tokens as the query input, while the image tokens are the query input for the last block (even though the diagram suggests the input orderings are the same).
+
+Another important note, not shown in the diagram, is that the first self-attention block _does not use_ the position encodings when it's the first block in the larger [cross-attention transformer](#cross-attention-transformer) model. This is a strange (and seemingly overcomplicated...) quirk in the design of the original model.
+
+The 'MLP (normed)' block is not shown, but is simply a standard [multilayer perceptron](#mlp) followed by a [layernorm](https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html). The other blocks are described in the sections below.
+
+
+## Mask Decoder Attention
+
+This file contains the code which implements the attention calculations within the mask decoder (or more specifically, the [cross-attention transformer](#cross-attention-transformer)  within the decoder). Unlike the attention calculations inside the image encoder, the mask decoder makes use of both self-attention as well as cross-attention. These implementations are detailed below.
+
+### Generic attention
+
+Up until this point, all discussion of [attention](#what-is-attention) has been about the special (but common) variant called: self-attention. The mask decoder uses a more generic attention model implemented in such a way that it can support both self-attention as well as cross-attention, simply by providing the appropriate tensors used as the query, key and value inputs for the attention calculation. For typical self-attention, all three inputs would be the same, for example. The computation of generic attention is the same as the original "Attention Is All You Need" description, without any extra position encodings:
+
+$$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} \right ) \times V$$
+
+However, when used for _cross-attention_, the sizing of the query tensor may not match the key & value tensors. More specifically, the shape of Q is `Nq x f`, while the shape of both K and V is `Nk x f`, where `Nq` and `Nk` are the number of tokens and `f` is the number of features per token (per head). The most important thing to note here is that the result of the calculation will have a shape of `Nq x f`, that is, it matches the query input. Therefore when used for cross attention, we can think of the process as enhancing or enriching the query input using information from the key/value input.
+
+There are three ways the mask decoder uses this attention calculation, all with minor differences:
+
+#### Cross-Attention variant
+
+Although the attention calculation used within the mask decoder does not explicitly include position encodings, two of the variants used within the decoder make use of additive position encodings on the inputs, prior to the attention calculation itself. Each variant also applies a layernorm to the attention results:
+
+<p align="center">
+  <img src=".readme_assets/mask_decoder_crossattn_variant.svg" alt="">
+</p>
+
+Note that the inputs are shown as 'A tokens' and 'B tokens' to keep the implementation general. For example, in some cases the 'A tokens' might be prompt tokens, in other cases they could be image tokens. Both the query (Q) and key (K) are derived by adding the A and B tokens with a position encoding term, while the value input (V) does not use position encodings. Additionally, there is a residual step, where the input A tokens (without position encoding) is added to the attention result before passing through a layer normalization step.
+
+As mentioned above, cross-attention can be thought of as 'enriching' the query input, or the 'A' tokens in this case. So for example, if image tokens are provided as the 'A' input and prompt tokens are provided as the 'B' input, then this cross-attention block would be enriching the image tokens using information from the prompt tokens.
+
+
+#### Self-Attention with position encoding variant
+
+The self-attention (with position encoding) variant is the same as the cross-attention version, except there is only a single set (A) of tokens:
+
+<p align="center">
+  <img src=".readme_assets/mask_decoder_selfattnposenc_variant.svg" alt="">
+</p>
+
+#### Self-Attention without position encoding variant
+
+There is a second self-attention variant that does not include position encodings for some reason, nor does it include a residual connection like the other two variants. This block is also only included when it's the first block of the sequence of processing:
+
+
+<p align="center">
+  <img src=".readme_assets/mask_decoder_selfattn_variant.svg" alt="">
+</p>
+
+This variant still includes a position encoding input even though it's not used. This is done to match up with the other variant of self-attention, so they can be used interchangably within the model, without requiring any changes or conditional checks.
 
 
 ## Shared
@@ -281,3 +340,4 @@ It's important to note that the layernorm is applied to all tokens, so each toke
 This module is provided purely for readability in the codebase. It's simply a regular (built-in) [Conv2D layer](https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html), with the kernel size and stride hard-coded to a value of 1. The reason for giving this a distinct name is that 1x1 convolutions don't really _do_ convolution. They're equivalent to linear layers acting on the channel values of the tokens, and so don't perform the spatial mixing of information implied by seeing a 2D convolution layer in a model.
 
 So why not just use a linear layer? A 1x1 convolution layer acts on image-like inputs with 'channels-first' shapes, that is: BxCxHxW. While a linear layer would require a 'channels-last' ordering: BxHxWxC. In cases where the input already has a channels-first shape, it's convenient to use a 1x1 convolution instead of re-arranging the dimensions to work with a linear layer.
+

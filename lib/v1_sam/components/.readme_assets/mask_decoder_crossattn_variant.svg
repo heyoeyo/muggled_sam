@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" width="735.278" height="275.856" viewBox="0 0 194.542 72.987">
+  <g transform="translate(495.698 351.17)">
+    <text xml:space="preserve" x="-442.819" y="-279.603" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle"><tspan x="-442.819" y="-279.603" style="text-align:center">Q = A + A<tspan baseline-shift="sub" font-size="65%">posenc</tspan></tspan></text>
+    <text xml:space="preserve" x="-385.657" y="-279.659" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle"><tspan x="-385.657" y="-279.659" style="text-align:center">K = B + B<tspan baseline-shift="sub" font-size="65%">posenc</tspan></tspan></text>
+    <text xml:space="preserve" x="-338.397" y="-279.659" fill="#f60" stroke-linecap="square" stroke-width=".265" font-family="Monospace" font-size="4.233" paint-order="markers stroke fill" style="text-align:center" text-anchor="middle"><tspan x="-338.397" y="-279.659" style="text-align:center">V = B</tspan></text>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="m-458.1-325.665 2.093-1.375-2.092-1.375v1.088h-12.447v.529h12.447zm-.86 14.005 2.093-1.376-2.093-1.375v1.088h-11.586v.529h11.586zm69.444-1.081 2.093-1.375-2.093-1.375v1.087h-5.686v.53h5.686zm-50.858-13.097 2.092-1.375-2.092-1.374v1.087h-5.686v.529h5.686zm0 14.178 2.092-1.376-2.092-1.375v1.088h-5.686v.529h5.686zm69.438-1.081 2.092-1.375-2.092-1.375v1.087h-5.687v.53h5.687zm66.588.644 2.093-1.375-2.093-1.375v1.087h-30.028v.53h30.028z" paint-order="markers stroke fill"/>
+    <text xml:space="preserve" x="-439.741" y="-321.279" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="round" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-439.741" y="-321.279" style="text-align:center;">Q</tspan></text>
+    <text xml:space="preserve" x="-439.874" y="-307.158" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="round" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-439.874" y="-307.158" style="text-align:center;">K</tspan></text>
+    <path id="c" fill="#0fc" fill-opacity="1" stroke="#000" stroke-dasharray="none" stroke-dashoffset="0" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="1" stroke-width=".265" d="M-309.807-180.612h31.485v7.673h-31.485z" paint-order="stroke fill markers" stop-color="#000" style="" vector-effect="none"/>
+    <g stroke-width=".529" transform="translate(375.116 -631.715)">
+      <circle cx="-757.03" cy="317.6" r="3.704" fill="#fff" stroke="#000" stroke-linecap="square" paint-order="markers stroke fill" style=""/>
+      <g transform="translate(.132 .132)">
+        <path id="a" fill="#000" fill-opacity="1" stroke="none" stroke-dasharray="none" stroke-dashoffset="0" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="1" stroke-width=".529" d="M-757.56 315.483h.794v3.969h-.794z" paint-order="markers stroke fill" style=""/>
+        <use xlink:href="#a" transform="rotate(90 -757.163 317.467)"/>
+      </g>
+    </g>
+    <g stroke-width=".529" transform="translate(306.117 -644.441)">
+      <circle cx="-757.03" cy="317.6" r="3.704" fill="#fff" stroke="#000" stroke-linecap="square" paint-order="markers stroke fill" style=""/>
+      <g transform="translate(.132 .132)">
+        <path id="b" fill="#000" fill-opacity="1" stroke="none" stroke-dasharray="none" stroke-dashoffset="0" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="1" stroke-width=".529" d="M-757.56 315.483h.794v3.969h-.794z" paint-order="markers stroke fill" style=""/>
+        <use xlink:href="#b" transform="rotate(90 -757.163 317.467)"/>
+      </g>
+    </g>
+    <path fill="#fff" stroke="#000" stroke-linecap="square" stroke-width=".529" d="M-450.55-336.543v2.239h1.134l-1.375 2.092-1.375-2.092h1.088v-2.239h-19.468v-.53l88.878-.051v15.52h1.134l-1.376 2.092-1.374-2.092h1.087v-14.939zm-.312 35.775v-4.925h1.133l-1.375-2.092-1.374 2.092h1.087v4.925h-19.155v.529h30.172v1.133l2.092-1.375-2.092-1.374v1.087z" paint-order="markers stroke fill"/>
+    <path fill="#fc0" stroke="#000" stroke-linecap="square" stroke-linejoin="round" stroke-width=".427" d="M-435.999-330.02h39.261v33.969h-39.261z"/>
+    <text xml:space="preserve" x="-416.191" y="-314.309" stroke-linecap="square" stroke-opacity=".798" stroke-width=".265" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-416.191" y="-314.309" style="Monospace, Bold&quot;;">Generic</tspan><tspan x="-416.191" y="-307.254" style="Monospace, Bold&quot;;">Attention</tspan></text>
+    <g stroke-width=".529" transform="translate(305.904 -630.635)">
+      <circle cx="-757.03" cy="317.6" r="3.704" fill="#fff" stroke="#000" stroke-linecap="square" paint-order="markers stroke fill" style=""/>
+      <g transform="translate(.132 .132)">
+        <path d="M-757.56 315.483h.794v3.969h-.794z" paint-order="markers stroke fill" style=""/>
+        <use xlink:href="#b" transform="rotate(90 -757.163 317.467)"/>
+      </g>
+    </g>
+    <g stroke-linecap="square" stroke-width=".265" transform="translate(-199.334 -62.817)">
+      <use xlink:href="#c" fill="#0fc" stroke="#000" paint-order="stroke fill markers" style="" transform="translate(141.97 -73.88)"/>
+      <text xml:space="preserve" x="-152.122" y="-249.553" stroke-opacity=".798" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:center" text-anchor="middle"><tspan x="-152.122" y="-249.553" font-family="Sans" font-size="4.233" font-weight="400" style="Sans, Normal&quot;;">LayerNorm</tspan></text>
+    </g>
+    <path fill="none" stroke="#fc0" stroke-linecap="square" stroke-width="1.566" d="M-463.525-344.131h135.809v59.016h-135.809z" paint-order="stroke fill markers"/>
+    <text xml:space="preserve" x="-439.741" y="-294.603" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="round" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-439.741" y="-294.603" style="text-align:center;">V</tspan></text>
+    <text xml:space="preserve" x="-464.197" y="-346.053" fill="#fff" stroke="#000" stroke-linecap="square" stroke-opacity=".798" stroke-width="1.058" font-family="Monospace" font-size="5.644" font-weight="700" paint-order="markers stroke fill" style="Monospace, Bold&quot;;text-align:start;"><tspan x="-464.197" y="-346.053" style="Monospace, Bold&quot;;text-align:start;">Cross-Attention Variant</tspan></text>
+    <text xml:space="preserve" x="-482.57" y="-336.625" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-482.57" y="-336.625" style="text-align:center;">A tokens</tspan></text>
+    <text xml:space="preserve" x="-482.57" y="-298.709" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-482.57" y="-298.709" style="text-align:center;">B tokens</tspan></text>
+    <text xml:space="preserve" x="-483.909" y="-311.933" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-483.909" y="-311.933" style="text-align:center;">B pos.enc</tspan></text>
+    <text xml:space="preserve" x="-483.909" y="-325.707" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-483.909" y="-325.707" style="text-align:center;">A pos.enc</tspan></text>
+    <text xml:space="preserve" x="-315.16" y="-316.127" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle"><tspan x="-315.16" y="-316.127" style="text-align:center;">A tokens</tspan></text>
+    <text xml:space="preserve" x="-288.137" y="-273.808" fill="#fff" stroke="#000" stroke-linecap="square" stroke-linejoin="bevel" stroke-width=".794" font-family="Monospace" font-size="4.233" font-weight="400" paint-order="markers stroke fill" style="text-align:center;" text-anchor="middle" transform="translate(-25.278 -33.852)"><tspan x="-288.137" y="-273.808" style="text-align:center;">(enriched)</tspan></text>
+  </g>
+</svg>
