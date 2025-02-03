@@ -94,19 +94,23 @@ Although the model has 4 stages, they are not used in a typical 'hierarchical' w
 
 The input and output of every block (of every stage) is of the same 'type' of data: _encoded image tokens_. The only difference between blocks is the progression of the encoding (i.e. the output of the last-most stage is a 'completely' encoded set of tokens). Since the block outputs represent the same sort of information, and that information is inherently image-like, it's possible to visualize using the [block norm visualization](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#block-norm-visualization) experimental script.
 
-Windowed attention is an optimization technique, where each image token only 'attends' to a limited set of other image tokens that are spatially nearby, rather than attending to all image tokens as in regular or 'global' attention. The use of windowed attention blocks causes very subtle artifacts (see the [window sizing experiment](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#window-size-visualization) script) in the model output and likely degrades the model's accuracy somewhat. However, they also reduce the total amount of computation as well as the memory requirements of the model, so are likely a reasonable tradeoff of accuracy/performance. The use of global attention at the end of each stage is meant to mix information around the entire image and is a simple alternative to more complex techniques like shifting the windows (e.g. in [Swin](https://arxiv.org/abs/2103.14030) models).
+Windowed attention is an optimization technique, where each image token only 'attends' to a limited set of other image tokens that are spatially nearby, rather than attending to all image tokens as in regular or 'global' attention. To avoid processing happening exclusively in localized regions (the windows), global attention is included at the end of each stage to help mix information around the entire image. This is a simple alternative to more complex techniques like shifting the windows (e.g. in [Swin](https://arxiv.org/abs/2103.14030) models).
 
 <p align="center">
-  <img src=".readme_assets/vit_window_vs_global_block.svg" alt="">
+  <img src="components/.readme_assets/global_attn_block.svg" alt="">
 </p>
 
-As the diagram above shows, the only difference between the windowed and global attention blocks is the windowing and un-windowing steps, all other components are identical. The attention calculation makes use of additive relative positional encodings, seemingly from the paper: "[MViTv2: Improved Multiscale Vision Transformers for Classification and Detection](https://arxiv.org/abs/2112.01526)". This per-block relative position encoding is implemented differently than the prior [position encoder](#position-encoder-model) and is arguably the most complex part of the vision transformer. The effect is to modify the original attention calculation, from "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)", to something like:
+<p align="center">
+  <img src="components/.readme_assets/windowed_attn_block.svg" alt="">
+</p>
+
+As the diagram above shows, the only difference between the windowed and global attention blocks is the windowing and un-windowing steps, all other components are identical. The attention calculation makes use of very complicated additive relative positional encodings. This position encoding is implemented differently than the prior [position encoder](#position-encoder-model) and is arguably the most complex part of the vision transformer. The effect is to modify the original attention calculation, from "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)", to something like:
 
 $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + P \right ) \times V$$
 
 $$\text{(where P is the additive relative positional encoding term)}$$
 
-This modification is straightforward in theory, but it prevents the use of more optimized implementations of the attention calculation and has much higher VRAM requirements as a consequence. Details about the attention implementation can be found [elsewhere in the repo](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam/components).
+This modification is straightforward in theory, but it prevents the use of more optimized implementations of the attention calculation and has much higher VRAM requirements as a consequence. Details about the attention implementation can be found in the model [components section](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam/components).
 
 ### Channel projection model
 
@@ -232,3 +236,20 @@ The purpose of the [intersection-over-union](https://en.wikipedia.org/wiki/Jacca
 
 Ideally SAM would always produce masks with IoUs of 100% with their ground-truths. However, in practice this isn't always possible, so this model provides as a way of gauging the 'confidence' of the mask outputs. High IoU scores indicate that the model 'thinks' the corresponding mask prediction closely overlaps with the (unknown) ground-truth, while lower scores suggest the predicted masks may not be very accurate. These scores can be used to automatically select the 'best' mask in cases where user choice isn't practical. Although in some cases, [mask stability](https://github.com/facebookresearch/segment-anything/blob/dca509fe793f601edb92606367a655c15ac00fdf/segment_anything/utils/amg.py#L156) (how much the mask changes when adjusting thresholding) may be a better predictor of the mask quality.
 
+## Image pre-processing
+
+The original SAM model used a somewhat strange approach to pre-processing image data. The model requires an input RGB color image, with a width and height that are both integer multiples of the [patch embedding](#patch-embedding-model) size, which is 16 pixels for all model sizes. In the original implementation, images are always scaled to a square size of 1024x1024 pixels. However, images were not stretched to fit this sizing, instead all images were scaled to fit their largest side into the 1024x1024 square, with the shorter side padded to fill the missing space.
+
+<p align="center">
+  <img src=".readme_assets/image_preprocessing.webp" alt="">
+</p>
+
+One obvious problem with this padding approach is that some fraction of the image data would hold no useful information, yet still require (heavy) processing by the model. This is especially bad for very short/wide or tall/narrow images. Additionally, the mask generated by the model also included the input padding, which needed to be cropped through a post-processing step.
+
+In this repo, some changes have been made to this pre-/post-processing approach:
+1. The model supports inputs that are smaller or larger than 1024 pixels
+2. All input images are stretched to fit the specified sizing (e.g. 1024x1024)
+3. Inputs can be non-square sizes, for example matching the original input aspect ratio
+4. Mask outputs are scaled back to match the input size if needed, with no cropping
+
+In theory, these changes run the risk of breaking the model performance (since it's very different to the training environment). However, in practice, the model seems to tolerate these changes quite well. The simplified implementation and negligible change in the quality of outputs is considered enough to justify the change made here. Worst case scenario, it is still possible for a user to manually pad and crop their inputs to match the original behavior, if needed.
