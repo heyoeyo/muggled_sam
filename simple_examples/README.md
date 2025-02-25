@@ -50,6 +50,9 @@ Segmentation results are displayed per-frame for verification, and the total inf
 | V2-Base | 38 ms | 11 ms |
 | V2-Large | 64 ms | 17 ms |
 
+## Video Segmentation (from mask)
+
+This is a variation of the basic video segmentation example, but uses a mask prompt to begin tracking. Both a mask and corresponding image (i.e. the image from which the mask was generated) must be provided, and replaces the need to provide box or point prompts. Note that the mask & corresponding image don't need to be from the video! Mixing the mask iamge and video can give results similar to the [video with image priors](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) experimental script.
 
 ## Video Segmentation (Multi-object)
 

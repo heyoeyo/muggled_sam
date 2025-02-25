@@ -267,6 +267,45 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
+    def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray) -> Tensor:
+        """
+        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'.
+        The provided image is assumed to be loaded using opencv, so that it has shape: HxW or HxWxC
+        If the image has channels (e.g. RGB), only the 0th channel (e.g. red) will be used.
+
+        Note that with this form of initializtion, there is no object pointer! The pointer normally
+        comes from the mask prediction, so without a prediction, there is not pointer. The video
+        masking should therefore be initialized with only the memory encoding and an empty pointer list.
+        This doesn't have a substantial impact on the tracking
+
+        Returns:
+            memory_encoding
+        """
+
+        with torch.inference_mode():
+
+            # For convenience
+            lowres_imgenc, *hires_imgenc = encoded_image_features_list
+            token_hw = lowres_imgenc.shape[2:]
+            device, dtype = lowres_imgenc.device, lowres_imgenc.dtype
+
+            # Hard-code the object score as being 'high/confident', since we assume the given mask is accurate
+            obj_score = torch.tensor(100.0, device=device, dtype=dtype)
+
+            # Prepare mask image as if it were a prediction from the model
+            if mask_image.ndim == 3:
+                mask_image = mask_image[:, :, 0]
+            mask_tensor = torch.tensor(mask_image > 127, device=device, dtype=dtype)
+            mask_tensor = nn.functional.interpolate(
+                mask_tensor.unsqueeze(0).unsqueeze(0), size=(4 * token_hw[0], 4 * token_hw[1])
+            )
+
+            memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, obj_score, is_prompt_encoding=True)
+
+        return memory_encoding
+
+    # .................................................................................................................
+
     def step_video_masking(
         self,
         encoded_image_features_list: list[Tensor],
