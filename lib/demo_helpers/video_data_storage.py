@@ -31,10 +31,11 @@ class SAM2VideoBuffer:
         pointer_deck = deque([], maxlen=pointer_history_length)
         return cls(idx_deck, mask_deck, pointer_deck)
 
-    def store(self, frame_index, memory_encoding, object_pointer):
+    def store(self, frame_index, memory_encoding, object_pointer=None):
         self.idx.appendleft(frame_index)
         self.memory_history.appendleft(memory_encoding)
-        self.pointer_history.appendleft(object_pointer)
+        if object_pointer is not None:
+            self.pointer_history.appendleft(object_pointer)
         return self
 
     def set_memory_history(self, memory_history_length: int):
@@ -78,12 +79,12 @@ class SAM2VideoObjectResults:
         prevframe_buffer = SAM2VideoBuffer.create(memory_history_length, pointer_history_length)
         return cls(prompts_buffer, prevframe_buffer)
 
-    def store_prompt_result(self, frame_index, memory_encoding, object_pointer):
+    def store_prompt_result(self, frame_index, memory_encoding, object_pointer=None):
         """Used to store (initial) prompt results"""
         self.prompts_buffer.store(frame_index, memory_encoding, object_pointer)
         return self
 
-    def store_result(self, frame_index, memory_encoding, object_pointer):
+    def store_result(self, frame_index, memory_encoding, object_pointer=None):
         """Used to store per-frame results history"""
         self.prevframe_buffer.store(frame_index, memory_encoding, object_pointer)
         return self
