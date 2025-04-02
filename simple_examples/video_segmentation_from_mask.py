@@ -39,6 +39,7 @@ init_mask_image = cv2.imread(mask_image_path)
 
 # Read first frame to verify video is ok, then reset playback
 vcap = cv2.VideoCapture(video_path)
+vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
 ok_frame, _ = vcap.read()
 if not ok_frame:
     raise IOError("Bad first video frame!")

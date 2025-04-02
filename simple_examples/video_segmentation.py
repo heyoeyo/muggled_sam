@@ -36,6 +36,7 @@ imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 
 # Read first frame
 vcap = cv2.VideoCapture(video_path)
+vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
 ok_frame, first_frame = vcap.read()
 if not ok_frame:
     raise IOError("Bad first video frame!")
@@ -80,8 +81,9 @@ try:
         # Store object results for future frames
         if obj_score < 0:
             print("Bad object score! Implies broken tracking!")
-        prev_mems.appendleft(mem_enc)
-        prev_ptrs.appendleft(obj_ptr)
+        else:
+            prev_mems.appendleft(mem_enc)
+            prev_ptrs.appendleft(obj_ptr)
 
         # Create mask for display
         dispres_mask = torch.nn.functional.interpolate(

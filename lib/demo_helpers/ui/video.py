@@ -43,6 +43,10 @@ class LoopingVideoReader:
         self._max_frame_idx = self.total_frames - 1
         self._fps = self._vcap.get(cv2.CAP_PROP_FPS)
 
+        # Enable rotated orientation fix (disabled by default on opencv v4.11 for reason)
+        # See: https://github.com/opencv/opencv/issues/26795
+        self._vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+
         # Jump ahead to a different starting position if needed
         if initial_position_0_to_1 > 0.001:
             self._vcap.set(cv2.CAP_PROP_POS_FRAMES, self._max_frame_idx * initial_position_0_to_1)

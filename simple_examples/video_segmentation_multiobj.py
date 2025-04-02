@@ -70,6 +70,7 @@ memory_per_obj_dict = defaultdict(SAM2VideoObjectResults.create)
 
 # Read first frame to check that we can read from the video, then reset playback
 vcap = cv2.VideoCapture(video_path)
+vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
 ok_frame, first_frame = vcap.read()
 if not ok_frame:
     raise IOError(f"Unable to read video frames: {video_path}")

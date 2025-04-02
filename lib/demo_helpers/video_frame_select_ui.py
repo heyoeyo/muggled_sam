@@ -38,6 +38,7 @@ def create_video_capture(video_path: str) -> tuple[bool, cv2.VideoCapture | None
     # See if we can open the file as a video
     try:
         vcap = cv2.VideoCapture(video_path)
+        vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
     except:
         return is_valid, vcap
 
