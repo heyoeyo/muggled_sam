@@ -182,10 +182,11 @@ class SimpleSamurai:
         best_iou = weighted_samurai_score[best_idx]
 
         # Get the best mask bounding box in terms of kalman filter state variables, for measurement update
-        _, best_box_as_xy1xy2 = mask_xy1xy2_list[best_idx]
-        best_box_as_xywh = box_xy1xy2_to_xywh(*best_box_as_xy1xy2)
-        kal_measurement = np.array([best_box_as_xywh], dtype=np.float32).T
-        self._kalman.correct(kal_measurement)
+        is_valid_mask, best_box_as_xy1xy2 = mask_xy1xy2_list[best_idx]
+        if is_valid_mask:
+            best_box_as_xywh = box_xy1xy2_to_xywh(*best_box_as_xy1xy2)
+            kal_measurement = np.array([best_box_as_xywh], dtype=np.float32).T
+            self._kalman.correct(kal_measurement)
 
         # Include kalman prediction in output, for debugging/visualization
         kalman_prediction_xy1xy2 = (np.array((x1_kal, y1_kal)), np.array((x2_kal, y2_kal)))
