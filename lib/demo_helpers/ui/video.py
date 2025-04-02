@@ -18,6 +18,19 @@ from numpy import ndarray
 # %% Classes
 
 
+def create_VideoCapture(video_path):
+    """
+    Helper used to prevent bug introduced in newer versions of opencv,
+    which disabled orientation correction on v4.11 for some reason, see:
+        https://github.com/opencv/opencv/issues/26795
+    """
+
+    vcap = cv2.VideoCapture(video_path)
+    vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+
+    return vcap
+
+
 class LoopingVideoReader:
     """
     Helper used to provide looping frames from video, along with helpers
@@ -38,7 +51,7 @@ class LoopingVideoReader:
 
         # Store basic video data
         self._video_path = video_path
-        self._vcap = cv2.VideoCapture(self._video_path)
+        self._vcap = create_VideoCapture(self._video_path)
         self.total_frames = int(self._vcap.get(cv2.CAP_PROP_FRAME_COUNT))
         self._max_frame_idx = self.total_frames - 1
         self._fps = self._vcap.get(cv2.CAP_PROP_FPS)
@@ -143,7 +156,7 @@ class LoopingVideoReader:
     def __iter__(self):
         """Called when using this object in an iterator (e.g. for loops)"""
         if not self._vcap.isOpened():
-            self._vcap = cv2.VideoCapture(self._video_path)
+            self._vcap = create_VideoCapture(self._video_path)
         return self
 
     # .................................................................................................................
