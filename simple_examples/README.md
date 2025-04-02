@@ -60,3 +60,11 @@ This is an extension of the more basic video segmentation script, which shows ho
 
 The prompts that are hard-coded into this example script are set up to track a few horses from a short video by [Adrian Hoparda](https://www.pexels.com/@adrian-hoparda-1684220/) which can be freely downloaded:
 https://www.pexels.com/video/horses-running-on-grassland-4215784/
+
+## Video Segmentation using SAMURAI
+
+This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be easy to modify if needed.
+
+This demo is set up to track only one object, but can be changed to handle multiple objects by creating additional prompt/prev. frame memory storage for each object. A separate instance of the SAMURAI class is also needed, per object!
+
+The configuration (e.g. video and model selection) for this demo is much further down the script compared to other examples due to the SAMURAI code. Search for the `video_path` variable if you have trouble finding where to put in your own video/model/prompts etc.

@@ -95,8 +95,9 @@ try:
         disp_mask = ((dispres_mask > 0.0).byte() * 255).cpu().numpy().squeeze()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
 
-        # Show frame and mask, side-by-side
-        cv2.imshow("Video Segmentation Result - q to quit", np.hstack((frame, disp_mask)))
+        # Show frame and mask
+        sidebyside = np.hstack((frame, disp_mask))
+        cv2.imshow("Video Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break
