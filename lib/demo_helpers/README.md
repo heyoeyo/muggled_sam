@@ -2,6 +2,9 @@
 
 This folder contains scripts that are not strictly required to make use of the SAM models, but provide some helpful functionality for processing data and/or handling user interactions. This folder also contains all of the code for handling [UI](https://github.com/heyoeyo/muggled_sam/tree/main/lib/demo_helpers/ui) elements for the interactive scripts. A brief overview of each of the scripts in this folder is explained below:
 
+#### bounding_boxes.py
+
+Contains functions for finding the bounding box around a SAM mask prediction. Also includes basic functons for switching between box representations.
 #### contours.py
 
 Contains functions useful for generating and processing contour data from masks. This is where mask outlines in all the demo scripts are generated.
@@ -43,6 +46,10 @@ This contains functionality that doesn't neatly fit into the other scripts.
 #### model_capture.py
 
 Contains a helper class that can be used to 'capture' the intermediate results of a model for analysis or debugging. For example, it's used by the [block norm visualization](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#block-norm-visualization) script to record all of the internal image features when running the SAM image encoder.
+
+#### samurai.py
+
+Contains a class which implements the mask post-processing/memory selection steps from [SAMURAI](https://github.com/yangchris11/samurai). There's an [example script](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-using-samurai) showing how to make use of this class.
 
 #### saving.py
 

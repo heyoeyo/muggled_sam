@@ -108,3 +108,36 @@ def box_xy1xy2_to_xywh(xy1, xy2) -> tuple[float, float, float, float]:
     h = y2 - y1 + 1
 
     return x, y, w, h
+
+
+# .....................................................................................................................
+
+
+def get_2box_iou(box_a_xy1xy2: tuple, box_b_xy1xy2: tuple, min_union_threshold=0.001) -> float:
+    """
+    Helper used to compute the intersection-over-union between 2 boxes,
+    also called the 'Jaccard index'.
+    Assumes both boxes are given in [(x1,y1), (x2,y2)] format.
+
+    The min_union_threshold is used to zero out results with overly small
+    union areas, which helps avoid divide-by-zero errors
+
+    Returns:
+        intersection_over_union
+    """
+
+    # For convenience
+    (ax1, ay1), (ax2, ay2) = box_a_xy1xy2
+    (bx1, by1), (bx2, by2) = box_b_xy1xy2
+
+    # Compute intersection area between boxes
+    inter_w = min(ax2, bx2) - max(ax1, bx1)
+    inter_h = min(ay2, by2) - max(ay1, by1)
+    inter_area = max(0, inter_w) * max(0, inter_h)
+
+    # Compute union area
+    a_area = (ax2 - ax1) * (ay2 - ay1)
+    b_area = (bx2 - bx1) * (by2 - by1)
+    union_area = a_area + b_area - inter_area
+
+    return inter_area / union_area if union_area > min_union_threshold else 0
