@@ -22,8 +22,9 @@ import torch
 from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
 
 # Define pathing & device usage
+initial_frame_index = 0
+mask_image_path = None  # Will use first frame of video, otherwise provide: "/path/to/mask_image.png"
 mask_path = "/path/to/mask.png"
-mask_image_path = "/path/to/mask_image.png"
 video_path = "/path/to/video.mp4"
 model_path = "/path/to/samv2_model.pth"
 device, dtype = "cpu", torch.float32
@@ -33,16 +34,17 @@ if torch.cuda.is_available():
 # Set image encoding config
 imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 
-# Load mask & corresponding image data
-init_mask = cv2.imread(mask_path)
-init_mask_image = cv2.imread(mask_image_path)
-
-# Read first frame to verify video is ok, then reset playback (assuming mask prompt is for first frame)
+# Read first frame to verify video is ok
 vcap = cv2.VideoCapture(video_path)
 vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
+vcap.set(cv2.CAP_PROP_POS_FRAMES, initial_frame_index)
 ok_frame, first_frame = vcap.read()
 assert ok_frame, f"Could not read frames from video: {video_path}"
-vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+# Load mask & associated image data
+init_mask = cv2.imread(mask_path)
+init_mask_image = first_frame if mask_image_path is None else cv2.imread(mask_image_path)
+assert (init_mask is not None) and (init_mask_image is not None), "Error reading input mask/mask image"
 
 # Set up model
 print("Loading model...")
@@ -65,7 +67,7 @@ close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
     is_webcam = isinstance(video_path, int)
     total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT)) if not is_webcam else 100_000
-    for frame_idx in range(1, total_frames):
+    for frame_idx in range(1 + initial_frame_index, total_frames):
 
         # Read frames
         ok_frame, frame = vcap.read()
