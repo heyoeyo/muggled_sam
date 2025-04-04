@@ -267,6 +267,7 @@ class SimpleSamurai:
 # %% Demo
 
 # Define pathing & device usage
+initial_frame_index = 0
 video_path = "/path/to/video.mp4"
 model_path = "/path/to/samv2_model.pth"
 device, dtype = "cpu", torch.float32
@@ -282,9 +283,9 @@ imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 # Read first frame
 vcap = cv2.VideoCapture(video_path)
 vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
+vcap.set(cv2.CAP_PROP_POS_FRAMES, initial_frame_index)
 ok_frame, first_frame = vcap.read()
-if not ok_frame:
-    raise IOError("Bad first video frame!")
+assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
 print("Loading model...")
@@ -294,7 +295,7 @@ sammodel.to(device=device, dtype=dtype)
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = sammodel.encode_image(first_frame, **imgenc_config_dict)
 init_mask, init_mem, init_ptr = sammodel.initialize_video_masking(
-    init_encoded_img, boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
+    init_encoded_img, boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=None
 )
 
 # Set up data storage for prompted object (repeat this for each unique object)
@@ -307,10 +308,12 @@ prev_ptrs = deque([], maxlen=15)
 samurai = SimpleSamurai(init_mask)
 
 # Process video frames
+stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
-    total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT))
-    for frame_idx in range(1, total_frames):
+    is_webcam = isinstance(video_path, int)
+    total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT)) if not is_webcam else 100_000
+    for frame_idx in range(1 + initial_frame_index, total_frames):
 
         # Read frames
         ok_frame, frame = vcap.read()
@@ -353,7 +356,7 @@ try:
         disp_mask = cv2.rectangle(disp_mask, xy1, xy2, mask_color, 2)
 
         # Show frame and mask, side-by-side
-        sidebyside = np.hstack((frame, disp_mask))
+        sidebyside = stack_func((frame, disp_mask))
         cv2.imshow("SAMURAI Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:

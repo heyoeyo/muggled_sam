@@ -37,12 +37,11 @@ imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 init_mask = cv2.imread(mask_path)
 init_mask_image = cv2.imread(mask_image_path)
 
-# Read first frame to verify video is ok, then reset playback
+# Read first frame to verify video is ok, then reset playback (assuming mask prompt is for first frame)
 vcap = cv2.VideoCapture(video_path)
 vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
-ok_frame, _ = vcap.read()
-if not ok_frame:
-    raise IOError("Bad first video frame!")
+ok_frame, first_frame = vcap.read()
+assert ok_frame, f"Could not read frames from video: {video_path}"
 vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 # Set up model
@@ -61,9 +60,11 @@ prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
 
 # Process video frames
+stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
-    total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT))
+    is_webcam = isinstance(video_path, int)
+    total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT)) if not is_webcam else 100_000
     for frame_idx in range(1, total_frames):
 
         # Read frames
@@ -97,8 +98,9 @@ try:
         disp_mask = ((dispres_mask > 0.0).byte() * 255).cpu().numpy().squeeze()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
 
-        # Show frame and mask, side-by-side
-        cv2.imshow("Video Segmentation Result - q to quit", np.hstack((frame, disp_mask)))
+        # Show frame and mask
+        sidebyside = stack_func((frame, disp_mask))
+        cv2.imshow("Mask Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break

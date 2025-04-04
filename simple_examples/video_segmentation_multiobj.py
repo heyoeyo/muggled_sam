@@ -33,7 +33,7 @@ if torch.cuda.is_available():
 imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
 
 # For demo purposes, we'll define all prompts ahead of time and store them per frame index & object
-# -> First level key (e.g. 0, 30, 35) represents the frame index where the prompts should be applied
+# -> First level key (e.g. 0, 90, 140) represents the frame index where the prompts should be applied
 # -> Second level key (e.g. 'obj1', 'obj2') represents which 'object' the prompt belongs to for tracking purposes
 prompts_per_frame_index = {
     0: {
@@ -72,8 +72,7 @@ memory_per_obj_dict = defaultdict(SAM2VideoObjectResults.create)
 vcap = cv2.VideoCapture(video_path)
 vcap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)  # See: https://github.com/opencv/opencv/issues/26795
 ok_frame, first_frame = vcap.read()
-if not ok_frame:
-    raise IOError(f"Unable to read video frames: {video_path}")
+assert ok_frame, f"Could not read frames from video: {video_path}"
 vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 # Set up model
@@ -82,6 +81,7 @@ model_config_dict, sammodel = make_samv2_from_original_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
 
 # Process video frames
+stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
     total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -158,7 +158,7 @@ try:
         # Combine original image & mask result side-by-side for display
         combined_mask_result_uint8 = combined_mask_result.astype(np.uint8) * 255
         disp_mask = cv2.cvtColor(combined_mask_result_uint8, cv2.COLOR_GRAY2BGR)
-        sidebyside_frame = np.hstack((frame, disp_mask))
+        sidebyside_frame = stack_func((frame, disp_mask))
         sidebyside_frame = cv2.resize(sidebyside_frame, dsize=None, fx=0.5, fy=0.5)
 
         # Show result
