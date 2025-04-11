@@ -140,6 +140,7 @@ class SimpleSamurai:
             best_mask_index, best_iou, kalman_box_xy1xy2
 
         - The returned kalman box is formatted as: [(x1, y1), (x2, y2)]
+          in 'pixel' units, matching the mask prediction sizing
         """
 
         # Make sure we don't get batched data
@@ -193,6 +194,8 @@ class SimpleSamurai:
 
         Returns:
             is_ok_memory, best_mask_prediction, memory_encoding, best_object_point, xy1xy2_kalman_prediction
+
+        - The returned kalman box is formatted as: [(x1, y1), (x2, y2)] in normalized (0 to 1) units
         """
 
         with torch.inference_mode():
@@ -220,7 +223,7 @@ class SimpleSamurai:
 
             # Use samurai predictions to pick the best mask, instead of just using SAM IoUs
             # (this is the main difference between SAMv2 vs. SAMURAI)
-            best_mask_idx, best_samurai_iou, xy1xy2_kal = self.get_best_decoder_results(mask_preds, iou_preds)
+            best_mask_idx, best_samurai_iou, xy1xy2_kal_px = self.get_best_decoder_results(mask_preds, iou_preds)
             best_mask_pred = mask_preds[:, [best_mask_idx], ...]
             best_iou_pred = iou_preds[:, [best_mask_idx], ...]
             best_obj_ptr = obj_ptrs[:, [best_mask_idx], ...]
@@ -231,7 +234,12 @@ class SimpleSamurai:
             is_ok_mem = self._check_memory_ok(obj_score, best_iou_pred, best_samurai_iou)
             memory_encoding = sammodel.memory_encoder(lowres_imgenc, best_mask_pred, obj_score)
 
-        return is_ok_mem, best_mask_pred, memory_encoding, best_obj_ptr, xy1xy2_kal
+            # Normalize box prediction coords. for easier usage
+            _, _, mask_h, mask_w = best_mask_pred.shape
+            xy_norm_scale = 1.0 / np.float32((mask_w - 1, mask_h - 1))
+            xy1xy2_kal_norm = [xy * xy_norm_scale for xy in xy1xy2_kal_px]
+
+        return is_ok_mem, best_mask_pred, memory_encoding, best_obj_ptr, xy1xy2_kal_norm
 
     # .................................................................................................................
 
@@ -249,3 +257,13 @@ class SimpleSamurai:
         ok_kf = kf_score > self.threshold_kf
 
         return ok_obj and ok_iou and ok_kf
+
+    # .................................................................................................................
+
+    @staticmethod
+    def draw_box_prediction(frame, xy1xy2_kalman_prediction, line_color=(0, 255, 255), line_thickness=2):
+        """Helper used to visualize kalman filter box predictions (from running video steps)"""
+        frame_h, frame_w = frame.shape[0:2]
+        xy_scale = np.float32((frame_w - 1, frame_h - 1))
+        xy1, xy2 = [np.int32(np.round(xy_kal * xy_scale)).tolist() for xy_kal in xy1xy2_kalman_prediction]
+        return cv2.rectangle(frame, xy1, xy2, line_color, line_thickness)

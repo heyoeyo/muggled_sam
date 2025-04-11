@@ -22,7 +22,6 @@ import torch
 from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
 from lib.demo_helpers.samurai import SimpleSamurai
 
-
 # Define pathing & device usage
 initial_frame_index = 0
 video_path = "/path/to/video.mp4"
@@ -56,7 +55,7 @@ init_mask, init_mem, init_ptr = sammodel.initialize_video_masking(
 )
 
 # Set up data storage for prompted object (repeat this for each unique object)
-samurai = SimpleSamurai(init_mask)
+samurai = SimpleSamurai(init_mask, smoothness=0.5)
 prompt_mems = deque([init_mem])
 prompt_ptrs = deque([init_ptr])
 prev_mems = deque([], maxlen=6)
@@ -66,9 +65,7 @@ prev_ptrs = deque([], maxlen=15)
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
-    is_webcam = isinstance(video_path, int)
-    total_frames = int(vcap.get(cv2.CAP_PROP_FRAME_COUNT)) if not is_webcam else 100_000
-    for frame_idx in range(1 + initial_frame_index, total_frames):
+    while True:
 
         # Read frames
         ok_frame, frame = vcap.read()
@@ -101,16 +98,11 @@ try:
         disp_mask = ((dispres_mask > 0.0).byte() * 255).cpu().numpy().squeeze()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
 
-        # Draw SAMURAI kalman filter prediction over top of selected mask (just for display/debugging!)
-        w_disp, w_mask = dispres_mask.shape[3], best_mask_pred.shape[3]
-        h_disp, h_mask = dispres_mask.shape[2], best_mask_pred.shape[2]
-        xyscale = np.float32((w_disp / w_mask, h_disp / h_mask))
-        xy1_kal, xy2_kal = xy1xy2_kal
-        xy1, xy2 = [np.int32(np.round(xy_kal * xyscale)).tolist() for xy_kal in xy1xy2_kal]
-        mask_color = (0, 255, 0) if is_mem_ok else (0, 0, 255)
-        disp_mask = cv2.rectangle(disp_mask, xy1, xy2, mask_color, 2)
+        # Overlay SAMURAI box prediction
+        box_predict_color = (0, 255, 0) if is_mem_ok else (0, 0, 255)
+        disp_mask = samurai.draw_box_prediction(disp_mask, xy1xy2_kal, box_predict_color)
 
-        # Show frame and mask, side-by-side
+        # Show frame and mask
         sidebyside = stack_func((frame, disp_mask))
         cv2.imshow("SAMURAI Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
         keypress = cv2.waitKey(1) & 0xFF
