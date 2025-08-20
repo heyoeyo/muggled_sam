@@ -6,6 +6,11 @@ This folder contains several scripts that contain minimal/simplified examples of
 > All of these scripts require modifying hard-coded pathing (usually near the top of the script) to point at files/models to load for the example.
 
 
+## Auto Mask Generator
+
+This script runs the SAM model (v1 or v2) as an 'auto-mask generator', similar to the capability provided by the [original repo implementation](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/automatic_mask_generator.py#L36). It works by running the SAM model with a (dense) grid of single point prompts to generate masks from all parts of the image, while filtering bad/overlapping results. This version provides a visualization (if enabled in the settings) of the results as they're being generated.
+
+
 ## Image Segmentation
 
 This script contains the most basic usage of the SAM models, which is to segment an image based on a set of provided prompts (bounding boxes, foreground points, background points or masks).
