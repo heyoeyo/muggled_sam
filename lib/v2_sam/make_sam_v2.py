@@ -94,7 +94,7 @@ def make_sam_v2(
     imgencoder_heads=2,
     imgencoder_blocks_per_stage=(2, 3, 16, 3),
     imgencoder_global_attn_spacing_per_stage=(None, None, 4, None),
-    imgencoder_window_size_per_stage=(8, 4, 14, 17),
+    imgencoder_window_size_per_stage=(8, 4, 14, 7),
     imgencoder_window_tile_posenc_hw=(8, 8),
     base_patch_grid_hw=(14, 14),
     num_decoder_blocks=2,
@@ -112,19 +112,52 @@ def make_sam_v2(
 
     However, if you want to make a model without pretrained weights
     here are the following standard configs (based on the original SAMV2 configs):
-    https://github.com/facebookresearch/segment-anything-2/tree/main/sam2_configs
+    https://github.com/facebookresearch/sam2/tree/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/configs/sam2.1
 
     # sam-large:
-        ???
+        features_per_image_token: 144
+        imgencoder_heads: 2
+        imgencoder_blocks_per_stage: (2, 6, 36, 4)
+        imgencoder_window_size_per_stage: (8, 4, 16, 8)
+        imgencoder_global_attn_spacing_per_stage: (None, None, 10, None)
+        base_patch_grid_hw: (7, 7)
 
     # sam-base+
-        ???
+        features_per_image_token: 112
+        imgencoder_heads: 2
+        imgencoder_blocks_per_stage: (2, 3, 16, 3)
+        imgencoder_window_size_per_stage: (8, 4, 14, 7)
+        imgencoder_global_attn_spacing_per_stage: (None, None, 4, None)
+        base_patch_grid_hw: (14, 14)
 
     # sam-small
-        ???
+        features_per_image_token: 96
+        imgencoder_heads: 1
+        imgencoder_blocks_per_stage: (1, 2, 11, 2)
+        imgencoder_window_size_per_stage: (8, 4, 14, 7)
+        imgencoder_global_attn_spacing_per_stage: (None, None, 3, None)
+        base_patch_grid_hw: (7, 7)
 
     # sam-tiny
-        ???
+        features_per_image_token: 96
+        imgencoder_heads: 1
+        imgencoder_blocks_per_stage: (1, 2, 7, 2)
+        imgencoder_window_size_per_stage: (8, 4, 14, 7)
+        imgencoder_global_attn_spacing_per_stage: (None, None, 2, None)
+        base_patch_grid_hw: (7, 7)
+
+    # Shared for all model sizes:
+        patch_size_px: 7
+        features_per_prompt_token: 256
+        features_per_decoder_token: 128
+        features_per_memory_token: 64
+        imgencoder_window_tile_posenc_hw: (8, 8)
+        num_output_mask_tokens: 4
+        num_decoder_blocks: 2
+        num_decoder_heads: 8
+        num_memory_downsample_layers: 4
+        num_memory_encoder_mixer_layers: 2
+        num_memory_fusion_layers: 4
     """
 
     # Construct model components

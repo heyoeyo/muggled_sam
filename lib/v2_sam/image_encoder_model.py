@@ -64,7 +64,7 @@ class SAMV2ImageEncoder(nn.Module):
         num_heads=2,
         blocks_per_stage=(2, 3, 16, 3),
         global_attn_spacing_per_stage=(None, None, 4, None),
-        window_size_per_stage=(8, 4, 14, 17),
+        window_size_per_stage=(8, 4, 14, 7),
         window_tile_posenc_hw=(8, 8),
         base_patch_grid_hw=(14, 14),
         patch_size_px=7,
