@@ -22,15 +22,15 @@ def _make_hashnumber_finder_pattern(input_str):
     instances of '#' replaced with a regex pattern for finding numbers
     For example, the string above is converted to:
 
-        "some\.text\.(\d+)\.more\.words"
+        "some\\.text\\.(\\d+)\\.more\\.words"
 
     -> Each dot '.' is replaced with dot literal (to avoid interpretting as regex '.' wildcard)
-    -> The '#' is replaced with regex pattern: (\d+), which matches to any number of digits
+    -> The '#' is replaced with regex pattern: (\\d+), which matches to any number of digits
     """
 
     # Include 'any number' check
     pattern_str = re.escape(input_str)
-    pattern_str = pattern_str.replace("\#", "(\d+)")
+    pattern_str = pattern_str.replace(r"\#", r"(\d+)")
 
     return pattern_str
 

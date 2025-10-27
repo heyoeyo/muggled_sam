@@ -110,6 +110,20 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             memattn_sd[new_key] = orig_data
             continue
 
+        # Explicity skip some keys, which are not used by MugSAM implementation
+        # (this way, we can report keys which aren't handled)
+        if _ignore_keys(orig_key):
+            continue
+
+        # Warn about any missed weights
+        print(
+            "",
+            "Warning, model weight not handled on load:",
+            f"    Key: '{orig_key}'",
+            f"  Shape: {tuple(orig_data.shape)}",
+            sep="\n",
+        )
+
     # Bundle new state dict model components together for easier handling
     new_state_dict = {
         "imgencoder": imgenc_sd,
@@ -145,6 +159,14 @@ def _reshape_layernorm2d(key, data, *key_hints):
             return data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
 
     return data
+
+
+# .....................................................................................................................
+
+
+def _ignore_keys(key):
+    """Flag keys that are not used"""
+    return any(key == targ for targ in ("no_mem_pos_enc", "mask_downsample.weight", "mask_downsample.bias"))
 
 
 # .....................................................................................................................
@@ -428,6 +450,10 @@ def _convert_memencoder_keys(key: str) -> None | str:
 
 
 def _convert_memfusion_keys(key: str) -> None | str:
+
+    # Ignore position encoding when no memory is present (not used)
+    if key == "no_mem_pos_enc":
+        return None
 
     # Capture 'no_mem_embed' which originally belonged to parent SAM model
     if key == "no_mem_embed":

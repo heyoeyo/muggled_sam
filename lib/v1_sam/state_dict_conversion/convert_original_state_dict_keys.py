@@ -77,6 +77,15 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             maskdecoder_sd[new_key] = mod_data
             continue
 
+        # Warn about any missed weights
+        print(
+            "",
+            "Warning, model weight not handled on load:",
+            f"    Key: '{orig_key}'",
+            f"  Shape: {tuple(orig_data.shape)}",
+            sep="\n",
+        )
+
     # Bundle new state dict model components together for easier handling
     new_state_dict = {
         "imgencoder": imgenc_sd,
