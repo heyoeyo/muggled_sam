@@ -34,7 +34,7 @@ if torch.cuda.is_available():
 
 # Auto-mask generation settings
 visualize_results = True
-points_per_side = 8
+points_per_side = 16
 stability_offset = 2.5
 stability_threshold = 0.5
 iou_threshold = 0.5
@@ -54,9 +54,9 @@ img_pixel_count = img_hw[0] * img_hw[1]
 num_total_prompts = points_per_side * points_per_side
 pts_1d = np.linspace(0, 1, max(1, points_per_side) + 2, dtype=np.float32)[1:-1]
 pts_2d = np.dstack(np.meshgrid(pts_1d, pts_1d)).reshape(num_total_prompts, 2)
-visualize_wait_ms = max(1, min(100, round(5000 / num_total_prompts)))
-use_mask_idx = [use_mask_0, use_mask_1, use_mask_2, use_mask_3]
-assert any(use_mask_idx), "Must use at least one mask prediction from model!"
+visualize_wait_ms = max(1, min(100, round(10000 / num_total_prompts)))
+filter_by_idx = [use_mask_0, use_mask_1, use_mask_2, use_mask_3]
+assert any(filter_by_idx), "Must use at least one mask prediction from model!"
 
 # Set up model
 print("Loading model & encoding image data...")
@@ -77,38 +77,38 @@ try:
         # -> Certain indexes favor large/middle/small-scale segmentations (indexing varies by model)
         # -> Can choose to ignore indexes associated segmentation level, if you know you don't need/want it
         # -> This will also speed up auto-segmentation
-        ok_masks = mask_preds[:, use_mask_idx, :, :]
-        ok_iou = iou_preds[:, use_mask_idx]
+        valid_masks = mask_preds[:, filter_by_idx, :, :]
+        valid_iou = iou_preds[:, filter_by_idx]
 
         # Skip bad iou results
-        is_ok_iou = ok_iou >= iou_threshold
-        if not is_ok_iou.any():
+        filter_by_iou = valid_iou >= iou_threshold
+        if not filter_by_iou.any():
             continue
-        ok_masks = ok_masks[is_ok_iou]
-        ok_iou = ok_iou[is_ok_iou]
+        valid_masks = valid_masks[filter_by_iou]
+        valid_iou = valid_iou[filter_by_iou]
 
         # Skip bad stability results
-        stability_scores = calculate_mask_stability_score(ok_masks, stability_offset, mask_threshold)
-        is_ok_stability = stability_scores >= stability_threshold
-        if not is_ok_stability.any():
+        stability_scores = calculate_mask_stability_score(valid_masks, stability_offset, mask_threshold)
+        filter_by_stability = stability_scores >= stability_threshold
+        if not filter_by_stability.any():
             continue
-        ok_masks = ok_masks[is_ok_stability]
-        ok_iou = ok_iou[is_ok_stability]
-        ok_stability = stability_scores[is_ok_stability]
+        valid_masks = valid_masks[filter_by_stability]
+        valid_iou = valid_iou[filter_by_stability]
+        valid_stability = stability_scores[filter_by_stability]
 
         # Binarize & filter by size
-        bin_masks = torch.nn.functional.interpolate(ok_masks.unsqueeze(0), size=img_hw).squeeze(0) > mask_threshold
+        bin_masks = torch.nn.functional.interpolate(valid_masks.unsqueeze(0), size=img_hw).squeeze(0) > mask_threshold
         areas_norm = bin_masks.sum((1, 2)) / img_pixel_count
-        is_ok_area = torch.bitwise_and(areas_norm > min_area, areas_norm < max_area)
-        if not is_ok_area.any():
+        filter_by_area = torch.bitwise_and(areas_norm > min_area, areas_norm < max_area)
+        if not filter_by_area.any():
             continue
-        ok_masks = bin_masks[is_ok_area]
-        ok_iou = ok_iou[is_ok_area]
-        ok_stability = ok_stability[is_ok_area]
-        ok_area = areas_norm[is_ok_area]
+        valid_masks = bin_masks[filter_by_area]
+        valid_iou = valid_iou[filter_by_area]
+        valid_stability = valid_stability[filter_by_area]
+        valid_area = areas_norm[filter_by_area]
 
         # Store 'ok' mask results
-        for bin_mask, iou, stability, area in zip(ok_masks, ok_iou, ok_stability, ok_area):
+        for bin_mask, iou, stability, area in zip(valid_masks, valid_iou, valid_stability, valid_area):
             mask_uint8 = (bin_mask.byte() * 255).cpu().numpy()
             box_xy1xy2_norm = get_box_xy1xy2_norm_from_mask(mask_uint8)
             raw_results_list.append(
@@ -137,8 +137,10 @@ try:
                 cv2.putText(disp_mask, f"IoU: {iou_pct}", (5, 16), 0, txt_scale, txt_color, 1)
                 cv2.putText(disp_mask, f"Area: {area_pct}", (5, 36), 0, txt_scale, txt_color, 1)
                 cv2.putText(disp_mask, f"Stablility: {stable_pct}", (5, 56), 0, txt_scale, txt_color, 1)
-                cv2.imshow("Valid Mask", disp_mask)
-                cv2.waitKey(visualize_wait_ms)
+                cv2.imshow("Valid Mask - esc to close", disp_mask)
+                keypress = cv2.waitKey(visualize_wait_ms) & 0xFF
+                if keypress == 27:
+                    raise KeyboardInterrupt
 finally:
     cv2.destroyAllWindows()
 t2 = perf_counter()
