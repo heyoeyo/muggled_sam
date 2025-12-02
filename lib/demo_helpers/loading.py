@@ -95,6 +95,17 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
 
     # Handle no files vs. 1 file vs. many files
     if len(model_file_paths) == 0:
+
+        # Provide link to model listings in case user doesn't have any
+        print(
+            "",
+            "No model path found for loading!",
+            "For more info on where to get model files, see:",
+            "https://github.com/heyoeyo/muggled_sam/blob/main/README.md#model-weights",
+            sep="\n",
+            flush=True,
+        )
+
         # If there are no files in the model weights folder, ask the user to enter a path to load a model
         model_path = ask_for_path_if_missing(model_path, "model weights", default_prompt_path)
     elif len(model_file_paths) == 1:
@@ -134,7 +145,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
             default_path = None
 
     # Generate list of model selections, including the default path if it isn't in the folder listing
-    model_files_paths = sorted(model_files_paths)
+    model_files_paths = sorted(model_files_paths, reverse=True)
     model_names = [osp.basename(filepath) for filepath in model_files_paths]
     default_in_listing = any(default_path == path for path in model_files_paths)
     if not default_in_listing and default_path is not None:
@@ -145,10 +156,10 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
     # Create menu listing strings for each model option for display in terminal
     menu_item_strs = []
     for idx, (path, name) in enumerate(zip(model_files_paths, model_names)):
-        menu_str = f" {1+idx:>2}: {name}"
+        menu_str = f" {1+idx:>2}: {name}" if not default_in_listing else f"  {1+idx:>2}: {name}"
         is_default = path == default_path
         if is_default:
-            menu_str += " (default)"
+            menu_str = f" *{1+idx:>2}: {name}  (default)"
         menu_item_strs.append(menu_str)
 
     # Set up prompt text and feedback printing
