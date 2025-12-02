@@ -28,12 +28,16 @@ class MaskContourData:
 
     # Array which holds information about how contours are related:
     # Each row (corresponds to each contour) holds: [next_idx, prev_idx, first_child_idx, parent_idx]
-    # See: https://docs.opencv.org/3.4/d9/d8b/tutorial_py_contours_hierarchy.html
-    hierarchy: ndarray
+    # The next/prev values seem to be relative to the parent index
+    # -> That is, all 'top-most' contours (parent_idx = -1) list each other with their next/prev index
+    # -> All child contours (of a single parent) list each other with next/prev etc.
+    #   -> A 'single child' contour will have -1 for both next/prev (and also first child) indices
+    # For more info: https://docs.opencv.org/3.4/d9/d8b/tutorial_py_contours_hierarchy.html
+    hierarchy_array: ndarray
 
     # Array which stores boolean values indicating whether a contour represents
     # an 'island' (white regions of a mask) or a 'hole' (black regions)
-    is_island_list: ndarray
+    is_island_array: ndarray
 
     # .................................................................................................................
 
@@ -57,21 +61,13 @@ class MaskContourData:
         hierarchy = hierarchy[0] if (hierarchy is not None) else np.empty((0, 4), dtype=np.int32)
 
         # Figure out which contours should be filled in black vs. white (i.e. holes vs. islands)
-        num_contours = len(contours_norm_list)
-        is_island_list = np.zeros(num_contours, bool)
-        for idx in range(num_contours):
-
-            # Figure out whether the contour is an island or hole
-            # -> Top-most contours (no parent) are always islands. Next child is hole, next-next child is island etc.
-            parent_idx = int(hierarchy[idx, 3])
-            is_topmost = parent_idx == -1
-            is_island_list[idx] = True if is_topmost else (not is_island_list[parent_idx])
+        is_island_array = get_is_contour_an_island(hierarchy)
 
         # Store results
         self.contour_norms_list = contours_norm_list
-        self.hierarchy = hierarchy
+        self.hierarchy_array = hierarchy
         self.area_norms_list = area_norms_list
-        self.is_island_list = is_island_list
+        self.is_island_array = is_island_array
         self.mask_hw = mask_binary_uint8.shape[0:2]
 
     # .................................................................................................................
@@ -92,7 +88,7 @@ class MaskContourData:
         """
 
         for idx in range(len(self.contour_norms_list)):
-            parent_idx = int(self.hierarchy[idx, 3])
+            parent_idx = int(self.hierarchy_array[idx, 3])
             yield idx, parent_idx
 
         return
@@ -113,7 +109,7 @@ class MaskContourData:
 
         # Draw each (valid, island) contour in sequence to reconstruct mask image
         mask_1ch = np.zeros((mask_h, mask_w), dtype=np.uint8)
-        for contour, is_island, is_valid in zip(self.contour_norms_list, self.is_island_list, filter_array):
+        for contour, is_island, is_valid in zip(self.contour_norms_list, self.is_island_array, filter_array):
 
             # Skip invalid contours (for example, filtered by being too small)
             if not is_valid:
@@ -157,6 +153,88 @@ class MaskContourData:
 
     # .................................................................................................................
 
+    def simplify_inplace(self, simplify_eps: float, scale_to_perimeter: bool):
+        """
+        Function used to 'simplify' a contour. Simplification has the
+        effect of reducing the number of xy points in the contour. The
+        general effect is to create a more 'rough cut-out' effect as the
+        'eps' value increases.
+
+        The 'scale_to_perimeter' setting determines whether the simplification
+        is scaled based on the contour perimeter or not. When this is disabled,
+        simplification is much more likely to fully remove contours.
+
+        Simplification is done using OpenCV: cv2.aproxPolyDP
+        which itself uses the 'Ramer–Douglas–Peucker' algorithm.
+        """
+
+        # Bail if simplification value is invalid
+        if simplify_eps <= 0:
+            return self
+
+        # Figure out normalized-to-pixel sizing factors
+        mask_h, mask_w = self.mask_hw
+        xy_norm_to_px_factor = np.float32((mask_w - 1, mask_h - 1))
+        xy_px_to_norm_factor = 1 / xy_norm_to_px_factor
+        simplify_eps_px = simplify_eps * np.sqrt(mask_h * mask_w) if not scale_to_perimeter else simplify_eps
+
+        # Apply simplification to each contour separately
+        new_contours = []
+        new_is_island = []
+        need_keep_list = []
+        needs_hierarchy_fix = False
+        for idx, contour_norm in enumerate(self.contour_norms_list):
+            cont_px = np.int32(np.round(np.float32(contour_norm) * xy_norm_to_px_factor))
+            simple_contour = simplify_contour_px(cont_px, simplify_eps_px, scale_to_perimeter)
+            # Sanity check. Remove any contours that are simplified below 3 points
+            # -> In practice, simplify doesn't drop shapes below 4 points!
+            should_keep_contour = len(simple_contour) >= 3
+            if should_keep_contour:
+                new_contours.append(simple_contour * xy_px_to_norm_factor)
+            else:
+                needs_hierarchy_fix = True
+            need_keep_list.append(should_keep_contour)
+
+        # Fix hierarchy data if needed
+        # -> Hierarchy structure uses relative (internal) indexing, removal of entries breaks this badly
+        # -> It's hard to properly fix this (without multi-pass), so we're mainly focus on fixing the
+        #    parent indexing here
+        new_hierarchy = self.hierarchy_array
+        new_is_island = self.is_island_array
+        if needs_hierarchy_fix:
+            # First build mapping of old hierarchy indexing to new indexing
+            # -> For example, if the previous '7th' entry is now the '0th' entry,
+            #    due to removal of other entries, we record mapping: {7: 0}
+            rolling_new_idx, old_to_new_idx_lut = 0, {}
+            for old_idx, need_keep in enumerate(need_keep_list):
+                if not need_keep:
+                    continue
+                old_to_new_idx_lut[old_idx] = rolling_new_idx
+                rolling_new_idx += 1
+
+            # Update hierarchy mappings, though we don't account for next/previous properly
+            # -> Mostly concerned with getting parent index set correctly!
+            new_hierarchy_list = []
+            for next_idx, prev_idx, child_idx, parent_idx in self.hierarchy_array[need_keep_list, :]:
+                new_next = old_to_new_idx_lut.get(next_idx, -1)
+                new_prev = old_to_new_idx_lut.get(prev_idx, -1)
+                new_child = old_to_new_idx_lut.get(child_idx, -1)
+                new_parent = old_to_new_idx_lut.get(parent_idx, -1)
+                new_hierarchy_list.append((new_next, new_prev, new_child, new_parent))
+            new_hierarchy = np.array(new_hierarchy_list, dtype=np.int32)
+
+            # Update is-island check, since parent-child relationships may have changed
+            new_is_island = get_is_contour_an_island(new_hierarchy)
+
+        # Update internal data, in-place
+        self.contour_norms_list = new_contours
+        self.is_island_array = new_is_island
+        self.hierarchy_array = new_hierarchy
+
+        return self
+
+    # .................................................................................................................
+
     def filter_by_size_thresholds(self, hole_size_threshold=0, island_size_threshold=2) -> ndarray:
         """
         Create filtering array (used when drawing) that excludes overly small contours
@@ -175,14 +253,14 @@ class MaskContourData:
         for idx, area in enumerate(self.area_norms_list):
 
             # First check if parent is valid (otherwise, child is invalid by default)
-            parent_idx = int(self.hierarchy[idx, 3])
+            parent_idx = int(self.hierarchy_array[idx, 3])
             is_topmost = parent_idx == -1
             is_parent_valid = True if is_topmost else is_valid_list[parent_idx]
 
             # Decide if the contour is 'valid' based on sizing thresholds & parent status
             is_valid = is_parent_valid
             if is_valid:
-                is_island = self.is_island_list[idx]
+                is_island = self.is_island_array[idx]
                 is_small_hole = (not is_island) and (area < hole_area_thresh)
                 is_small_island = is_island and (area < island_area_thresh)
                 is_valid = (not is_small_island) and (not is_small_hole)
@@ -204,7 +282,10 @@ class MaskContourData:
         filter_array[largest_idx] = True
 
         # Sanity check... largest is always an outer-most mask, right?
-        assert self.hierarchy[largest_idx, 3] == -1, "Largest contour is not an outer-most contour?!"
+        # -> Reminder: hierarchy holds [next_idx, prev_idx, first_child_idx, parent_idx]
+        # -> For any entry, if there is no index (e.g. not parent contour) the index will be -1
+        # -> So checking if the last entry (3 -> parent_idx) equals -1 is the same as checking for 'top-most' contour
+        assert self.hierarchy_array[largest_idx, 3] == -1, "Largest contour is not an outer-most contour?!"
 
         # Include all child contours, if parent was included
         for idx, parent_idx in self.index_iter():
@@ -398,6 +479,37 @@ def get_largest_contour(contours_list, reference_shape=None) -> [bool, ndarray]:
     largest_contour = contours_list[idx_of_largest_contour]
 
     return idx_of_largest_contour, largest_contour
+
+
+# .....................................................................................................................
+
+
+def get_is_contour_an_island(contour_hierarchy: ndarray) -> ndarray:
+    """
+    Helper used to figure out which contours are islands vs. holes,
+    based on the contour hierarchy array. The logic used is as follows:
+        1. All top-most contours are islands (e.g. parent index = -1)
+        2. A direct child of a top-most contour is a hole
+        3. A child of a direct child is an island
+        4. Hole vs. island status continues to alternate for children-of-children contours
+
+    This function assumes that the hierarchy array is ordered so that child
+    contours are always found after their parent in the array!
+
+    Returns:
+        is_island_array (True if contour is island, False if it's a hole)
+    """
+
+    # Figure out whether the contour is an island or hole
+    num_contours = contour_hierarchy.shape[0] if contour_hierarchy.ndim == 2 else contour_hierarchy.shape[1]
+    is_island_array = np.zeros(num_contours, dtype=bool)
+    for idx, hierarchy_entry in enumerate(contour_hierarchy):
+        # Top-most contours (no parent) are always islands. Next child is hole, next-next child is island etc.
+        parent_idx = int(hierarchy_entry[3])
+        is_topmost = parent_idx == -1
+        is_island_array[idx] = True if is_topmost else (not is_island_array[parent_idx])
+
+    return is_island_array
 
 
 # .....................................................................................................................

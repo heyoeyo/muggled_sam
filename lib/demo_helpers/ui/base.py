@@ -480,6 +480,37 @@ class BaseOverlay(BaseCallback):
 # %% Functions
 
 
+def force_flex_min_width(*items, flex: list[float], scale_by_minimum: bool = True) -> None:
+    """
+    Helper used to assign proportional widths to elements
+    For example, this can be used to set the ratio of widths
+    to '2-to-1' (e.g. one element is twice as wide as the other).
+    Usage:
+        force_flex_min_width(element1, element2, flex=[2,1])
+    """
+
+    # Sanity check
+    num_items = len(items)
+    num_flex = len(flex)
+    assert num_items == num_flex, f"Number of 'flex' entries ({num_flex}) must match number of items ({num_items})"
+
+    flex_np = np.array(flex).astype(np.float32)
+    flex_sum = np.sum(flex_np)
+    assert flex_sum > 0.01, "Sum of all flex values should be non-zero!"
+
+    # Get scaling values
+    flex_np = flex_np / np.sum(flex_np)
+    all_min_w = [item._rdr.limits.min_w for item in items]
+    scale_w = min(all_min_w) if scale_by_minimum else max(all_min_w)
+
+    # Update all min-widths according to flex proportions
+    for item, flex_value in zip(items, flex_np):
+        new_min_w = round(scale_w * flex_value)
+        item._rdr.limits.update(min_w=new_min_w)
+
+    return
+
+
 def force_same_min_width(*items, min_w=None) -> int:
     """
     Helper used to force all items to the same minimum width.

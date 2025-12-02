@@ -28,6 +28,8 @@ class MaskPostProcessor:
         self._mask_islands_thresh = 0
         self._mask_bridging = 0
         self._mask_padding = 0
+        self._mask_simplify_eps = 0
+        self._mask_simplify_by_perimeter = False
 
         # Storage for morphological filtering used in briding contour edges
         self._bridge_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
@@ -83,11 +85,25 @@ class MaskPostProcessor:
         if need_size_filtering or need_padding:
             mask_contour_data = MaskContourData(output_mask_uint8, external_masks_only)
 
+        # Reduce contour complexity if needed
+        need_simplify = self._mask_simplify_eps > 0
+        if need_simplify:
+            mask_contour_data.simplify_inplace(self._mask_simplify_eps, self._mask_simplify_by_perimeter)
+            output_mask_uint8 = mask_contour_data.draw_mask(mask_uint8.shape)
+
         return output_mask_uint8, mask_contour_data
 
     # .................................................................................................................
 
-    def update(self, mask_holes_threshold: int, mask_islands_threshold: int, mask_bridging: int, mask_padding: int):
+    def update(
+        self,
+        mask_holes_threshold: int,
+        mask_islands_threshold: int,
+        mask_bridging: int,
+        mask_padding: int,
+        mask_simplify_eps: float,
+        mask_simplify_by_perimeter: bool,
+    ):
         """
         Updates mask post-processing configuration.
         Includes some 'caching' so repeat values don't lead to repeat computation
@@ -113,6 +129,8 @@ class MaskPostProcessor:
         self._mask_islands_thresh = mask_islands_threshold
         self._mask_bridging = mask_bridging
         self._mask_padding = mask_padding
+        self._mask_simplify_eps = mask_simplify_eps
+        self._mask_simplify_by_perimeter = mask_simplify_by_perimeter
 
         return self
 
