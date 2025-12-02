@@ -24,7 +24,6 @@ import cv2
 import numpy as np
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.v1_sam.components.image_encoder_attention import (
     GlobalAttentionBlock as V1GlobalBlock,
@@ -61,7 +60,7 @@ default_device = get_default_device_string()
 default_image_path = None
 default_model_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to visualized SAM image encoder block outputs")
@@ -100,7 +99,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "--hide_info",
@@ -163,7 +162,7 @@ if full_image_bgr is None:
 # %% Capture model outputs
 
 # Figure out which transformer block outputs we're trying to capture
-is_v2_model = isinstance(sammodel, SAMV2Model)
+is_v2_model = sammodel.name == "samv2"
 target_modules = (V2GlobalBlock, V2WindowBlock, V2PoolBlock) if is_v2_model else (V1GlobalBlock, V1WindowBlock)
 
 # Capture target module output

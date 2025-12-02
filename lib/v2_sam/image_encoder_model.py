@@ -141,9 +141,9 @@ class SAMV2ImageEncoder(nn.Module):
     def prepare_image(
         self,
         image_bgr: ndarray,
-        max_side_length=1024,
-        use_square_sizing=True,
-        pad_to_square=False,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+        pad_to_square: bool = False,
     ) -> Tensor:
         """
         Helper used to convert opencv-formatted images (e.g. from loading: cv2.imread(path_to_image)
@@ -151,6 +151,10 @@ class SAMV2ImageEncoder(nn.Module):
         Returns:
             image_as_tensor_bchw
         """
+
+        # Fill in default sizing if not given
+        if max_side_length is None:
+            max_side_length = 1024
 
         # Figure out scaling factor to get target side length
         img_h, img_w = image_bgr.shape[0:2]

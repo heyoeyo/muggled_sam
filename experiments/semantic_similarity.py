@@ -27,7 +27,6 @@ import cv2
 import numpy as np
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.images import ExpandingImage
@@ -212,7 +211,7 @@ default_image_path_2 = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Visualize similarity of SAM image tokens between two images")
@@ -259,7 +258,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "--hide_info",
@@ -272,6 +271,18 @@ parser.add_argument(
     default=False,
     action="store_true",
     help="If set, the same image will be used for both prompting/masking & similarity comparison",
+)
+parser.add_argument(
+    "--hstack",
+    default=False,
+    action="store_true",
+    help="Force images to stack horizontally",
+)
+parser.add_argument(
+    "--vstack",
+    default=False,
+    action="store_true",
+    help="Force images to stack vertically",
 )
 
 # For convenience
@@ -287,6 +298,8 @@ use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 show_info = not args.hide_info
 use_same_image = args.same
+force_hstack = args.hstack
+force_vstack = args.vstack
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -319,7 +332,7 @@ model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(**device_config_dict)
-is_v2_model = isinstance(sammodel, SAMV2Model)
+is_v2_model = sammodel.name == "samv2"
 
 # Load reference image
 image_bgr_a = cv2.imread(image_path_a)
@@ -336,6 +349,18 @@ if image_bgr_b is None:
     if not ok_video:
         print("", "Unable to load image!", f"  @ {image_path_b}", sep="\n", flush=True)
         raise FileNotFoundError(osp.basename(image_path_b))
+
+# Determine stacking direction
+use_hstack_images = None
+if force_hstack:
+    use_hstack_images = True
+elif force_vstack:
+    use_hstack_images = False
+else:
+    img_a_h, img_a_w = image_bgr_a.shape[0:2]
+    img_b_h, img_b_w = image_bgr_b.shape[0:2]
+    have_narrow_img = (img_a_h > img_a_w) or (img_b_h > img_b_w)
+    use_hstack_images = have_narrow_img
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -438,10 +463,11 @@ footer_msgbar = StaticMessageBar(
 cmap_bar = HColormapsBar(cv2.COLORMAP_INFERNO, cv2.COLORMAP_VIRIDIS, make_spectral_colormap(), None)
 
 # Set up full display layout
+StackElem: HStack | VStack = HStack if use_hstack_images else VStack
 disp_layout = VStack(
     header_msgbar if show_info else None,
     cmap_bar,
-    HStack(ui_elems.layout, comp_img_elem),
+    StackElem(ui_elems.layout, comp_img_elem),
     HStack(swap_images_btn if not use_same_image else None, hflip_btn, raw_feats_btn, similarity_btn),
     encoding_select_slider if is_v2_model else None,
     norm_range_slider,

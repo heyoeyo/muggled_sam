@@ -48,7 +48,7 @@ default_model_path = None
 default_prompts_path = None
 default_mask_hint_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 default_simplify = 0.0
 default_show_iou_preds = False
 
@@ -102,7 +102,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "-l",

@@ -26,12 +26,11 @@ import torch
 import cv2
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.base import force_same_min_width
 from lib.demo_helpers.ui.layout import HStack, VStack
-from lib.demo_helpers.ui.buttons import ToggleButton
+from lib.demo_helpers.ui.buttons import ToggleButton, RadioConstraint
 from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.ui.static import StaticMessageBar
 from lib.demo_helpers.ui.text import ValueBlock
@@ -55,7 +54,7 @@ default_image_path = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 default_max_window_size = 32
 
 # Define script arguments
@@ -102,7 +101,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "-w",
@@ -172,7 +171,7 @@ model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(**device_config_dict)
-is_v2_model = isinstance(sammodel, SAMV2Model)
+is_v2_model = sammodel.name == "samv2"
 
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
@@ -240,11 +239,12 @@ ui_elems = PromptUI(full_image_bgr, init_mask_preds)
 uictrl = PromptUIControl(ui_elems)
 
 # Set up slider for adjusting image encoding size
+init_img_size = max(preencode_img_hw)
 sidelength_slider = HSlider(
     "Encoding Side Length",
-    initial_value=imgenc_base_size,
+    initial_value=init_img_size,
     min_value=32,
-    max_value=max(2 * imgenc_base_size, 1024),
+    max_value=max(2 * init_img_size, 1024),
     step_size=32,
     marker_steps=8,
     bar_bg_color=(35, 55, 60),
@@ -263,12 +263,13 @@ for idx in range(4):
     )
     win_sliders.append(slider)
 
-# Set up control buttons
-show_preds_btn = ToggleButton("Show Prediction", on_color=(160, 180, 65), default_state=False, text_scale=0.5)
-show_binary_btn = ToggleButton("Show Binary", on_color=(75, 45, 90), default_state=False, text_scale=0.5)
+# Set up display controls & inference time display
 infer_time_block = ValueBlock("Inference: ", init_time_taken_ms, " ms", max_characters=5)
-button_bar = HStack(infer_time_block, show_preds_btn, show_binary_btn)
-force_same_min_width(infer_time_block, show_preds_btn, show_binary_btn)
+show_orig_btn, show_preds_btn, show_binary_btn = ToggleButton.many(
+    "Original", "Prediction", "Binary", text_scale=0.5, on_color=(75, 45, 90)
+)
+force_same_min_width(infer_time_block, show_orig_btn, show_preds_btn, show_binary_btn)
+display_constraint = RadioConstraint(show_orig_btn, show_preds_btn, show_binary_btn)
 
 # Set up message bars
 device_dtype_str = f"{model_device}/{model_dtype}"
@@ -285,7 +286,7 @@ disp_layout = VStack(
     header_msgbar if show_info else None,
     cmap_bar,
     ui_elems.layout,
-    button_bar,
+    HStack(infer_time_block, show_orig_btn, show_preds_btn, show_binary_btn),
     sidelength_slider,
     *win_sliders,
     footer_msgbar if show_info else None,
@@ -308,7 +309,7 @@ window.move(200, 50)
 # Attach key controls
 uictrl.attach_arrowkey_callbacks(window)
 window.attach_keypress_callback("c", ui_elems.tools.clear.click)
-window.attach_keypress_callback(KEY.TAB, show_preds_btn.toggle)
+window.attach_keypress_callback(KEY.TAB, display_constraint.next)
 window.attach_keypress_callback("b", show_binary_btn.toggle)
 
 # For clarity, some additional keypress codes
@@ -323,6 +324,10 @@ preview_preds = init_mask_preds
 mask_preds = init_mask_preds
 mask_contours_norm = None
 
+# Set up display mode
+is_show_preds = False
+is_show_binary = False
+
 # *** Main display loop ***
 try:
     while True:
@@ -332,14 +337,9 @@ try:
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Read controls
-        _, show_preds_as_display = show_preds_btn.read()
-        is_binary_changed, show_preds_as_binary = show_binary_btn.read()
+        is_display_changed, _, selected_display_btn = display_constraint.read()
         is_length_changed, max_side_length = sidelength_slider.read()
         is_winsizes_changed, win_sizes = zip(*[slider.read() for slider in win_sliders])
-
-        # Switch to show binary mask when toggled on
-        if is_binary_changed and show_preds_as_binary and auto_toggle_to_predictions:
-            show_preds_btn.toggle(True)
 
         # Re-encode image if window sizing changes
         need_image_encode = any(is_winsizes_changed) or is_length_changed
@@ -352,13 +352,17 @@ try:
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
             sammodel.image_encoder.set_window_sizes(win_sizes)
             t1 = perf_counter()
-            encoded_img, _, _ = sammodel.encode_image(full_image_bgr, max_side_length, use_square_sizing)
+            encoded_img, token_hw, _ = sammodel.encode_image(full_image_bgr, max_side_length, use_square_sizing)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             t2 = perf_counter()
 
             # Update inference time reporting
             infer_time_block.set_value(round(1000 * (t2 - t1), 1))
+
+            # Update token sizing
+            token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
+            header_msgbar.update_message(f"{token_hw_str} tokens", target_index=1)
 
         # Update masking result if window or prompts are changed
         if need_image_encode or need_prompt_encode:
@@ -376,10 +380,15 @@ try:
         if show_iou_preds:
             uictrl.draw_iou_predictions(iou_preds)
 
+        # Figure out which display mode we're in
+        if is_display_changed:
+            is_show_preds = selected_display_btn is show_preds_btn
+            is_show_binary = selected_display_btn is show_binary_btn
+
         # Scale selected mask to match display sizing
         display_hw = ui_elems.image.get_render_hw()
         mask_select = mask_preds[:, mselect_idx, :, :].unsqueeze(1)
-        use_nearest_interpolation = show_preds_as_display and (not show_preds_as_binary)
+        use_nearest_interpolation = is_show_preds
         mask_scaled = torch.nn.functional.interpolate(
             mask_select,
             size=display_hw,
@@ -388,10 +397,10 @@ try:
         ).squeeze(dim=(0, 1))
 
         # Handle display output, based on UI state
-        if show_preds_as_binary and show_preds_as_display:
+        if is_show_binary:
             disp_img = ((mask_scaled > 0.0).byte() * 255).cpu().numpy()
 
-        elif show_preds_as_display:
+        elif is_show_preds:
             # Show colormapped mask result
             mask_uint8 = normalize_to_npuint8(mask_scaled)
             disp_img = cmap_bar.apply_colormap(mask_uint8)
@@ -405,7 +414,7 @@ try:
             ok_contours, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
 
         # Render final output
-        ui_elems.olays.polygon.set_polygons(None if show_preds_as_display else mask_contours_norm)
+        ui_elems.olays.polygon.set_polygons(None if is_show_preds else mask_contours_norm)
         ui_elems.image.set_image(disp_img)
         display_image = disp_layout.render(h=display_size_px)
         req_break, keypress = window.show(display_image)

@@ -26,7 +26,6 @@ import torch
 import cv2
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.video import LoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
 from lib.demo_helpers.ui.window import DisplayWindow
@@ -55,7 +54,7 @@ default_video_path = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 default_max_memory_history = 6
 default_max_pointer_history = 15
 default_show_iou_preds = False
@@ -98,7 +97,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "--max_memories",
@@ -174,7 +173,7 @@ model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert isinstance(sammodel, SAMV2Model), "Only SAMv2 models are supported for video predictions!"
+assert sammodel.name == "samv2", "Only SAMv2 models are supported for video predictions!"
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display

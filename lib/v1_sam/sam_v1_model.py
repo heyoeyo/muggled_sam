@@ -26,6 +26,8 @@ class SAMV1Model(nn.Module):
     Wrapper around separated SAM model components, so that the model can be used as a singular entity
     """
 
+    name = "samv1"
+
     # .................................................................................................................
 
     def __init__(

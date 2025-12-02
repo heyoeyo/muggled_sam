@@ -47,7 +47,7 @@ default_image_path = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 default_max_memory_history = 6
 default_max_pointer_history = 15
 default_num_object_buffers = 4
@@ -90,7 +90,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default: {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "-n",

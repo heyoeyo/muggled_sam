@@ -119,6 +119,21 @@ class StaticMessageBar(BaseCallback):
 
     # .................................................................................................................
 
+    def update_message(self, *messages: str, target_index: int | None = None):
+        """Helper used to update messages. Warning: This doesn't account for changes in sizing of text!"""
+        if target_index is not None:
+            assert len(messages) == 1, "Cannot update with multiple message while targeting an index!"
+            self._msgs_list[target_index] = f"  {messages[0]}  "
+        else:
+            self._msgs_list = [f" {msg}  " for msg in messages if msg is not None]
+
+        # Wipe out cache so we force a re-render
+        self._image = self._base_image.copy()
+
+        return self
+
+    # .................................................................................................................
+
     def _render_up_to_size(self, h, w):
 
         # Re-use stored image, if sizing doesn't change

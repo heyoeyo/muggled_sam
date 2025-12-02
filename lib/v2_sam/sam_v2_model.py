@@ -28,6 +28,8 @@ class SAMV2Model(nn.Module):
     Wrapper around separated SAMV2 model components, so that the model can be used as a singular entity
     """
 
+    name = "samv2"
+
     # .................................................................................................................
 
     def __init__(

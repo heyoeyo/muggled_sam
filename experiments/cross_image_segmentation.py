@@ -27,7 +27,6 @@ import torch
 import cv2
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.video import ValueChangeTracker
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
@@ -65,7 +64,7 @@ default_image_path_2 = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
-default_base_size = 1024
+default_base_size = None
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Segment one image by prompting another, using SAMv2 'video' capability")
@@ -105,7 +104,7 @@ parser.add_argument(
     "--base_size_px",
     default=default_base_size,
     type=int,
-    help=f"Override base model size (default {default_base_size})",
+    help="Set image processing size (will use model default if not set)",
 )
 parser.add_argument(
     "--hide_info",
@@ -137,8 +136,8 @@ device_str = args.device
 use_float32 = args.use_float32
 imgenc_base_size = args.base_size_px
 show_info = not args.hide_info
-use_hstack_images = args.hstack
-use_vstack_images = args.vstack
+force_hstack = args.hstack
+force_vstack = args.vstack
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -167,7 +166,7 @@ history.store(image_path=image_path_a, cross_image_path=image_path_b, model_path
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert isinstance(sammodel, SAMV2Model), "Only SAMv2 models are supported for cross-segmentation!"
+assert sammodel.name == "samv2", "Only SAMv2 models are supported for cross-segmentation!"
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
@@ -187,17 +186,16 @@ if full_image_b is None:
         raise FileNotFoundError(osp.basename(image_path_b))
 
 # Determine stacking direction
-need_auto_stack_check = not (use_hstack_images or use_vstack_images)
-if need_auto_stack_check:
+use_hstack_images = None
+if force_hstack:
+    use_hstack_images = True
+elif force_vstack:
+    use_hstack_images = False
+else:
     img_a_h, img_a_w = full_image_a.shape[0:2]
     img_b_h, img_b_w = full_image_b.shape[0:2]
     have_narrow_img = (img_a_h > img_a_w) or (img_b_h > img_b_w)
     use_hstack_images = have_narrow_img
-    use_vstack_images = not have_narrow_img
-elif use_hstack_images:
-    use_vstack_images = False
-elif use_vstack_images:
-    use_hstack_images = False
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -282,7 +280,7 @@ text_scores_bar = HStack(stability_score_txt_a, objscore_text, stability_score_t
 preview_a_btns = VStack(*mask_a_btns)
 preview_b_btns = VStack(*mask_b_btns)
 img_layout = HStack(overlay_img_a, preview_a_btns, HSeparator(8), overlay_img_b, preview_b_btns)
-if use_vstack_images:
+if not use_hstack_images:
     vsep_a, vsep_b = VSeparator.many(2, 8)
     img_layout = HStack(VStack(overlay_img_a, vsep_a, overlay_img_b), VStack(preview_a_btns, vsep_b, preview_b_btns))
 

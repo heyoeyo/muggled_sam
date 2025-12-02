@@ -25,8 +25,6 @@ import torch
 import cv2
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v1_sam.sam_v1_model import SAMV1Model
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.base import force_same_min_width
@@ -131,11 +129,11 @@ class PosencExtractor:
         new_position_encodings = px.make_new_encodings(patch_height=64, patch_height=32)
     """
 
-    def __init__(self, sam_model: SAMV1Model | SAMV2Model):
+    def __init__(self, sam_model):
 
         # Sanity check
-        is_v1_model = isinstance(sam_model, SAMV1Model)
-        is_v2_model = isinstance(sam_model, SAMV2Model)
+        is_v1_model = sam_model.name == "samv1"
+        is_v2_model = sam_model.name == "samv2"
         assert is_v1_model or is_v2_model, "Unrecognized SAM model! Cannot access positional encodings..."
 
         # Try to 'reach in' to access function used to generate position encodings
@@ -159,6 +157,7 @@ class PosencExtractor:
 
         # Store reference to position encoder, in case we're modifying window tiling later
         self._posenc = posencoder
+        self.is_v1_model = is_v1_model
         self.is_v2_model = is_v2_model
 
     def make_new_encodings(self, patch_height, patch_width):
@@ -193,7 +192,7 @@ class PosencExtractor:
             )
 
             # Force cache reset so old encodings aren't re-used
-            self._posenc.cached_encoding_bhwc = torch.empty((1, 1, 1, 1))
+            self._posenc.cached_encoding_bchw = torch.zeros((1, 1, 1, 1))
 
         return self
 
