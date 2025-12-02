@@ -35,6 +35,7 @@ from lib.demo_helpers.ui.layout import HStack, VStack, OverlayStack
 from lib.demo_helpers.ui.images import ExpandingImage
 from lib.demo_helpers.ui.text import ValueBlock
 from lib.demo_helpers.ui.static import StaticMessageBar, HSeparator, VSeparator
+from lib.demo_helpers.ui.buttons import ImmediateButton
 from lib.demo_helpers.ui.sliders import HSlider
 from lib.demo_helpers.shared_ui_layout import (
     build_mask_preview_buttons,
@@ -46,11 +47,12 @@ from lib.demo_helpers.shared_ui_layout import (
 )
 
 from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
-from lib.demo_helpers.contours import get_contours_from_mask
+from lib.demo_helpers.contours import MaskContourData, get_contours_from_mask
 from lib.demo_helpers.mask_postprocessing import calculate_mask_stability_score
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from lib.demo_helpers.misc import get_default_device_string, make_device_config, get_total_cuda_vram_usage_mb
+from lib.demo_helpers.saving import save_image_segmentation, get_save_name, make_prompt_save_data
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -273,7 +275,8 @@ has_cuda = torch.cuda.is_available()
 stability_score_txt_a = ValueBlock("Stability A: ")
 objscore_text = ValueBlock("Object Score: ", None, max_characters=3)
 stability_score_txt_b = ValueBlock("Stability B: ")
-text_scores_bar = HStack(stability_score_txt_a, objscore_text, stability_score_txt_b)
+save_btn = ImmediateButton("Save", (60, 170, 20), text_scale=0.35)
+text_scores_bar = HStack(stability_score_txt_a, objscore_text, stability_score_txt_b, save_btn)
 
 # Decide on images/masks layout
 preview_a_btns = VStack(*mask_a_btns)
@@ -323,10 +326,11 @@ window.move(200, 50)
 window.attach_keypress_callback(KEY.LEFT_ARROW, tools_constraint.previous)
 window.attach_keypress_callback(KEY.RIGHT_ARROW, tools_constraint.next)
 window.attach_keypress_callback("c", tools_group.clear.click)
-window.attach_keypress_callback("w", masks_a_constraint.previous)
-window.attach_keypress_callback("s", masks_a_constraint.next)
-window.attach_keypress_callback("e", masks_b_constraint.previous)
-window.attach_keypress_callback("d", masks_b_constraint.next)
+window.attach_keypress_callback("y", masks_a_constraint.previous)
+window.attach_keypress_callback("h", masks_a_constraint.next)
+window.attach_keypress_callback("u", masks_b_constraint.previous)
+window.attach_keypress_callback("j", masks_b_constraint.next)
+window.attach_keypress_callback("s", save_btn.click)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
@@ -348,7 +352,10 @@ print(
     "Use prompts on one image to segment the other!",
     "- Shift-click to add multiple points",
     "- Right-click to remove points",
+    "- Press 'c' key to clear prompts",
     "- Press -/+ keys to change display sizing",
+    "- Use y/h and u/j to adjust mask selections",
+    "- Press 's' key to save cross-segmented result",
     "- Press q or esc to close the window",
     "",
     sep="\n",
@@ -469,6 +476,56 @@ try:
         if keypress == KEY_ZOOM_OUT:
             display_size_px = max(display_size_px - 50, min_display_size_px)
             render_limit_dict = {render_side: display_size_px}
+
+        # Save data
+        if save_btn.read():
+
+            # Get data for saving -> want to save image that isn't prompted
+            # (though we'll save the prompts from the other image, just because...)
+            is_side_a_prompted = sammodel.check_have_prompts(*prompts_a)
+            is_side_b_prompted = sammodel.check_have_prompts(*prompts_b)
+            if not (is_side_a_prompted or is_side_b_prompted):
+                print("", "No prompts! Will skip saving...", sep="\n", flush=True)
+                continue
+
+            # Get data for saving
+            selected_prompts = prompts_a if is_side_b_prompted else prompts_b
+            prompt_image_save_path = image_path_a if is_side_a_prompted else image_path_b
+            image_save_path = image_path_b if is_side_a_prompted else image_path_a
+            mask_select_idx = mask_b_idx if is_side_a_prompted else mask_a_idx
+            img_save_bgr = full_image_b if is_side_a_prompted else full_image_a
+            mask_save_preds = cross_preds[0, mask_select_idx]
+
+            # Get additional (shared) data for saving
+            disp_image = disp_layout.rerender()
+            all_prompts_dict = make_prompt_save_data(*selected_prompts)
+
+            # Make result matching input image sizing
+            img_save_hw = img_save_bgr.shape[0:2]
+            mask_save_uint8 = make_hires_mask_uint8(mask_save_preds, img_save_hw, mask_threshold)
+            contour_save_data = MaskContourData(mask_save_uint8)
+
+            # Generate & save segmentation images!
+            parent_folder_name = "cross_segmentation"
+            save_folder, save_idx = get_save_name(image_save_path, parent_folder_name, base_save_folder=root_path)
+            save_image_segmentation(
+                save_folder,
+                save_idx,
+                img_save_bgr,
+                disp_image,
+                mask_save_uint8,
+                contour_save_data,
+                all_prompts_dict,
+                yx_crop_slices=None,
+            )
+
+            # Save simple text file containing path to the image used for prompting
+            ref_save_name = osp.join(save_folder, f"{save_idx}_prompt_image_path.txt")
+            with open(ref_save_name, "w") as outfile:
+                outfile.write(prompt_image_save_path)
+
+            # Feedback on completion
+            print(f"SAVED ({save_idx}):", save_folder)
 
 except KeyboardInterrupt:
     print("", "Closed with Ctrl+C", sep="\n")

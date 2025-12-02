@@ -34,7 +34,6 @@ def save_image_segmentation(
     all_prompts_dict: dict[str, list],
     is_inverted=False,
     yx_crop_slices: tuple[slice, slice] | None = None,
-    base_save_folder: str | None = None,
 ) -> None:
     """Helper used to handle saving of image segmentation results"""
 
