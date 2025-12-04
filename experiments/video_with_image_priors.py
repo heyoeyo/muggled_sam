@@ -37,7 +37,7 @@ from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI, Reusabl
 
 from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from lib.demo_helpers.contours import get_contours_from_mask
-from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
+from lib.demo_helpers.video_data_storage import SAMVideoObjectResults
 
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
@@ -292,7 +292,7 @@ print(
 )
 
 # Allocate storage for SAM2 video masking
-objbuffer = SAM2VideoObjectResults.create(
+objbuffer = SAMVideoObjectResults.create(
     memory_history_length=max_memory_history,
     pointer_history_length=max_pointer_history,
     prompt_history_length=32,
@@ -485,7 +485,7 @@ try:
             if obj_score < 0 and discard_on_bad_objscore:
                 video_preds = video_preds * 0.0
             elif enable_prevframe_storage:
-                objbuffer.store_result(frame_idx, mem_enc, obj_ptr)
+                objbuffer.store_frame_result(frame_idx, mem_enc, obj_ptr)
             objscore_text.set_value(round(obj_score, 1))
 
             # Update the mask indicator to show which mask the model has chosen each frame

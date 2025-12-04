@@ -17,7 +17,7 @@ from torch import Tensor
 
 
 @dataclass
-class SAM2VideoBuffer:
+class SAMVideoBuffer:
     """Helper used to store SAM video results in a rolling buffer (avoids excessive memory usage)"""
 
     idx: deque[int]
@@ -25,13 +25,13 @@ class SAM2VideoBuffer:
     pointer_history: deque[Tensor]
 
     @classmethod
-    def create(cls, memory_history_length=6, pointer_history_length=15):
+    def create(cls, memory_history_length: int = 6, pointer_history_length: int = 15):
         idx_deck = deque([], maxlen=max(memory_history_length, pointer_history_length))
         mask_deck = deque([], maxlen=memory_history_length)
         pointer_deck = deque([], maxlen=pointer_history_length)
         return cls(idx_deck, mask_deck, pointer_deck)
 
-    def store(self, frame_index, memory_encoding, object_pointer=None):
+    def store(self, frame_index: int, memory_encoding: Tensor, object_pointer: Tensor | None = None):
         self.idx.appendleft(frame_index)
         self.memory_history.appendleft(memory_encoding)
         if object_pointer is not None:
@@ -54,7 +54,7 @@ class SAM2VideoBuffer:
 
         return self
 
-    def clear(self, clear_memories=True, clear_pointers=True):
+    def clear(self, clear_memories: bool = True, clear_pointers: bool = True):
 
         if clear_memories:
             mem_history = self.memory_history.maxlen
@@ -67,24 +67,24 @@ class SAM2VideoBuffer:
 
 
 @dataclass
-class SAM2VideoObjectResults:
+class SAMVideoObjectResults:
     """Helper used to store both the prompt & per-frame buffers needed for video segmentation masking"""
 
-    prompts_buffer: SAM2VideoBuffer
-    prevframe_buffer: SAM2VideoBuffer
+    prompts_buffer: SAMVideoBuffer
+    prevframe_buffer: SAMVideoBuffer
 
     @classmethod
-    def create(cls, memory_history_length=6, pointer_history_length=15, prompt_history_length=32):
-        prompts_buffer = SAM2VideoBuffer.create(prompt_history_length, prompt_history_length)
-        prevframe_buffer = SAM2VideoBuffer.create(memory_history_length, pointer_history_length)
+    def create(cls, memory_history_length: int = 6, pointer_history_length: int = 15, prompt_history_length: int = 32):
+        prompts_buffer = SAMVideoBuffer.create(prompt_history_length, prompt_history_length)
+        prevframe_buffer = SAMVideoBuffer.create(memory_history_length, pointer_history_length)
         return cls(prompts_buffer, prevframe_buffer)
 
-    def store_prompt_result(self, frame_index, memory_encoding, object_pointer=None):
+    def store_prompt_result(self, frame_index: int, memory_encoding: Tensor, object_pointer: Tensor | None = None):
         """Used to store (initial) prompt results"""
         self.prompts_buffer.store(frame_index, memory_encoding, object_pointer)
         return self
 
-    def store_result(self, frame_index, memory_encoding, object_pointer=None):
+    def store_frame_result(self, frame_index: int, memory_encoding: Tensor, object_pointer: Tensor | None = None):
         """Used to store per-frame results history"""
         self.prevframe_buffer.store(frame_index, memory_encoding, object_pointer)
         return self
@@ -117,6 +117,6 @@ class SAM2VideoObjectResults:
 
         return num_prompt_pointers, num_prevframe_pointers
 
-    def check_has_prompts(self):
+    def check_has_prompts(self) -> bool:
         """Helper used to check if there is any stored prompt memory"""
         return len(self.prompts_buffer.memory_history) > 0

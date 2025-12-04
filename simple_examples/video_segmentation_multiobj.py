@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import torch
 from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
-from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
+from lib.demo_helpers.video_data_storage import SAMVideoObjectResults
 
 
 # Define pathing & device usage
@@ -66,7 +66,7 @@ enable_prompt_visualization = True
 # Set up memory storage for tracked objects
 # -> Assumes each object is represented by a unique dictionary key (e.g. 'obj1')
 # -> This holds both the 'prompt' & 'recent' memory data needed for tracking!
-memory_per_obj_dict = defaultdict(SAM2VideoObjectResults.create)
+memory_per_obj_dict = defaultdict(SAMVideoObjectResults.create)
 
 # Read first frame to check that we can read from the video, then reset playback
 vcap = cv2.VideoCapture(video_path)
@@ -142,7 +142,7 @@ try:
 
             # Store 'recent' memory encodings from current frame (helps track objects with changing appearance)
             # -> This can be commented out and tracking may still work, if object doesn't change much
-            obj_memory.store_result(frame_idx, mem_enc, obj_ptr)
+            obj_memory.store_frame_result(frame_idx, mem_enc, obj_ptr)
 
             # Add object mask prediction to 'combine' mask for display
             # -> This is just for visualization, not needed for tracking

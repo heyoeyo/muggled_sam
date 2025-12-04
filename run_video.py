@@ -34,7 +34,7 @@ from lib.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_de
 from lib.demo_helpers.history_keeper import HistoryKeeper
 from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from lib.demo_helpers.contours import get_contours_from_mask
-from lib.demo_helpers.video_data_storage import SAM2VideoObjectResults
+from lib.demo_helpers.video_data_storage import SAMVideoObjectResults
 from lib.demo_helpers.saving import save_video_frames, get_save_name
 
 
@@ -424,7 +424,7 @@ objiter = list(range(num_obj_buffers))
 maskresults_list = [MaskResults.create(init_mask_preds) for _ in objiter]
 savebuffers_list = [SaveBufferData.create() for _ in objiter]
 memory_list = [
-    SAM2VideoObjectResults.create(max_memory_history, max_pointer_history, prompt_history_length=32) for _ in objiter
+    SAMVideoObjectResults.create(max_memory_history, max_pointer_history, prompt_history_length=32) for _ in objiter
 ]
 
 vreader.pause()
@@ -631,7 +631,7 @@ try:
                     if obj_score < object_score_threshold and discard_on_bad_objscore:
                         mask_preds = mask_preds * 0.0
                     elif is_trackhistory_enabled:
-                        memory_list[objidx].store_result(frame_idx, mem_enc, obj_ptr)
+                        memory_list[objidx].store_frame_result(frame_idx, mem_enc, obj_ptr)
 
                     # UGLY! Store results for each tracked object
                     maskresults_list[objidx].update(mask_preds, tracked_mask_idx, obj_score)
