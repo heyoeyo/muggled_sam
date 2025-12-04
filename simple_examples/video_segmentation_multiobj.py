@@ -18,7 +18,7 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import torch
-from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
+from lib.make_sam import make_sam_from_state_dict
 from lib.demo_helpers.video_data_storage import SAMVideoObjectResults
 
 
@@ -77,7 +77,8 @@ vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_samv2_from_original_state_dict(model_path)
+model_config_dict, sammodel = make_sam_from_state_dict(model_path)
+assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
 sammodel.to(device=device, dtype=dtype)
 
 # Process video frames

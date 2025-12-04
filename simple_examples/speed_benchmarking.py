@@ -20,13 +20,13 @@ from time import perf_counter
 from lib.make_sam import make_sam_from_state_dict
 
 # Define pathing
-model_path = "/path/to/sam_v1_or_v2_model.pth"
+model_path = "/path/to/model.pth"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
 # Image encoder settings
-max_side_length = 1024
+max_side_length = None
 use_square_sizing = True
 
 # Benchmarking settings
@@ -45,6 +45,13 @@ model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
 t2 = perf_counter()
 print("-> Loading took", round(1000 * (t2 - t1)), "ms")
+
+# Fill in missing processing size, if needed
+if max_side_length is None:
+    prep_img = np.zeros((10, 10, 3), dtype=np.uint8)
+    prep_tensor = sammodel.image_encoder.prepare_image(prep_img, None, use_square_sizing)
+    max_side_length = int(max(prep_tensor.shape[-2:]))
+    print("", f"No max side length specified, using: {max_side_length}", sep="\n", flush=True)
 
 # Model warm-up (excludes one-time VRAM/cache allocation from timing)
 print("", f"Running warm-up ({device} / {dtype})", sep="\n", flush=True)

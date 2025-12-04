@@ -19,20 +19,20 @@ from collections import deque
 import cv2
 import numpy as np
 import torch
-from lib.v2_sam.make_sam_v2 import make_samv2_from_original_state_dict
+from lib.make_sam import make_sam_from_state_dict
 
 # Define pathing & device usage
 initial_frame_index = 0
-mask_image_path = None  # Will use first frame of video, otherwise provide: "/path/to/mask_image.png"
-mask_path = "/path/to/mask.png"
+mask_image_path = None  # Will use first frame of video, otherwise provide: "/path/to/mask_rgb_image.png"
+mask_binary_path = "/path/to/mask_binary.png"
 video_path = "/path/to/video.mp4"
-model_path = "/path/to/samv2_model.pth"
+model_path = "/path/to/model.pth"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
 # Set image encoding config
-imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
+imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
 
 # Read first frame to verify video is ok
 vcap = cv2.VideoCapture(video_path)
@@ -42,13 +42,14 @@ ok_frame, first_frame = vcap.read()
 assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Load mask & associated image data
-init_mask = cv2.imread(mask_path)
+init_mask = cv2.imread(mask_binary_path)
 init_mask_image = first_frame if mask_image_path is None else cv2.imread(mask_image_path)
 assert (init_mask is not None) and (init_mask_image is not None), "Error reading input mask/mask image"
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_samv2_from_original_state_dict(model_path)
+model_config_dict, sammodel = make_sam_from_state_dict(model_path)
+assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
 sammodel.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object

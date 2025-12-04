@@ -13,11 +13,9 @@ except ModuleNotFoundError:
         sys.path.insert(0, parent_folder)
     else:
         raise ImportError("Can't find path to lib folder!")
-
 import cv2
 import torch
 from lib.make_sam import make_sam_from_state_dict
-
 
 # Define pathing
 image_path = "/path/to/image.jpg"
@@ -44,7 +42,7 @@ sammodel.to(device=device, dtype=dtype)
 
 # Process data
 print("Generating masks...")
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(img_bgr, max_side_length=1024, use_square_sizing=True)
+encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint)
 

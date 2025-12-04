@@ -50,7 +50,6 @@ default_mask_hint_path = None
 default_display_size = 900
 default_base_size = None
 default_simplify = 0.0
-default_show_iou_preds = False
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
@@ -113,10 +112,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "-q",
-    "--quality_estimate",
-    default=default_show_iou_preds,
-    action="store_false" if default_show_iou_preds else "store_true",
-    help="Hide mask quality estimates" if default_show_iou_preds else "Show mask quality estimates",
+    "--hide_iou",
+    action="store_true",
+    help="Hide mask quality estimates",
 )
 parser.add_argument(
     "--hide_info",
@@ -150,7 +148,7 @@ use_float32 = args.use_float32
 use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 init_simplify = args.simplify
-show_iou_preds = args.quality_estimate
+show_iou_preds = not args.hide_iou
 show_info = not args.hide_info
 disable_promptless_masks = not args.enable_promptless_masks
 enable_crop_ui = args.crop
@@ -462,7 +460,7 @@ try:
             raw_mask_result_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, loaded_hw, mthresh)
 
             # Generate & save segmentation images!
-            save_folder, save_idx = get_save_name(image_path, "manual")
+            save_folder, save_idx = get_save_name(image_path, "run_image")
             save_image_segmentation(
                 save_folder,
                 save_idx,

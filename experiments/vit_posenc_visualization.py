@@ -134,7 +134,8 @@ class PosencExtractor:
         # Sanity check
         is_v1_model = sam_model.name == "samv1"
         is_v2_model = sam_model.name == "samv2"
-        assert is_v1_model or is_v2_model, "Unrecognized SAM model! Cannot access positional encodings..."
+        is_v3_model = sam_model.name == "samv3"
+        assert any((is_v1_model, is_v2_model, is_v3_model)), "Unrecognized model! Cannot access positional encodings..."
 
         # Try to 'reach in' to access function used to generate position encodings
         try:
@@ -159,6 +160,7 @@ class PosencExtractor:
         self._posenc = posencoder
         self.is_v1_model = is_v1_model
         self.is_v2_model = is_v2_model
+        self.is_v3_model = is_v3_model
 
     def make_new_encodings(self, patch_height, patch_width):
         """Re-computes positional encodings for the given height & width"""
@@ -179,10 +181,10 @@ class PosencExtractor:
         https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/backbones/hieradet.py#L269-L271
 
         The window tile encoding is specific to SAMv2, so this function
-        does nothing when using V1.
+        does nothing when using V1 or V3.
         """
 
-        # Only toggle when using V2 model, since V1 doesn't have a tiling component!
+        # Only toggle when using V2 model
         if self.is_v2_model:
 
             # Swap between using the tiling or not
@@ -199,7 +201,8 @@ class PosencExtractor:
 
 # Set up extractor and create example encoding for feature size information
 posextract = PosencExtractor(sammodel)
-example_posenc_bchw = posextract.make_new_encodings(64, 64)
+base_h, base_w = (72, 72) if posextract.is_v3_model else (64, 64)
+example_posenc_bchw = posextract.make_new_encodings(base_h, base_w)
 _, features_per_token, _, _ = example_posenc_bchw.shape
 is_v2_model = posextract.is_v2_model
 
@@ -224,8 +227,8 @@ norm_image_elem = ExpandingImage(posenc_norm_uint8)
 init_idx, feat_marker_steps = features_per_token // 2, (1 + (features_per_token // 10) // 10) * 10
 tile_toggle_btn = ToggleButton("Include Window Tiling", on_color=(50, 120, 140), default_state=True, text_scale=0.35)
 feature_slider = HSlider("Feature Index", init_idx, 0, features_per_token - 1, 1, marker_steps=feat_marker_steps)
-height_slider = HSlider("Height", 64, 2, 128, 1, marker_steps=8)
-width_slider = HSlider("Width", 64, 2, 128, 1, marker_steps=8)
+height_slider = HSlider("Height", base_h, 2, 2 * base_h, 1, marker_steps=8)
+width_slider = HSlider("Width", base_w, 2, 2 * base_w, 1, marker_steps=8)
 
 # If using v2 model, include tile toggle beside feature slider (toggle is not rendered for v1 models)
 feature_bar = feature_slider

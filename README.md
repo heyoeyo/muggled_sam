@@ -1,6 +1,6 @@
 # MuggledSAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch/sam2](https://github.com/facebookresearch/sam2) (and [SAMv1](https://github.com/facebookresearch/segment-anything)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch](https://ai.meta.com/research/#projects) ([SAM1](https://github.com/facebookresearch/segment-anything), [SAM2](https://github.com/facebookresearch/sam2) & [SAM3](https://github.com/facebookresearch/sam3)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
@@ -8,7 +8,7 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
 
 While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
-There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam), with documentation for v2 on the way!
+There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam), with documentation for v2 on the way! Support for SAMv3 is currently limited to the functionality found in the v1 & v2 models (e.g. directed image & video segmentation).
 
 
 ## Getting started
@@ -49,7 +49,7 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 ### Model Weights
 
-Before you can run a model, you'll need to download it's weights. There are 3 officially supported SAMv1 models (vit-base, vit-large and vit-huge) and four v2/v2.1 models (tiny, small, base-plus and large). This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) (config files are not needed, only the checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints).
+Before you can run a model, you'll need to download it's weights. There are 3 supported SAMv1 models (vit-base, vit-large and vit-huge), four v2/v2.1 models (tiny, small, base-plus and large) and 1 SAMv3 model. This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) (config files are not needed, only the checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints). The v3 weights require (as of Dec 2025) signing an agreement before downloading, see the [SAMv3 repo](https://github.com/facebookresearch/sam3?tab=readme-ov-file#getting-started) for more details.
 
 After downloading a model file, you can place it in the `model_weights` folder of this repo or otherwise just keep note of the file path, since you'll need to provide this when running the demo scripts. If you do place the file in the [model_weights](https://github.com/heyoeyo/muggled_sam/tree/main/model_weights) folder, then it will auto-load when running the scripts.
 
@@ -58,6 +58,10 @@ After downloading a model file, you can place it in the `model_weights` folder o
 <summary>Direct download links</summary>
 
 The tables below include direct download links to all of the supported models. **Note:** These are all links to the original repos, none of these files belong to MuggledSAM!
+
+| SAMv3 Model | Size (MB) |
+| -----| -----|
+| [sam3](https://huggingface.co/facebook/sam3/resolve/main/sam3.pt?download=true) | 3290 |
 
 | SAMv2.1 Models | Size (MB) |
 | -----| -----|
@@ -163,8 +167,22 @@ The code in this repo is entirely based off the original segment-anything github
 }
 ```
 
+[facebookresearch/sam3](https://github.com/facebookresearch/sam3?tab=readme-ov-file#getting-started)
+```bibtex
+@misc{
+  carion2025sam3segmentconcepts,
+  title={SAM 3: Segment Anything with Concepts},
+  author={Nicolas Carion and Laura Gustafson and Yuan-Ting Hu and Shoubhik Debnath and Ronghang Hu and Didac Suris and Chaitanya Ryali and Kalyan Vasudev Alwala and Haitham Khedr and Andrew Huang and Jie Lei and Tengyu Ma and Baishan Guo and Arpit Kalla and Markus Marks and Joseph Greer and Meng Wang and Peize Sun and Roman Rädle and Triantafyllos Afouras and Effrosyni Mavroudi and Katherine Xu and Tsung-Han Wu and Yu Zhou and Liliane Momeni and Rishi Hazra and Shuangrui Ding and Sagar Vaze and Francois Porcher and Feng Li and Siyuan Li and Aishwarya Kamath and Ho Kei Cheng and Piotr Dollár and Nikhila Ravi and Kate Saenko and Pengchuan Zhang and Christoph Feichtenhofer},
+  year={2025},
+  eprint={2511.16719},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2511.16719},
+}
+```
+
 
 # TODOs
-- Add interactive script replicating the original 'automatic mask geneartor'
+- Add support for SAMv3 'detector' functionality
 - Add model structure documentation
 - Inevitable bugfixes

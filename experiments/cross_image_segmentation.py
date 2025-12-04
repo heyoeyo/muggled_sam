@@ -166,7 +166,7 @@ history.store(image_path=image_path_a, cross_image_path=image_path_b, model_path
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv2", "Only SAMv2 models are supported for cross-segmentation!"
+assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for cross-segmentation!"
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display

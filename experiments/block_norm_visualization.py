@@ -34,6 +34,10 @@ from lib.v2_sam.components.hiera_blocks import (
     WindowedBlock as V2WindowBlock,
     PooledWindowedBlock as V2PoolBlock,
 )
+from lib.v3_sam.components.image_encoder_attention import (
+    GlobalAttentionBlock as V3GlobalBlock,
+    WindowedAttentionBlock as V3WindowBlock,
+)
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.layout import VStack, HStack, GridStack
@@ -162,8 +166,19 @@ if full_image_bgr is None:
 # %% Capture model outputs
 
 # Figure out which transformer block outputs we're trying to capture
-is_v2_model = sammodel.name == "samv2"
-target_modules = (V2GlobalBlock, V2WindowBlock, V2PoolBlock) if is_v2_model else (V1GlobalBlock, V1WindowBlock)
+is_v1_model, is_v2_model, is_v3_model = False, False, False
+target_modules = None
+if sammodel.name == "samv3":
+    is_v3_model = True
+    target_modules = (V3GlobalBlock, V3WindowBlock)
+elif sammodel.name == "samv2":
+    is_v2_model = True
+    target_modules = (V2GlobalBlock, V2WindowBlock, V2PoolBlock)
+elif sammodel.name == "samv1":
+    is_v1_model = True
+    target_modules = (V1GlobalBlock, V1WindowBlock)
+else:
+    raise TypeError("Unknown model type (expecting SAMv1, v2 or v3)")
 
 # Capture target module output
 captures = ModelOutputCapture(sammodel, target_modules=target_modules)

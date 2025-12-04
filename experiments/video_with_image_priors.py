@@ -173,7 +173,7 @@ model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv2", "Only SAMv2 models are supported for video predictions!"
+assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for video predictions!"
 sammodel.to(**device_config_dict)
 
 # Load image and get shaping info for providing display

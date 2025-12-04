@@ -22,14 +22,17 @@ This is an extension of the basic image segmentation script, modified to show ho
 
 ## Speed Benchmarking
 
-This script runs each of the image segmentation components repeatedly while timing the average execution speed. It can be used to get a sense of how fast each of the different model variants will run and supports changing the image size used by the model. For example, here are some examples results (using an RTX 3090) for SAMv1 & V2 models at different input image sizes, using bfloat16 & square image sizing:
+This script runs each of the image segmentation components repeatedly while timing the average execution speed. It can be used to get a sense of how fast each of the different model variants will run and supports changing the image size used by the model. For example, here are some examples results (using an RTX 3090) for SAMv1, v2 & v3 models at different input image sizes, using bfloat16 & square image sizing:
 
 | Model | Encoding @ 1024px | Encoding @ 512px | Mask Generation |
 | ----- | ----------------- | ---------------- | --------------- |
-| V1-Base | 44 ms | 10 ms | 1.5 ms | 
-| V1-Large  | 101 ms | 26 ms | 1.5 ms |
-| V2-Tiny  | 10 ms | 3.1 ms | 1.6 ms |
-| V2-Large  | 47 ms | 13 ms | 1.6 ms |
+| V1-Base   | 44 ms  | 10 ms  | 1.5 ms |
+| V1-Large  | 101 ms | 26 ms  | 1.5 ms |
+| V2-Tiny   | 10 ms  | 3.1 ms | 1.6 ms |
+| V2-Large  | 47 ms  | 13 ms  | 1.6 ms |
+| V3        | 148ms  | 39 ms  | 1.5 ms |
+
+Interestingly, the SAMv3 model takes a _significant_ performance hit using v1/v2 default 1024px sizing as opposed to it's own default 1008px (108ms). This may be due to the use of windowing (and associated padding) in the image encoder. Using sizes which are multiples of 336 (the patch size times the window size = 14*24) could help to minimize this.
 
 The script also prints out an estimate of VRAM usage (if using cuda):
 
@@ -44,7 +47,7 @@ The script also prints out an estimate of VRAM usage (if using cuda):
 
 ## Video Segmentation
 
-This script provides a basic example of how to implement video segmentation using the SAMv2 model (V1 does not support video segmentation!). For simplicity, this script assumes that tracking begins with a prompt on the first frame of the video, but any frame could be used. It also only stores results for one object, though again this can be changed to handle multiple objects by creating instances of the video storage data for each object.
+This script provides a basic example of how to implement video segmentation using the SAMv2 or v3 model (V1 does not support video segmentation!). For simplicity, this script assumes that tracking begins with a prompt on the first frame of the video, but any frame could be used. It also only stores results for one object, though again this can be changed to handle multiple objects by creating instances of the video storage data for each object.
 
 Segmentation results are displayed per-frame for verification, and the total inference time is also printed out. For example, the table below shows the per-frame inference times for different models while tracking one object at different image sizes using bfloat16 (all other settings are left at defaults):
 
@@ -54,10 +57,13 @@ Segmentation results are displayed per-frame for verification, and the total inf
 | V2-Small | 28 ms | 8 ms |
 | V2-Base | 38 ms | 11 ms |
 | V2-Large | 64 ms | 17 ms |
+| V3 | 172ms | 46ms |
+
+Again, the v3 model runs much slower at 1024px compared to it's default 1008px resolution (130ms).
 
 ## Video Segmentation (from mask)
 
-This is a variation of the basic video segmentation example, but uses a mask prompt to begin tracking. Both a mask and corresponding image (i.e. the image from which the mask was generated) must be provided, and replaces the need to provide box or point prompts. Note that the mask & corresponding image don't need to be from the video! Mixing the mask iamge and video can give results similar to the [video with image priors](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) experimental script.
+This is a variation of the basic video segmentation example, but uses a mask prompt to begin tracking. Both a binary mask and corresponding image (i.e. the RGB image from which the mask was generated) must be provided, and replaces the need to provide box or point prompts. Note that the mask & corresponding image don't need to be from the video! Mixing the mask image and video can give results similar to the [video with image priors](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) experimental script.
 
 ## Video Segmentation (Multi-object)
 

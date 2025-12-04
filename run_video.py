@@ -16,7 +16,6 @@ import cv2
 import numpy as np
 
 from lib.make_sam import make_sam_from_state_dict
-from lib.v2_sam.sam_v2_model import SAMV2Model
 
 from lib.demo_helpers.ui.window import DisplayWindow, KEY
 from lib.demo_helpers.ui.video import ReversibleLoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
@@ -206,7 +205,7 @@ model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert isinstance(sammodel, SAMV2Model), "Only SAMv2 models are supported for video predictions!"
+assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for video predictions!"
 sammodel.to(**device_config_dict)
 
 # Set up access to video
@@ -738,7 +737,7 @@ try:
             png_per_frame_dict = savebuffers_list[buffer_select_idx].png_per_frame_dict
             num_frames = len(png_per_frame_dict.keys())
             if num_frames > 0:
-                save_folder, save_idx = get_save_name(video_path, "video")
+                save_folder, save_idx = get_save_name(video_path, "run_video")
                 save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
                 print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
                 buffer_clear_btn.click()

@@ -215,20 +215,28 @@ print(
     flush=True,
 )
 
-# Figure out initial window sizing settings
-# -> Note: v1 model uses a single shared window size for all stages, so we duplicate it 4 times for controls
-init_winsize_per_stage = [model_config_dict.get("base_window_size", None)] * 4
-if is_v2_model:
+# Figure out initial window sizing control settings
+# -> v3 model uses same window size for all stages, so duplicate config size
+# -> v2 model has complicated window sizing, but can be directly read from config
+# -> v1 model works the same as v3
+init_winsize_per_stage = [None] * 4
+if sammodel.name == "samv3":
+    init_winsize_per_stage = [model_config_dict.get("imgencoder_window_size", None)] * 4
+elif sammodel.name == "samv2":
     init_winsize_per_stage = model_config_dict.get("imgencoder_window_size_per_stage", (8, 4, 14, 7))
+elif sammodel.name == "samv1":
+    init_winsize_per_stage = [model_config_dict.get("base_window_size", None)] * 4
 
-# Figure out window sizing limits. Needed to stop crashing due to pytorch 'scaled_dot_product_attention'
+# Check for window sizing limits. Needed to stop crashing due to pytorch 'scaled_dot_product_attention'
 # -> Crash seems to occur when providing tensors with size >2^16 (i.e. 65536 or higher)
-# -> This can occur when using small window sizes & large input sizes
+# -> Smaller window sizes cause larger attention calculations
+# -> Using a large input image + small window size can lead to these overly large tensors
+# -> Only really a concern on SAMv2, which has very large token grids in it's earlier stages due to hiera
 min_winsize_per_stage = (1, 1, 1, 1)
-if is_v2_model:
+if sammodel.name == "samv2":
     num_lowres_tokens = token_hw[0] * token_hw[1]
     tokens_per_stage = [16 * num_lowres_tokens, 4 * num_lowres_tokens, num_lowres_tokens, num_lowres_tokens // 2]
-    min_winsize_per_stage = [num_tokens // (2**15) for num_tokens in tokens_per_stage]
+    min_winsize_per_stage = [max(1, num_tokens // (2**15)) for num_tokens in tokens_per_stage]
 
 
 # ---------------------------------------------------------------------------------------------------------------------

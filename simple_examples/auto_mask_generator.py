@@ -13,7 +13,6 @@ except ModuleNotFoundError:
         sys.path.insert(0, parent_folder)
     else:
         raise ImportError("Can't find path to lib folder!")
-
 from time import perf_counter
 import torch
 import cv2
@@ -53,7 +52,7 @@ img_hw = img_bgr.shape[0:2]
 img_pixel_count = img_hw[0] * img_hw[1]
 num_total_prompts = points_per_side * points_per_side
 pts_1d = np.linspace(0, 1, max(1, points_per_side) + 2, dtype=np.float32)[1:-1]
-pts_2d = np.dstack(np.meshgrid(pts_1d, pts_1d)).reshape(num_total_prompts, 2)
+pts_2d = np.dstack(np.meshgrid(pts_1d, pts_1d)).reshape(num_total_prompts, 2).tolist()
 visualize_wait_ms = max(1, min(100, round(10000 / num_total_prompts)))
 filter_by_idx = [use_mask_0, use_mask_1, use_mask_2, use_mask_3]
 assert any(filter_by_idx), "Must use at least one mask prediction from model!"
@@ -62,7 +61,7 @@ assert any(filter_by_idx), "Must use at least one mask prediction from model!"
 print("Loading model & encoding image data...")
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
-encoded_img, _, _ = sammodel.encode_image(img_bgr, max_side_length=1024, use_square_sizing=True)
+encoded_img, _, _ = sammodel.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
 
 # Generate grid of point prompts & generate mask for each
 print(f"Generating masks ({num_total_prompts} total prompts)...")
@@ -70,7 +69,7 @@ t1 = perf_counter()
 try:
     raw_results_list = []
     for fg_xy_norm in pts_2d:
-        encoded_prompt = sammodel.encode_prompts(None, np.expand_dims(fg_xy_norm, 0), None)
+        encoded_prompt = sammodel.encode_prompts(None, [fg_xy_norm], None)
         mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompt)
 
         # Allow some mask predictions to be ignored

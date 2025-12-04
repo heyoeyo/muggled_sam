@@ -50,6 +50,42 @@ from lib.demo_helpers.misc import get_default_device_string, make_device_config,
 # %% Functions
 
 
+def encode_image_samv3(
+    model,
+    image_bgr: np.ndarray,
+    max_side_length: int = 1008,
+    use_square_sizing: bool = True,
+) -> tuple[list, list]:
+
+    with torch.inference_mode():
+
+        # Generate normal image encodings (i.e. with feature projection)
+        hflip_image_bgr = np.fliplr(image_bgr)
+        reg_encimg_list, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
+        flip_encimg_list, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+
+        # Combine regular encodings with horizontal flip in batch dimension for output
+        proj_encimg_list = []
+        for regular_enc, flipped_enc in zip(reg_encimg_list, flip_encimg_list):
+            batch_combined_encs = torch.concat((regular_enc, torch.flipud(flipped_enc)), dim=0)
+            proj_encimg_list.append(batch_combined_encs)
+
+        # Compute 'raw' encodings
+        # -> Works by manually running the image encoder, without the final projection step
+        image_tensor_bchw = model.image_encoder.prepare_image(image_bgr, imgenc_base_size, use_square_sizing)
+        flipped_image_bchw = model.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
+        result_tokens = []
+        for input_img in [image_tensor_bchw, flipped_image_bchw]:
+            raw_encoded_bchw = model.image_encoder(input_img)
+            result_tokens.append(raw_encoded_bchw)
+
+        # Combine regular 'raw' encoding with horizontal flip (stored in batch dimension)
+        reg_encimg, flip_encimg = result_tokens
+        raw_encimg = torch.concat((reg_encimg, torch.fliplr(flip_encimg)), dim=0)
+
+    return [raw_encimg], proj_encimg_list
+
+
 def encode_image_samv2(model, image_bgr, max_side_length=1024, use_square_sizing=True) -> tuple[list, list]:
     """
     Helper function used to compute 'normal' image encodings along with 'raw' encodings,
@@ -84,13 +120,13 @@ def encode_image_samv2(model, image_bgr, max_side_length=1024, use_square_sizing
 
         # Compute 'raw' encodings
         # -> Works by manually running the image encoder, without the final projection step
-        image_tensor_bchw = sammodel.image_encoder.prepare_image(image_bgr, imgenc_base_size, use_square_sizing)
-        flipped_image_bchw = sammodel.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
+        image_tensor_bchw = model.image_encoder.prepare_image(image_bgr, imgenc_base_size, use_square_sizing)
+        flipped_image_bchw = model.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
         result_tokens = []
         for input_img in [image_tensor_bchw, flipped_image_bchw]:
-            patch_tokens_bchw = sammodel.image_encoder.patch_embed(input_img)
-            patch_tokens_bchw = sammodel.image_encoder.posenc(patch_tokens_bchw)
-            multires_tokens_bchw_list = sammodel.image_encoder.hiera(patch_tokens_bchw)
+            patch_tokens_bchw = model.image_encoder.patch_embed(input_img)
+            patch_tokens_bchw = model.image_encoder.posenc(patch_tokens_bchw)
+            multires_tokens_bchw_list = model.image_encoder.hiera(patch_tokens_bchw)
             result_tokens.append(multires_tokens_bchw_list)
 
         # Combine regular 'raw' encodings with horizontal flips
@@ -137,13 +173,13 @@ def encode_image_samv1(model, image_bgr, max_side_length=1024, use_square_sizing
 
         # Compute 'raw' encodings
         # -> Works by manually running the image encoder, without the final projection step
-        image_tensor_bchw = sammodel.image_encoder.prepare_image(image_bgr, imgenc_base_size, use_square_sizing)
-        flipped_image_bchw = sammodel.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
+        image_tensor_bchw = model.image_encoder.prepare_image(image_bgr, imgenc_base_size, use_square_sizing)
+        flipped_image_bchw = model.image_encoder.prepare_image(hflip_image_bgr, imgenc_base_size, use_square_sizing)
         result_tokens = []
         for input_img in [image_tensor_bchw, flipped_image_bchw]:
-            patch_tokens_bchw = sammodel.image_encoder.patch_embed(input_img)
-            tokens_bhwc = sammodel.image_encoder.posenc(patch_tokens_bchw).permute(0, 2, 3, 1)
-            raw_encoded_bchw = sammodel.image_encoder.stages(tokens_bhwc).permute(0, 3, 1, 2)
+            patch_tokens_bchw = model.image_encoder.patch_embed(input_img)
+            tokens_bhwc = model.image_encoder.posenc(patch_tokens_bchw).permute(0, 2, 3, 1)
+            raw_encoded_bchw = model.image_encoder.stages(tokens_bhwc).permute(0, 3, 1, 2)
             result_tokens.append(raw_encoded_bchw)
 
         # Combine regular 'raw' encodings with horizontal flips
@@ -332,7 +368,6 @@ model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(**device_config_dict)
-is_v2_model = sammodel.name == "samv2"
 
 # Load reference image
 image_bgr_a = cv2.imread(image_path_a)
@@ -366,8 +401,22 @@ else:
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Initial model run
 
+# Determine which image encoding function to use
+is_v1_model, is_v2_model, is_v3_model = False, False, False
+encode_image_func = None
+if sammodel.name == "samv3":
+    is_v3_model = True
+    encode_image_func = encode_image_samv3
+elif sammodel.name == "samv2":
+    is_v2_model = True
+    encode_image_func = encode_image_samv2
+elif sammodel.name == "samv1":
+    is_v1_model = True
+    encode_image_func = encode_image_samv1
+else:
+    raise TypeError("Unknown model type (expecting SAMv1, v2 or v3)")
+
 # Run Model
-encode_image_func = encode_image_samv2 if is_v2_model else encode_image_samv1
 imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": use_square_sizing}
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
@@ -384,7 +433,7 @@ encoded_img_a = [enc[[0]] for enc in proj_enc_a]
 encoded_img_b = [enc[[0]] for enc in proj_enc_b]
 
 # Remove list indexing for SAMv1 models, which normally don't have this!
-if not is_v2_model:
+if is_v1_model:
     encoded_img_a = encoded_img_a[0]
     encoded_img_b = encoded_img_b[0]
 
@@ -431,7 +480,7 @@ similarity_btn.style(on_color=(70, 30, 120), off_color=(50, 40, 60))
 max_enc_idx = max(len(proj_enc_a), len(raw_enc_a)) - 1
 encoding_select_slider = HSlider(
     "Encoding resolution",
-    initial_value=min(1, max_enc_idx),
+    initial_value=0,
     min_value=0,
     max_value=max_enc_idx,
     step_size=1,
@@ -454,7 +503,7 @@ footer_msgbar = StaticMessageBar(
     "[r] Raw features",
     "[h] H-Flip",
     "[tab] Similarity",
-    "[, .] Change encoding" if is_v2_model else None,
+    "[, .] Change encoding" if (not is_v1_model) else None,
     text_scale=0.35,
     space_equally=True,
 )
@@ -469,7 +518,7 @@ disp_layout = VStack(
     cmap_bar,
     StackElem(ui_elems.layout, comp_img_elem),
     HStack(swap_images_btn if not use_same_image else None, hflip_btn, raw_feats_btn, similarity_btn),
-    encoding_select_slider if is_v2_model else None,
+    encoding_select_slider if (not is_v1_model) else None,
     norm_range_slider,
     footer_msgbar if show_info else None,
 )
@@ -591,12 +640,11 @@ try:
         if need_update_similarity:
 
             # For clarity, set up indexing into raw vs. projection encodings
-            # -> This only matters for SAMv2, which outputs multi-stage encodings
-            # -> Projection index is offset from raw index to try to match encoding resolutions
-            #    i.e. raw index X has a resolution matching proj index X-1,
-            #    matching resolutions leads to a less jarring effect when toggling raw vs. proj. display
+            # -> When using SAMv2, we use encoding selector to choose raw-indexing,
+            #    then set projection index to 1 less (there are 4 raw encodings, 3 projection encodings),
+            #    as this leads to a less jarring efect when toggling raw vs. proj. display
             raw_idx = min(encoding_select_idx, len(raw_enc_ref) - 1)
-            proj_idx = max(raw_idx - 1, 0)
+            proj_idx = max(raw_idx - 1, 0) if is_v2_model else encoding_select_idx
 
             # Pick appropriate encodings based on control settings
             # There are 4 options: projection encodings + hflip, project + no hflip, raw + hflip, raw + no hflip
