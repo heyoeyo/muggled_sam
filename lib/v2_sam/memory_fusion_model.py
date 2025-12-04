@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .components.memfuse_components import MemoryFusionTransformerLayer, FusionPositionOffset
-from .components.posenc_sine import PositionEmbeddingSine
+from .components.posenc_sine import SinusoidalPE2D
 from .components.version_2_vs_2p1_variants import ObjectPointerPosEnc_v2p0, ObjectPointerPosEnc_v2p1
 
 # For type hints
@@ -312,7 +312,7 @@ class ImageTokenPositionEncoder(nn.Module):
 
     def __init__(self, features_per_image_token=256, position_encoding_weight=0.1):
         super().__init__()
-        self.posenc = PositionEmbeddingSine(features_per_image_token)
+        self.posenc = SinusoidalPE2D(features_per_image_token)
         self._posenc_weight = position_encoding_weight
 
     def forward(self, image_tokens_bchw: Tensor) -> Tensor:
@@ -323,10 +323,10 @@ class ImageTokenPositionEncoder(nn.Module):
         """
 
         # For clarity
-        b, _, h, w = image_tokens_bchw.shape
+        _, _, h, w = image_tokens_bchw.shape
 
         # Create position encoding matching image shape and add to original tokens
-        img_posenc = self.posenc(b, h, w) * self._posenc_weight
+        img_posenc = self.posenc(h, w) * self._posenc_weight
         return image_tokens_bchw + img_posenc
 
     # .................................................................................................................

@@ -8,7 +8,7 @@
 import torch
 import torch.nn as nn
 
-from .posenc_sine import PositionEmbeddingSine
+from .posenc_sine import SinusoidalPE2D
 from .memfuse_attention import RoPESelfAttention, RoPECrossAttention
 
 # For type hints
@@ -110,7 +110,7 @@ class FusionPositionOffset(nn.Module):
 
         num_pos_offsets = 1 + max_memory_history
         self.base_memposenc_offsets = nn.Parameter(torch.zeros(num_pos_offsets, 1, 1, features_per_memory_token))
-        self.posenc = PositionEmbeddingSine(features_per_memory_token)
+        self.posenc = SinusoidalPE2D(features_per_memory_token)
 
         # Setup cache for holding pre-computed positional encodings with position offsets already added!
         blank_cache = torch.empty((num_pos_offsets, features_per_memory_token, 1, 1))
@@ -126,7 +126,7 @@ class FusionPositionOffset(nn.Module):
         if h != cache_h or w != cache_w:
 
             # Create image-like position encoding (shape: 1xFxHxW) and duplicate for each offset
-            cached_posencs = self.posenc(1, h, w).repeat(num_offsets, 1, 1, 1)
+            cached_posencs = self.posenc(h, w).clone().repeat(num_offsets, 1, 1, 1)
 
             # Add learned position offsets to each of the entries and store so we don't have to re-compute
             for idx in range(num_offsets):
