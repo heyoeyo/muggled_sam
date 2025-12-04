@@ -8,7 +8,7 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
 
 While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
-There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam), with documentation for v2 on the way! Support for SAMv3 is currently limited to the functionality found in the v1 & v2 models (e.g. directed image & video segmentation).
+There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam), with documentation for v2 on the way! Support for SAMv3 is currently limited to the functionality found in the v1 & v2 models (e.g. directed image & video segmentation).
 
 
 ## Getting started
@@ -16,7 +16,7 @@ There is a written walkthrough explaining the structure of the [SAMv1 model](htt
 This repo includes two demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) and [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) (along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) and [experiments](https://github.com/heyoeyo/muggled_sam/tree/main/experiments)). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
 
 ### Install
-First create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
+Using a terminal, first create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
 ```bash
 # For linux or mac:
 python3 -m venv .env
@@ -45,6 +45,14 @@ pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 </details>
 
+#### Install from Github
+
+It's also possible to install this repo directly from Github:
+```bash
+# Be sure to activate a virtual environment before installing!
+pip install git+https://github.com/heyoeyo/muggled_sam
+```
+This will make the repo available as a library (e.g. to use models in another project), though the demo scripts will not be available through this installation method.
 
 
 ### Model Weights
@@ -89,7 +97,7 @@ The tables below include direct download links to all of the supported models. *
 Here's an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
 ```python
 import cv2
-from lib.make_sam import make_sam_from_state_dict
+from muggled_sam.make_sam import make_sam_from_state_dict
 
 # Define prompts using 0-to-1 xy coordinates
 # -> (0,0) is top-left, (1,1) is bottom-right

@@ -8,12 +8,12 @@
 import os.path as osp
 import cv2
 
-from lib.demo_helpers.ui.window import DisplayWindow, KEY
-from lib.demo_helpers.ui.sliders import HSlider
-from lib.demo_helpers.ui.images import ExpandingImage
-from lib.demo_helpers.ui.layout import VStack, HStack
-from lib.demo_helpers.ui.buttons import ImmediateButton
-from lib.demo_helpers.ui.static import StaticMessageBar
+from .ui.window import DisplayWindow, KEY
+from .ui.sliders import HSlider
+from .ui.images import ExpandingImage
+from .ui.layout import VStack, HStack
+from .ui.buttons import ImmediateButton
+from .ui.static import StaticMessageBar
 
 # For type hints
 from numpy import ndarray

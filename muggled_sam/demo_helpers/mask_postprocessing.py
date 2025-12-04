@@ -9,7 +9,7 @@ import torch
 import cv2
 import numpy as np
 
-from lib.demo_helpers.contours import MaskContourData
+from .contours import MaskContourData
 
 # For type hints
 from numpy import ndarray

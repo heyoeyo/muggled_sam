@@ -1,6 +1,6 @@
 # Demo Helpers
 
-This folder contains scripts that are not strictly required to make use of the SAM models, but provide some helpful functionality for processing data and/or handling user interactions. This folder also contains all of the code for handling [UI](https://github.com/heyoeyo/muggled_sam/tree/main/lib/demo_helpers/ui) elements for the interactive scripts. A brief overview of each of the scripts in this folder is explained below:
+This folder contains scripts that are not strictly required to make use of the SAM models, but provide some helpful functionality for processing data and/or handling user interactions. This folder also contains all of the code for handling [UI](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/demo_helpers/ui) elements for the interactive scripts. A brief overview of each of the scripts in this folder is explained below:
 
 #### bounding_boxes.py
 

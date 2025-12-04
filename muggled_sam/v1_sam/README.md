@@ -110,7 +110,7 @@ $$\text{Attention}(Q, K, V) = \text{SoftMax} \left (\frac{QK^T}{\sqrt{d_{k}}} + 
 
 $$\text{(where P is the additive relative positional encoding term)}$$
 
-This modification is straightforward in theory, but it prevents the use of more optimized implementations of the attention calculation and has much higher VRAM requirements as a consequence. Details about the attention implementation can be found in the model [components section](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam/components).
+This modification is straightforward in theory, but it prevents the use of more optimized implementations of the attention calculation and has much higher VRAM requirements as a consequence. Details about the attention implementation can be found in the model [components section](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam/components).
 
 ### Channel projection model
 
@@ -184,7 +184,7 @@ The mask decoder model is designed to be relatively fast (compared to the image 
   <img src=".readme_assets/mask_decoder_diagram_2.svg" alt="">
 </p>
 
-The heart of the decoder is a 'cross attention' transformer model. This model, as the name suggests, performs cross-attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)") between the image tokens and the prompt tokens. The prompt tokens themselves are stacked together with a set of learned tokens, used to encode information about the final output masks and [intersection-over-union](https://en.wikipedia.org/wiki/Jaccard_index) (IoU) scores. The cross-attention transformer is described in the [components section](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam/components), while the (smaller) sub-components are described below:
+The heart of the decoder is a 'cross attention' transformer model. This model, as the name suggests, performs cross-attention (see "[Attention Is All You Need](https://arxiv.org/abs/1706.03762)") between the image tokens and the prompt tokens. The prompt tokens themselves are stacked together with a set of learned tokens, used to encode information about the final output masks and [intersection-over-union](https://en.wikipedia.org/wiki/Jaccard_index) (IoU) scores. The cross-attention transformer is described in the [components section](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam/components), while the (smaller) sub-components are described below:
 
 ### Mask Hint Encoder
 
@@ -200,7 +200,7 @@ The purpose of this encoder is to create an embedding which is directly added to
   <img src=".readme_assets/mask_hint_downscaler.svg" alt="">
 </p>
 
-Note that the first two convolutions use a stride of 2 and a kernel size of 2x2, so that they act similar to the [patch embedding model](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#patch-embedding-model), each downscaling their inputs by a factor of 2. The final convolution is 1x1, which is equivalent to a linear layer acting on each token separately, and is used to scale up the number of feature channels of the output embedding.
+Note that the first two convolutions use a stride of 2 and a kernel size of 2x2, so that they act similar to the [patch embedding model](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam#patch-embedding-model), each downscaling their inputs by a factor of 2. The final convolution is 1x1, which is equivalent to a linear layer acting on each token separately, and is used to scale up the number of feature channels of the output embedding.
 
 ### Mask Generator
 
@@ -210,7 +210,7 @@ In the original SAM implementation, the mask generator is [built directly into t
   <img src=".readme_assets/mask_generator_diagram.svg" alt="">
 </p>
 
-In the image above, the unstacking/stacking of the mask tokens is indicated with splitting/merging lines for simplicity. The mask token MLP blocks are not shown here, but they are structurally identical to the [IoU MLP](https://github.com/heyoeyo/muggled_sam/tree/main/lib/v1_sam#iou-mlp) shown further below, except they reduce the channel count by a factor of 8 (256 down to 32, by default) to match the effect of the upscaler. An interesting take away from this model is that the only difference between the 4 output masks is the dot product operation with each of the mask tokens. This means that these tokens are the _only mechanism_ needed to allow the model to deal with ambiguity, that is, they give rise to the 'whole-part' vs. 'sub-part' masking capabilities.
+In the image above, the unstacking/stacking of the mask tokens is indicated with splitting/merging lines for simplicity. The mask token MLP blocks are not shown here, but they are structurally identical to the [IoU MLP](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam#iou-mlp) shown further below, except they reduce the channel count by a factor of 8 (256 down to 32, by default) to match the effect of the upscaler. An interesting take away from this model is that the only difference between the 4 output masks is the dot product operation with each of the mask tokens. This means that these tokens are the _only mechanism_ needed to allow the model to deal with ambiguity, that is, they give rise to the 'whole-part' vs. 'sub-part' masking capabilities.
 
 The image upscaler inside the mask generator does not rely on direct interpolation, instead it uses a sequence of two [2D transposed convolutions](https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html). Each of these operations can be thought of as taking a single value and replacing it with a copy of a learned 2x2 set of values which are weighted by the original (single) value. This is analogous to running the [patch embedding model](#patch-embedding-model) in reverse. While replacing each value with a 2x2 pattern does have the effect of upscaling, it's also likely to produce repetitive patterning in the output. This problem is discussed in more detail (along with a potential solution) in the article: "[Deconvolution and Checkerboard Artifacts](https://distill.pub/2016/deconv-checkerboard/)".
 

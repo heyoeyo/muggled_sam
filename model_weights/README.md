@@ -4,9 +4,9 @@ Model weights can be placed in this folder. If a single model is placed in this 
 ```bash
 Select model file:
 
-  1: sam_vit_b_01ec64.pth
-  2: sam_vit_l_0b3195.pth (default)
-  3: sam_vit_h_4b8939.pth
+   1: sam_vit_b_01ec64.pth
+  *2: sam_vit_l_0b3195.pth (default)
+   3: sam_vit_h_4b8939.pth
 
 Enter selection: 
 ```
@@ -20,4 +20,7 @@ python run_image.py -m large
 
 This will skip the menu selection and load the `sam_large.pth` file, since it contains 'large' in the filename.
 
-You can download model files from the original [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints) or [facebookresearch/segment-anything-2](https://github.com/facebookresearch/segment-anything-2) repos.
+You can download model files from:
+- SAMv3: [facebookresearch/sam3](https://github.com/facebookresearch/sam3/tree/757bbb0206a0b68bee81b17d7eb4877177025b2f?tab=readme-ov-file#getting-started)
+- SAMv2: [facebookresearch/sam2](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description)
+- SAMv1: [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints)

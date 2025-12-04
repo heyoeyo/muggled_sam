@@ -8,16 +8,16 @@
 import cv2
 import numpy as np
 
-from lib.demo_helpers.ui.window import DisplayWindow, KEY
-from lib.demo_helpers.ui.layout import HStack, VStack, OverlayStack
-from lib.demo_helpers.ui.sliders import HSlider
-from lib.demo_helpers.ui.static import HSeparator, VSeparator, StaticMessageBar
-from lib.demo_helpers.ui.images import ExpandingImage
-from lib.demo_helpers.ui.buttons import ImmediateButton
-from lib.demo_helpers.ui.overlays import EditBoxOverlay, HoverOverlay, DrawPolygonsOverlay
-from lib.demo_helpers.ui.text import ValueBlock
+from .ui.window import DisplayWindow, KEY
+from .ui.layout import HStack, VStack, OverlayStack
+from .ui.sliders import HSlider
+from .ui.static import HSeparator, VSeparator, StaticMessageBar
+from .ui.images import ExpandingImage
+from .ui.buttons import ImmediateButton
+from .ui.overlays import EditBoxOverlay, HoverOverlay, DrawPolygonsOverlay
+from .ui.text import ValueBlock
 
-from lib.demo_helpers.ui.helpers.images import scale_and_pad_to_fit_hw
+from .ui.helpers.images import scale_and_pad_to_fit_hw
 
 # For type hints
 from numpy import ndarray

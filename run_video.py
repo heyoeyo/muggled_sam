@@ -15,26 +15,30 @@ import torch
 import cv2
 import numpy as np
 
-from lib.make_sam import make_sam_from_state_dict
+from muggled_sam.make_sam import make_sam_from_state_dict
 
-from lib.demo_helpers.ui.window import DisplayWindow, KEY
-from lib.demo_helpers.ui.video import ReversibleLoopingVideoReader, LoopingVideoPlaybackSlider, ValueChangeTracker
-from lib.demo_helpers.ui.layout import HStack, VStack
-from lib.demo_helpers.ui.buttons import ToggleButton, ImmediateButton, RadioConstraint
-from lib.demo_helpers.ui.static import StaticMessageBar
-from lib.demo_helpers.ui.text import ValueBlock, TextBlock
-from lib.demo_helpers.ui.base import force_same_min_width
-from lib.demo_helpers.ui.overlays import DrawPolygonsOverlay
+from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
+from muggled_sam.demo_helpers.ui.video import (
+    ReversibleLoopingVideoReader,
+    LoopingVideoPlaybackSlider,
+    ValueChangeTracker,
+)
+from muggled_sam.demo_helpers.ui.layout import HStack, VStack
+from muggled_sam.demo_helpers.ui.buttons import ToggleButton, ImmediateButton, RadioConstraint
+from muggled_sam.demo_helpers.ui.static import StaticMessageBar
+from muggled_sam.demo_helpers.ui.text import ValueBlock, TextBlock
+from muggled_sam.demo_helpers.ui.base import force_same_min_width
+from muggled_sam.demo_helpers.ui.overlays import DrawPolygonsOverlay
 
-from lib.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
-from lib.demo_helpers.crop_ui import run_crop_ui
+from muggled_sam.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
+from muggled_sam.demo_helpers.crop_ui import run_crop_ui
 
-from lib.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
-from lib.demo_helpers.history_keeper import HistoryKeeper
-from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
-from lib.demo_helpers.contours import get_contours_from_mask
-from lib.demo_helpers.video_data_storage import SAMVideoObjectResults
-from lib.demo_helpers.saving import save_video_frames, get_save_name
+from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
+from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
+from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
+from muggled_sam.demo_helpers.contours import get_contours_from_mask
+from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
+from muggled_sam.demo_helpers.saving import save_video_frames, get_save_name
 
 
 # ---------------------------------------------------------------------------------------------------------------------

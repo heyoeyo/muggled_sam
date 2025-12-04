@@ -1,0 +1,18 @@
+[project]
+name = "muggled_sam"
+version = "1.0"
+description = "Segmentation without the magic"
+readme = "README.md"
+authors = [
+    { name = "heyoeyo" }
+]
+requires-python = ">=3.10"
+dependencies = [
+	"opencv-python   >=4.5, <4.13",
+	"numpy           >=1.21, <2.3",
+	"torch           >=2.1, <2.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

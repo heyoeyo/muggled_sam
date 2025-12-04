@@ -7,53 +7,53 @@
 
 # This is a hack to make this script work from outside the root project folder (without requiring install)
 try:
-    import lib  # NOQA
+    import muggled_sam  # NOQA
 except ModuleNotFoundError:
     import os
     import sys
 
     parent_folder = os.path.dirname(os.path.dirname(__file__))
-    if "lib" in os.listdir(parent_folder):
+    if "muggled_sam" in os.listdir(parent_folder):
         sys.path.insert(0, parent_folder)
     else:
-        raise ImportError("Can't find path to lib folder!")
+        raise ImportError("Can't find path to muggled_sam folder!")
 
 import argparse
 import os.path as osp
 import cv2
 import numpy as np
 
-from lib.make_sam import make_sam_from_state_dict
+from muggled_sam.make_sam import make_sam_from_state_dict
 
-from lib.v1_sam.components.image_encoder_attention import (
+from muggled_sam.v1_sam.components.image_encoder_attention import (
     GlobalAttentionBlock as V1GlobalBlock,
     WindowedAttentionBlock as V1WindowBlock,
 )
-from lib.v2_sam.components.hiera_blocks import (
+from muggled_sam.v2_sam.components.hiera_blocks import (
     GlobalBlock as V2GlobalBlock,
     WindowedBlock as V2WindowBlock,
     PooledWindowedBlock as V2PoolBlock,
 )
-from lib.v3_sam.components.image_encoder_attention import (
+from muggled_sam.v3_sam.components.image_encoder_attention import (
     GlobalAttentionBlock as V3GlobalBlock,
     WindowedAttentionBlock as V3WindowBlock,
 )
 
-from lib.demo_helpers.ui.window import DisplayWindow, KEY
-from lib.demo_helpers.ui.layout import VStack, HStack, GridStack
-from lib.demo_helpers.ui.images import ExpandingImage
-from lib.demo_helpers.ui.buttons import ToggleButton, ToggleImage, RadioConstraint
-from lib.demo_helpers.ui.sliders import HSlider
-from lib.demo_helpers.ui.colormaps import HColormapsBar
-from lib.demo_helpers.ui.static import StaticMessageBar, HSeparator
-from lib.demo_helpers.ui.text import ValueBlock
-from lib.demo_helpers.ui.helpers.text import TextDrawer
+from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
+from muggled_sam.demo_helpers.ui.layout import VStack, HStack, GridStack
+from muggled_sam.demo_helpers.ui.images import ExpandingImage
+from muggled_sam.demo_helpers.ui.buttons import ToggleButton, ToggleImage, RadioConstraint
+from muggled_sam.demo_helpers.ui.sliders import HSlider
+from muggled_sam.demo_helpers.ui.colormaps import HColormapsBar
+from muggled_sam.demo_helpers.ui.static import StaticMessageBar, HSeparator
+from muggled_sam.demo_helpers.ui.text import ValueBlock
+from muggled_sam.demo_helpers.ui.helpers.text import TextDrawer
 
-from lib.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
-from lib.demo_helpers.model_capture import ModelOutputCapture
-from lib.demo_helpers.history_keeper import HistoryKeeper
-from lib.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
-from lib.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
+from muggled_sam.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
+from muggled_sam.demo_helpers.model_capture import ModelOutputCapture
+from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
+from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
+from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
 
 
 # ---------------------------------------------------------------------------------------------------------------------
