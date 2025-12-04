@@ -16,7 +16,7 @@ from .coordinate_encoder_model import SAMV2CoordinateEncoder
 from .prompt_encoder_model import SAMV2PromptEncoder
 from .mask_decoder_model import SAMV2MaskDecoder
 from .memory_encoder_model import SAMV2MemoryEncoder
-from .memory_fusion_model import SAMV2MemoryFusion
+from .memory_image_fusion_model import SAMV2MemoryImageFusion
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -39,7 +39,7 @@ class SAMV2Model(nn.Module):
         prompt_encoder_model: SAMV2PromptEncoder,
         mask_decoder_model: SAMV2MaskDecoder,
         memory_encoder_model: SAMV2MemoryEncoder,
-        memory_fusion_model: SAMV2MemoryFusion,
+        memory_image_fusion_model: SAMV2MemoryImageFusion,
     ):
 
         # Inherit from parent
@@ -51,7 +51,7 @@ class SAMV2Model(nn.Module):
         self.prompt_encoder = prompt_encoder_model
         self.mask_decoder = mask_decoder_model
         self.memory_encoder = memory_encoder_model
-        self.memory_fusion = memory_fusion_model
+        self.memory_image_fusion = memory_image_fusion_model
 
         # Default to eval mode, expecting to use inference only
         self.eval()
@@ -345,7 +345,7 @@ class SAMV2Model(nn.Module):
             # Called '_prepare_memory_conditioned_features' in original code
             # See: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L759
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
-            memfused_encimg = self.memory_fusion(
+            memfused_encimg = self.memory_image_fusion(
                 lowres_imgenc,
                 prompt_memory_encodings,
                 prompt_object_pointers,

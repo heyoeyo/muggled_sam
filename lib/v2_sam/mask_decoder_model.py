@@ -8,7 +8,7 @@
 import torch
 import torch.nn as nn
 
-from .components.cross_attention_transformer import CrossAttentionTransformer
+from .components.mask_decoder_transformer import MaskDecoderTransformer
 from .components.shared import LayerNorm2d
 
 # For type hints
@@ -70,7 +70,7 @@ class SAMV2MaskDecoder(nn.Module):
         self.cls_iou_token = nn.Parameter(torch.empty(1, input_channels))
 
         # Create transformer decoder
-        self.transformer = CrossAttentionTransformer(num_layers, num_heads, input_channels, downsample_dim)
+        self.transformer = MaskDecoderTransformer(num_layers, num_heads, input_channels, downsample_dim)
 
         # Create layers for generating final outputs
         self.maskgen = MaskGen(input_channels, num_mask_tokens)

@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .posenc_sine import SinusoidalPE2D
-from .memfuse_attention import RoPESelfAttention, RoPECrossAttention
+from .memory_image_fusion_attention import RoPESelfAttention, RoPECrossAttention
 
 # For type hints
 from torch import Tensor

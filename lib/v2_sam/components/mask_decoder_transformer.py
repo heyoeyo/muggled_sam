@@ -17,7 +17,7 @@ from torch import Tensor
 # %% Classes
 
 
-class CrossAttentionTransformer(nn.Module):
+class MaskDecoderTransformer(nn.Module):
     """
     Simplified implementation of the 'TwoWayTransformer' model/component originally described in:
         "Segment Anything"
@@ -25,8 +25,9 @@ class CrossAttentionTransformer(nn.Module):
             Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, Ross Girshick
         @ https://arxiv.org/abs/2304.02643
 
-    The code here is adapted from the original segment-anything repo:
+    The code here is adapted from the original segment-anything (v1) repo though a v2 implementation also exists:
     https://github.com/facebookresearch/segment-anything/blob/6fdee8f2727f4506cfbbe553e23b895e27956588/segment_anything/modeling/transformer.py#L16
+    https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/modeling/sam/transformer.py#L19
 
     This model is used to perform cross-attention between prompt tokens and image tokens
     for the SAM model.

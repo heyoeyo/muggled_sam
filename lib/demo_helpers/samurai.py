@@ -70,7 +70,7 @@ class SimpleSamurai:
 
         # Values update with velocity, velocities are estimated as constant
         # eq: S(t) = T * S(t-1) + noise, where T is matrix below, S is state vector: [x,y,w,h,vx,vy,vw,vh]
-        # (this matrix is called the 'state transition model' on wikipedia entry)
+        # (this matrix is called the 'state transition model' on kalman filter wikipedia entry)
         dt = 1 / video_framerate
         self._kalman.transitionMatrix = np.array(
             [
@@ -88,7 +88,7 @@ class SimpleSamurai:
 
         # Assume we measure values directly but can't measure velocities
         # eq: Measurement(t) = M * S'(t) + noise, where M is matrix below, S' is the unknown true state
-        # (this matrix is called the 'observation model' on wikipedia entry)
+        # (this matrix is called the 'observation model' on kalman wikipedia entry)
         self._kalman.measurementMatrix = np.array(
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
@@ -202,7 +202,7 @@ class SimpleSamurai:
 
             # Encode image features with previous memory encodings & object pointer data
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
-            memfused_encimg = sammodel.memory_fusion(
+            memfused_encimg = sammodel.memory_image_fusion(
                 lowres_imgenc,
                 prompt_memory_encodings,
                 prompt_object_pointers,

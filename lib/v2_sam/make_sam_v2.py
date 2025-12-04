@@ -13,8 +13,8 @@ from .image_encoder_model import SAMV2ImageEncoder
 from .coordinate_encoder_model import SAMV2CoordinateEncoder
 from .prompt_encoder_model import SAMV2PromptEncoder
 from .mask_decoder_model import SAMV2MaskDecoder
-from .memory_fusion_model import SAMV2MemoryFusion
 from .memory_encoder_model import SAMV2MemoryEncoder
+from .memory_image_fusion_model import SAMV2MemoryImageFusion
 
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
 from .state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
@@ -77,7 +77,7 @@ def make_samv2_from_original_state_dict(
     sam_model.prompt_encoder.load_state_dict(new_state_dict["promptencoder"], strict_load)
     sam_model.mask_decoder.load_state_dict(new_state_dict["maskdecoder"], strict_load)
     sam_model.memory_encoder.load_state_dict(new_state_dict["memoryencoder"], strict_load)
-    sam_model.memory_fusion.load_state_dict(new_state_dict["memoryfusion"], strict_load)
+    sam_model.memory_image_fusion.load_state_dict(new_state_dict["memoryfusion"], strict_load)
 
     return model_config_dict, sam_model
 
@@ -189,7 +189,7 @@ def make_sam_v2(
         num_mixer_layers=num_memory_encoder_mixer_layers,
         is_version_2p1=is_version_2p1,
     )
-    memfuse_model = SAMV2MemoryFusion(
+    memfuse_model = SAMV2MemoryImageFusion(
         features_per_prompt_token,
         features_per_memory_token,
         num_layers=num_memory_fusion_layers,

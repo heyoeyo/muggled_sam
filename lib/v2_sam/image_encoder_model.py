@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from .components.hiera_model import HieraModel
-from .components.imgenc_components import HalfStepPatchEmbed, WindowTiledPositionEncoding, OutputProjection
+from .components.image_encoder_components import HalfStepPatchEmbed, WindowTiledPositionEncoding, OutputProjection
 from .components.shared import Conv1x1Layer
 
 # For type hints

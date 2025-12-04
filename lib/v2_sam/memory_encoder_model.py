@@ -7,7 +7,7 @@
 
 import torch.nn as nn
 
-from .components.memenc_components import MaskDownsampler, ConvNeXtBlock
+from .components.memory_encoder_components import MaskDownsampler, ConvNeXtBlock
 from .components.shared import Conv1x1Layer
 from .components.version_2_vs_2p1_variants import NoObjectEncoder_v2p0, NoObjectEncoder_v2p1
 

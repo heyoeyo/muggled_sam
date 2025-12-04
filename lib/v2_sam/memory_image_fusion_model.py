@@ -8,7 +8,7 @@
 import torch
 import torch.nn as nn
 
-from .components.memfuse_components import MemoryFusionTransformerLayer, FusionPositionOffset
+from .components.memory_image_fusion_components import MemoryFusionTransformerLayer, FusionPositionOffset
 from .components.posenc_sine import SinusoidalPE2D
 from .components.version_2_vs_2p1_variants import ObjectPointerPosEnc_v2p0, ObjectPointerPosEnc_v2p1
 
@@ -20,7 +20,7 @@ from torch import Tensor
 # %% Classes
 
 
-class SAMV2MemoryFusion(nn.Module):
+class SAMV2MemoryImageFusion(nn.Module):
     """
     Simplified implementation of the 'memory-attention' model from:
         "SAM 2: Segment Anything in Images and Videos"
