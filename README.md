@@ -149,6 +149,87 @@ As with the image script, you can add `--help` to the end of this command to see
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
+## Converting TAR Archives to Green Screen Video
+
+The `convertTarToVideo.py` script converts a TAR archive containing PNG images into an MP4 video with transparent areas replaced by a green screen background.
+
+### Overview
+
+This utility is useful for:
+- Converting frame sequences exported from segmentation tasks into playable videos
+- Automatically replacing transparency with a green screen color
+- Creating videos with customizable frame rates and encoding settings
+
+### Usage
+
+#### Basic Usage
+
+```bash
+python convertTarToVideo.py input_images.tar output_video.mp4
+```
+
+#### With Custom Frame Rate
+
+```bash
+python convertTarToVideo.py input_images.tar output_video.mp4 --framerate 24
+```
+
+#### With Custom FFmpeg Path
+
+```bash
+python convertTarToVideo.py input_images.tar output_video.mp4 --ffmpeg /path/to/ffmpeg
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `tar_path` | string | Yes | — | Path to the input TAR file containing PNG images |
+| `output_video_path` | string | Yes | — | Path to the output MP4 video file |
+| `--framerate` | integer | No | 30 | Video frame rate in frames per second |
+| `--ffmpeg` | string | No | `ffmpeg` | Path to the FFmpeg executable (use if FFmpeg is not in PATH) |
+
+### How It Works
+
+1. **TAR Extraction**: The script extracts all images from the TAR archive into a temporary directory
+2. **Green Screen Conversion**: All PNG images are processed:
+   - Converted to RGBA color mode
+   - Any transparent pixels (alpha=0) are replaced with green (RGB: 0, 255, 0)
+   - Images are saved back to the temporary directory
+3. **Video Encoding**: FFmpeg encodes the sequence of images into an MP4 video using:
+   - H.264 codec (`libx264`)
+   - YUV 4:2:0 color format for compatibility
+   - Specified frame rate
+
+### Requirements
+
+- **Python Libraries**: `PIL` (from `Pillow`)
+- **External Tools**: `FFmpeg` must be installed and accessible from the command line
+
+### Important Notes
+
+- **Image Naming**: Images in the TAR archive should be named sequentially (e.g., `00000000.png`, `00000001.png`, etc.) for correct frame ordering
+- **Green Screen Color**: The fixed color used is `RGB(0, 255, 0)` (pure green). Modify the script if you need a different color
+- **Destructive Operation**: The transparency replacement is done in-place and permanent. The original TAR file is not modified, but extracted images will have their transparency replaced
+- **Performance**: Processing large image sequences may take time depending on image resolution and count
+
+### Example Workflow
+
+```bash
+# Assuming you have a tar file with segmentation frames
+python convertTarToVideo.py segmentation_frames.tar output.mp4 --framerate 24
+```
+
+This would create an MP4 video at 24 fps with all transparent areas replaced by green screen.
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `FFmpeg not found` | Install FFmpeg or provide the path using `--ffmpeg` argument |
+| `No such file or directory` | Verify the TAR file exists and the output path is writable |
+| `Image order is incorrect` | Ensure images in the TAR are named with sequential numbering (e.g., 8-digit zero-padded numbers) |
+
 
 # Acknowledgements
 
