@@ -149,23 +149,6 @@ As with the image script, you can add `--help` to the end of this command to see
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
-### Example Workflow
-
-```bash
-# Assuming you have a tar file with segmentation frames
-python convertTarToVideo.py segmentation_frames.tar output.mp4 --framerate 24
-```
-
-This would create an MP4 video at 24 fps with all transparent areas replaced by green screen.
-
-### Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| `FFmpeg not found` | Install FFmpeg or provide the path using `--ffmpeg` argument |
-| `No such file or directory` | Verify the TAR file exists and the output path is writable |
-| `Image order is incorrect` | Ensure images in the TAR are named with sequential numbering (e.g., 8-digit zero-padded numbers) |
-
 
 # Acknowledgements
 
