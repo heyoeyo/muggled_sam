@@ -55,6 +55,7 @@ default_max_memory_history = 6
 default_max_pointer_history = 15
 default_num_object_buffers = 4
 default_object_score_threshold = 0.0
+default_background_color = None
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything-V2 (SAMv2) on a video")
@@ -158,6 +159,12 @@ parser.add_argument(
     action="store_true",
     help="If set, a cropping UI will appear on start-up to allow for the image to be cropped prior to processing",
 )
+parser.add_argument(
+    "--background_color",
+    default=default_background_color,
+    type=str,
+    help="Background color for saved masks as RGB or RGBA tuple (e.g., '255,255,255' or '255,0,0,128'). Default is transparent black (0,0,0,0)",
+)
 
 # For convenience
 args = parser.parse_args()
@@ -178,6 +185,25 @@ object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
+
+# Parse background color if provided
+background_color = None
+if args.background_color is not None:
+    try:
+        color_values = [int(x.strip()) for x in args.background_color.split(',')]
+        if len(color_values) == 3:
+            background_color = tuple(color_values + [255])  # Add full opacity for RGB
+        elif len(color_values) == 4:
+            background_color = tuple(color_values)
+        else:
+            raise ValueError("Background color must have 3 (RGB) or 4 (RGBA) values")
+        # Validate range
+        if not all(0 <= v <= 255 for v in background_color):
+            raise ValueError("Color values must be between 0 and 255")
+    except Exception as e:
+        print(f"Warning: Invalid background_color format '{args.background_color}': {e}")
+        print("Using default transparent black (0,0,0,0)")
+        background_color = None
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -716,10 +742,23 @@ try:
                     save_mask_1ch_uint8 = full_mask_1ch
                     save_frame = full_frame
 
-                # Add mask to alpha channel (and clear masked RGB data, reduces file size!)
-                save_frame = cv2.bitwise_and(save_frame, cv2.cvtColor(save_mask_1ch_uint8, cv2.COLOR_GRAY2BGR))
-                save_frame = cv2.cvtColor(save_frame, cv2.COLOR_BGR2BGRA)
-                save_frame[:, :, -1] = save_mask_1ch_uint8
+                # Apply background color if specified, otherwise clear masked RGB data
+                if background_color is not None:
+                    # Create BGRA frame with custom background
+                    save_frame_bgra = np.zeros((*save_frame.shape[:2], 4), dtype=np.uint8)
+                    # Set background color (convert RGBA to BGRA for OpenCV)
+                    bg_bgra = (background_color[2], background_color[1], background_color[0], background_color[3])
+                    save_frame_bgra[:] = bg_bgra
+                    # Copy original frame pixels where mask is active
+                    mask_bool = save_mask_1ch_uint8 > 0
+                    save_frame_bgra[mask_bool, :3] = save_frame[mask_bool]
+                    save_frame_bgra[mask_bool, 3] = save_mask_1ch_uint8[mask_bool]
+                    save_frame = save_frame_bgra
+                else:
+                    # Original behavior: clear masked RGB data (reduces file size!)
+                    save_frame = cv2.bitwise_and(save_frame, cv2.cvtColor(save_mask_1ch_uint8, cv2.COLOR_GRAY2BGR))
+                    save_frame = cv2.cvtColor(save_frame, cv2.COLOR_BGR2BGRA)
+                    save_frame[:, :, -1] = save_mask_1ch_uint8
 
                 # Encode frame data in memory (want to save in bulk, to avoid killing filesystem)
                 ok_encode, png_encoding = cv2.imencode(".png", save_frame)
