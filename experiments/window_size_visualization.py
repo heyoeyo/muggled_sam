@@ -422,7 +422,7 @@ try:
             ok_contours, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
 
         # Render final output
-        ui_elems.olays.polygon.set_polygons(None if is_show_preds else mask_contours_norm)
+        ui_elems.olays.polygon.set_polygons(None if (is_show_preds or is_show_binary) else mask_contours_norm)
         ui_elems.image.set_image(disp_img)
         display_image = disp_layout.render(h=display_size_px)
         req_break, keypress = window.show(display_image)
