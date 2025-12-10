@@ -145,7 +145,7 @@ To use the script, make sure you've activated the virtual environment (from the 
 python run_video.py
 ```
 
-As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` to reduce the processing resolution can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!).
+As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` to reduce the processing resolution can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!). You can also use the `--background_color` flag to customize the background color in the output video (useful for replacing transparent areas with a specific color, such as green screen for chroma key effects). The flag accepts color values in RGB format (e.g., `--background_color 0 255 0` for green). 
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
