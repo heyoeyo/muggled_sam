@@ -32,17 +32,21 @@ This script runs each of the image segmentation components repeatedly while timi
 | V2-Large  | 47 ms  | 13 ms  | 1.6 ms |
 | V3        | 148ms  | 39 ms  | 1.5 ms |
 
-Interestingly, the SAMv3 model takes a _significant_ performance hit using v1/v2 default 1024px sizing as opposed to it's own default 1008px (108ms). This may be due to the use of windowing (and associated padding) in the image encoder. Using sizes which are multiples of 336 (the patch size times the window size = 14*24) could help to minimize this.
+| Model | Encoding @ 1008px | Encoding @ 504px | Mask Generation |
+| ----- | ----------------- | ---------------- | --------------- |
+| V3        | 109ms  | 41 ms  | 1.5 ms |
+
+The SAMv3 results are shown for both 1024px and 1008px (it's native default), since the model takes a _significant_ performance hit at the v1/v2 default 1024px sizing. Strangely, it's also consistently slower at 504px vs. 512px.
 
 The script also prints out an estimate of VRAM usage (if using cuda):
 
 | Model | VRAM @ 1024px | VRAM @ 512px |
 | ----- | ------------- | ------------ |
-| V1-Base | 2.4 GB | 1.1 GB |
-| V1-Large | 3.3 GB | 1.6 GB |
-| V2-Tiny | 1.1 GB | 0.9 GB  |
-| V2-Large | 1.7 GB | 1.4 GB |
-
+| V1-Base | 1.7 GB | 0.4 GB |
+| V1-Large | 2.6 GB | 0.9 GB |
+| V2-Tiny | 0.5 GB | 0.3 GB  |
+| V2-Large | 1.0 GB | 0.7 GB |
+| V3 | 1.5 GB | 1.2 GB |
 
 
 ## Video Segmentation
@@ -59,7 +63,11 @@ Segmentation results are displayed per-frame for verification, and the total inf
 | V2-Large | 64 ms | 17 ms |
 | V3 | 172ms | 46ms |
 
-Again, the v3 model runs much slower at 1024px compared to it's default 1008px resolution (130ms).
+| Model | Inference @ 1008 | Inference @ 504 |
+| ----- | ---------------- | --------------- |
+| V3 | 130ms | 47ms |
+
+Again, the results for the v3 model using 1008px are included as it runs much slower when using the v1/v2 default sizing.
 
 ## Video Segmentation (from mask)
 

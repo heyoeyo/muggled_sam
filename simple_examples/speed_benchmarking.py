@@ -38,6 +38,12 @@ if device == "cpu":
     num_image_encoder_iterations = num_image_encoder_iterations // 10
     num_mask_generation_iterations = num_mask_generation_iterations // 10
 
+# Get initial VRAM usage
+initial_vram_mb = 0
+if "cuda" in device:
+    free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
+    initial_vram_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
+
 # Set up model
 print(f"Loading model ({os.path.basename(model_path)})")
 t1 = perf_counter()
@@ -51,7 +57,7 @@ if max_side_length is None:
     prep_img = np.zeros((10, 10, 3), dtype=np.uint8)
     prep_tensor = sammodel.image_encoder.prepare_image(prep_img, None, use_square_sizing)
     max_side_length = int(max(prep_tensor.shape[-2:]))
-    print("", f"No max side length specified, using: {max_side_length}", sep="\n", flush=True)
+print("", f"Using max side length: {max_side_length}px", f"Square sizing: {use_square_sizing}", sep="\n", flush=True)
 
 # Model warm-up (excludes one-time VRAM/cache allocation from timing)
 print("", f"Running warm-up ({device} / {dtype})", sep="\n", flush=True)
@@ -87,3 +93,10 @@ t2 = perf_counter()
 total_time_ms = round(1000 * (t2 - t1))
 per_iter = total_time_ms / num_mask_generation_iterations
 print("-> Mask generation took", total_time_ms, "ms", f"({per_iter} ms / iter)")
+
+# Print VRAM usage if possible
+if "cuda" in device:
+    free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
+    curr_vram_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
+    vram_usage = curr_vram_mb - initial_vram_mb
+    print("", f"VRAM: {vram_usage} MB", sep="\n")
