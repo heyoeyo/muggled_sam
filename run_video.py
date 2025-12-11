@@ -14,6 +14,9 @@ from dataclasses import dataclass
 import torch
 import cv2
 import numpy as np
+import subprocess
+import tempfile
+import shutil
 
 from muggled_sam.make_sam import make_sam_from_state_dict
 
@@ -153,6 +156,13 @@ parser.add_argument(
     action="store_true",
     help="If set, this simplifies the UI by hiding the element associated with saving",
 )
+
+parser.add_argument(
+    "--ffmpeg",
+    default=None,
+    type=str,
+    help="Path to ffmpeg binary to render video output (optional). If provided, Save Buffer will also emit a rendered video alongside the tar.",
+)
 parser.add_argument(
     "--crop",
     default=False,
@@ -185,6 +195,7 @@ object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
+ffmpeg_path = args.ffmpeg
 
 # Parse background color if provided
 background_color = None
@@ -336,6 +347,55 @@ class SaveBufferData:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up UI
+
+
+def render_png_dict_to_video(save_folder: str, save_index: str, object_index: int, png_dict: dict, ffmpeg_bin: str, fps: float | None = None) -> str | None:
+    """Render PNG frames (from `png_dict`) into a video using the provided ffmpeg binary.
+
+    The function writes the PNGs to a temporary folder (inside `save_folder`) named sequentially
+    and invokes ffmpeg to encode them to an MP4 placed alongside other saved results.
+    Returns the output video path on success, or None on failure.
+    """
+
+    if ffmpeg_bin is None:
+        return None
+
+    # Create a temporary directory to hold sequentially named PNGs
+    tmpdir = tempfile.mkdtemp(prefix=f"{save_index}_obj{1+object_index}_", dir=save_folder)
+    try:
+        # Sort frame indices and write files sequentially starting at 0
+        frame_idxs = sorted(png_dict.keys())
+        if len(frame_idxs) == 0:
+            return None
+
+        min_idx = frame_idxs[0]
+        max_idx = frame_idxs[-1]
+        for seq_idx, frame_idx in enumerate(frame_idxs):
+            png_enc = png_dict[frame_idx]
+            out_name = osp.join(tmpdir, f"{seq_idx:0>8}.png")
+            with open(out_name, "wb") as fh:
+                fh.write(png_enc.tobytes())
+
+        # Determine framerate
+        frm = int(fps) if (fps is not None and fps > 0) else 30
+
+        out_video_name = f"{save_index}_obj{1+object_index}_{min_idx}_to_{max_idx}.mp4"
+        out_video_path = osp.join(save_folder, out_video_name)
+
+        cmd = [ffmpeg_bin, "-y", "-framerate", str(frm), "-i", osp.join(tmpdir, "%08d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", out_video_path]
+
+        try:
+            subprocess.run(cmd, check=True)
+            return out_video_path
+        except Exception as e:
+            print(f"Warning: ffmpeg render failed: {e}")
+            return None
+
+    finally:
+        try:
+            shutil.rmtree(tmpdir)
+        except Exception:
+            pass
 
 # Playback control UI for adjusting video position
 playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=True)
@@ -783,6 +843,14 @@ try:
                 save_folder, save_idx = get_save_name(video_path, "run_video")
                 save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
                 print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
+                # Optionally render a video using ffmpeg if provided
+                if ffmpeg_path:
+                    try:
+                        rendered_video = render_png_dict_to_video(save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
+                        if rendered_video:
+                            print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                    except Exception as _e:
+                        print(f"Warning: failed to render video via ffmpeg: {_e}")
                 buffer_clear_btn.click()
 
         # Wipe out save data if needed
@@ -809,5 +877,13 @@ finally:
             save_folder, save_idx = get_save_name(video_path, "video")
             save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
             print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
+            # Optionally render a video using ffmpeg if provided
+            if ffmpeg_path:
+                try:
+                    rendered_video = render_png_dict_to_video(save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
+                    if rendered_video:
+                        print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                except Exception as _e:
+                    print(f"Warning: failed to render video via ffmpeg: {_e}")
 
     pass
