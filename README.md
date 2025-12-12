@@ -147,28 +147,7 @@ python run_video.py
 
 As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` to reduce the processing resolution can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!). 
 
-#### Background Color & Video Rendering
-
-You can use the `--background_color` flag to customize the background color in the output (useful for replacing transparent areas with a specific color, such as green screen for chroma key effects). The flag accepts color values in RGB or RGBA format using comma-separated values:
-```bash
-python run_video.py -i video.mp4 --background_color "0,255,0"      # Green background (RGB)
-python run_video.py -i video.mp4 --background_color "0,255,0,128"  # Green with 50% opacity (RGBA)
-```
-
-#### Video Rendering with FFmpeg
-
-By default, the Save Buffer action saves frames as a TAR archive of PNG images. To also render a compressed MP4 video file, provide the path to an ffmpeg binary using the `--ffmpeg` flag:
-```bash
-python run_video.py -i video.mp4 --ffmpeg "C:\path\to\ffmpeg.exe"
-# Or if ffmpeg is on your PATH:
-python run_video.py -i video.mp4 --ffmpeg ffmpeg
-```
-
-When `--ffmpeg` is provided, the Save Buffer action will output both:
-- A TAR archive of PNG frames (as before)
-- A rendered MP4 video file using default encoding (libx264, yuv420p, framerate from source video)
-
-If the flag is not provided, behavior remains unchanged and only the TAR archive is produced.
+The per-frame segmentation results can be saved as .pngs (in a TAR archive) or as an .mp4 video file (using `--ffmpeg`), please see [video_from_frames.md](.readme_assets/video_from_frames.md) for more info.
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 

@@ -159,9 +159,11 @@ parser.add_argument(
 
 parser.add_argument(
     "--ffmpeg",
+    nargs="?",
+    const="ffmpeg",
     default=None,
     type=str,
-    help="Path to ffmpeg binary to render video output (optional). If provided, Save Buffer will also emit a rendered video alongside the tar.",
+    help="Path to ffmpeg binary to render video output (optional). If provided without a value the script will try to invoke 'ffmpeg' from PATH. If provided with a path, that executable will be used.",
 )
 parser.add_argument(
     "--crop",
@@ -195,7 +197,32 @@ object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
-ffmpeg_path = args.ffmpeg
+
+# Resolve ffmpeg option: allow `--ffmpeg` with no value to mean `ffmpeg` on PATH.
+ffmpeg_path = None
+if args.ffmpeg is not None:
+    requested = args.ffmpeg
+    # If user passed the flag without a value, argparse sets it to the `const` value ('ffmpeg')
+    if requested in ("ffmpeg", "ffmpeg.exe"):
+        # Try to resolve on PATH
+        resolved = shutil.which(requested)
+        if resolved:
+            ffmpeg_path = resolved
+        else:
+            print(f"Warning: --ffmpeg specified but '{requested}' was not found on PATH. Video rendering will be disabled.")
+            ffmpeg_path = None
+    else:
+        # User provided a path or command name; prefer exact path if it exists, otherwise try PATH lookup
+        if osp.exists(requested) and osp.isfile(requested):
+            ffmpeg_path = requested
+        else:
+            resolved = shutil.which(requested)
+            if resolved:
+                ffmpeg_path = resolved
+            else:
+                print(f"Warning: ffmpeg binary not found at '{requested}' and not on PATH. Video rendering will be disabled.")
+                ffmpeg_path = None
+
 
 # Parse background color if provided
 background_color = None
@@ -841,16 +868,19 @@ try:
             num_frames = len(png_per_frame_dict.keys())
             if num_frames > 0:
                 save_folder, save_idx = get_save_name(video_path, "run_video")
-                save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
-                print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
-                # Optionally render a video using ffmpeg if provided
+                # If ffmpeg requested, render MP4 only. Otherwise, create tar of PNGs as before.
                 if ffmpeg_path:
                     try:
                         rendered_video = render_png_dict_to_video(save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
                         if rendered_video:
                             print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                        else:
+                            print("", f"No video produced by ffmpeg for buffer {buffer_select_idx}", sep="\n")
                     except Exception as _e:
                         print(f"Warning: failed to render video via ffmpeg: {_e}")
+                else:
+                    save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
+                    print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
                 buffer_clear_btn.click()
 
         # Wipe out save data if needed
@@ -875,15 +905,17 @@ finally:
         num_frames = len(png_per_frame_dict.keys())
         if num_frames > 0:
             save_folder, save_idx = get_save_name(video_path, "video")
-            save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
-            print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
-            # Optionally render a video using ffmpeg if provided
             if ffmpeg_path:
                 try:
                     rendered_video = render_png_dict_to_video(save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
                     if rendered_video:
                         print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                    else:
+                        print("", f"No video produced by ffmpeg for obj {objidx}", sep="\n")
                 except Exception as _e:
                     print(f"Warning: failed to render video via ffmpeg: {_e}")
+            else:
+                save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
+                print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
 
     pass
