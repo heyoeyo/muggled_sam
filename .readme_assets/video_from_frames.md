@@ -1,65 +1,60 @@
-# Videos from segmented frames
+# Saving Video Segmentation Results
 
-The [run_video](https://github.com/heyoeyo/muggled_sam?tab=readme-ov-file#run-video-or-webcam) script saves each frame as a transparent .png file in order to maintain lossless segmentation of the original video, as well as supporting potential jumps in the video timeline. While this perserves as much data as possible, it may not be as convenient as a video file. Luckily, it's fairly easy to make a video from these frames, as explained below.
+## PNG Frames (TAR Archive) — Default
 
-
-## Direct from .tar
-
-If you don't need to check or edit the .pngs, it's possible to create a video directly from the .tar file using [FFmpeg](https://www.ffmpeg.org/). This can be done as follows:
+By default, "Save Buffer" saves segmented frames as a TAR archive of PNG images with transparency and optional background color.
 
 ```bash
-# Unpack .tar directly into ffmpeg
-tar -xOf name_of_saved_frames.tar | \
-  ffmpeg -i - -framerate 30 -vcodec ffv1 output.mkv
+python run_video.py -i video.mp4
 ```
 
-Just be sure to edit the `name_of_saved_frames.tar` to point at the saved frame data, and adjust the `framerate` as needed.
+Output: `saved_images/run_video/{video_name}/001_obj0_100_to_200_frames.tar`
 
+Extract with:
+```bash
+tar -xf 001_obj0_100_to_200_frames.tar
+```
 
-## Unpack & Encode
+## MP4 Video (FFmpeg)
 
-As an alternative, a video can be created from the saved frame data by first unpacking the .tar file and then combining the results using FFmpeg.
+To render frames directly to MP4, use the `--ffmpeg` flag.
 
-### Untar pngs
+### Installation
 
-It's recommended to unpack the .tar file using a file explorer, so you can confirm you're working with the correct files, but it can also be done in the terminal:
+- **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+- **macOS:** `brew install ffmpeg`
+- **Linux:** `sudo apt-get install ffmpeg`
+
+### Usage
 
 ```bash
-# Create 'pngs_folder' folder and unpack frames into it
-mkdir pngs_folder
-tar -xf name_of_saved_frames.tar -C pngs_folder
+# Use ffmpeg from PATH
+python run_video.py -i video.mp4 --ffmpeg
+
+# Use specific ffmpeg executable
+python run_video.py -i video.mp4 --ffmpeg "C:\path\to\ffmpeg.exe"
 ```
 
-At this point, you can 'edit' which frames end up in the resulting video by moving/deleting them from the folder. This may be useful if, for example, the original segmented object went in-and-out of view and you'd like to save separate videos for each appearance.
+Output: `saved_images/run_video/{video_name}/001_obj0_100_to_200.mp4`
 
-
-### Combine pngs into video
-
-With the .pngs unpacked, they can be combined into a video using FFmpeg. There are an enormous number of options when it comes to using FFmpeg, but a basic example for merging frames into a lossless video (using the [ffv1](https://trac.ffmpeg.org/wiki/Encode/FFV1) codec) is:
-
-```bash
-# Create (lossless) video from pngs in 'pngs_folder' folder
-ffmpeg -i './pngs_folder/%08d.png' -framerate 30 -vcodec ffv1 output.mkv
-```
-
-To save the video using a more conventional codec (h264), try the following:
-
-```bash
-# Create video with h264 codec
-ffmpeg -i './pngs_folder/%08d.png' \
-  -framerate 30 \
-  -vcodec libx264 \
-  -crf 20 \
-  output.mp4
-```
-
-The `crf` value controls the amount of compression. Higher values lead to lower video quality, but smaller file sizes. Note that compression may introduce masking errors if you're planning to re-segment the video later!
+**Encoding:** H.264 (libx264), YUV 4:2:0, framerate from source video
 
 ## Background Color
 
-Videos (generally) don't support transparency, so when creating a video from .pngs, the underlying color of transparent areas will be used instead.
-This coloring can be adjusted by using the `--background_color` flag. For example, to produce a [green-screen](https://en.wikipedia.org/wiki/Chroma_key) effect, use:
+Customize background for both outputs (useful for green-screen):
+
 ```bash
-python run_video.py --background_color 0,255,0
+python run_video.py -i video.mp4 --background_color "0,255,0"        # RGB green
+python run_video.py -i video.mp4 --background_color "0,255,0,128"    # RGBA green, 50% opacity
 ```
-Choosing a color that doesn't appear in the original video will make it easy to re-segment the video inside of video editing software.
+
+Works with both TAR and MP4 outputs.
+
+## Troubleshooting
+
+**FFmpeg not found:**
+```
+Warning: --ffmpeg specified but 'ffmpeg' was not found on PATH. Video rendering will be disabled.
+```
+
+Solution: Install FFmpeg and add to PATH, or provide full path to executable.
