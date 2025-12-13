@@ -282,6 +282,7 @@ sammodel.to(**device_config_dict)
 
 # Set up access to video
 vreader = ReversibleLoopingVideoReader(video_path).release()
+video_fps = vreader.get_fps()
 sample_frame = vreader.get_sample_frame()
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
@@ -891,15 +892,10 @@ try:
                 if ffmpeg_path:
                     try:
                         rendered_video = render_png_dict_to_video(
-                            save_folder,
-                            save_idx,
-                            buffer_select_idx,
-                            png_per_frame_dict,
-                            ffmpeg_path,
-                            fps=getattr(vreader, "_fps", None),
+                            save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=video_fps
                         )
                         if rendered_video:
-                            print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                            print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
                         else:
                             print("", f"No video produced by ffmpeg for buffer {buffer_select_idx}", sep="\n")
                     except Exception as _e:
@@ -934,15 +930,10 @@ finally:
             if ffmpeg_path:
                 try:
                     rendered_video = render_png_dict_to_video(
-                        save_folder,
-                        save_idx,
-                        objidx,
-                        png_per_frame_dict,
-                        ffmpeg_path,
-                        fps=getattr(vreader, "_fps", None),
+                        save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=video_fps
                     )
                     if rendered_video:
-                        print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
+                        print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
                     else:
                         print("", f"No video produced by ffmpeg for obj {objidx}", sep="\n")
                 except Exception as _e:

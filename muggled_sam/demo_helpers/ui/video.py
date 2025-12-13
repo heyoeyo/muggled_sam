@@ -111,13 +111,13 @@ class LoopingVideoReader:
         """Helper used to retrieve a sample frame (the first frame), most likely for init use-cases"""
         return self.sample_frame.copy()
 
-    # .................................................................................................................
-
     def get_pause_state(self) -> bool:
         """Helper used to figure out if the video is paused (separately from the frame iteration)"""
         return self._is_paused
 
-    # .................................................................................................................
+    def get_fps(self) -> float:
+        """Helper used to report the framerate of the source video"""
+        return self._fps
 
     def get_frame_delay_ms(self, max_allowable_ms=1000) -> int:
         """Returns a frame delay (in milliseconds) according to the video's reported framerate"""
