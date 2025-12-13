@@ -265,14 +265,15 @@ class BaseUIControl:
     """
     Helper class used to manage access to the base UI implementation
     Includes functionality for rendering alpha/checker-board masked images,
-    as well as mask preview buttons & final 'hi-res' mask results
+    as well as mask preview buttons & final 'hi-res' mask results.
+    A mask_color_bgra value can be given to color the masked/checkered image.
     """
 
     # .................................................................................................................
 
-    def __init__(self, ui_elements: PromptUI):
+    def __init__(self, ui_elements: PromptUI, mask_color_bgra: tuple[int, int, int, int] | None = None):
         self.elems = ui_elements
-        self._checker_pattern = CheckerPattern()
+        self._checker_pattern = CheckerPattern(mask_color_bgra=mask_color_bgra)
 
     # .................................................................................................................
 
@@ -336,8 +337,8 @@ class PromptUIControl(BaseUIControl):
 
     # .................................................................................................................
 
-    def __init__(self, prompt_ui: PromptUI):
-        super().__init__(prompt_ui)
+    def __init__(self, prompt_ui: PromptUI, mask_color_bgra: tuple[int, int, int, int] | None = None):
+        super().__init__(prompt_ui, mask_color_bgra)
 
     # .................................................................................................................
 

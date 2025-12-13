@@ -16,6 +16,59 @@ from numpy import ndarray
 # %% Classes
 
 
+class FrameCompositing:
+    """
+    Helper used to mask out parts of an image, either with
+    blacked-out transparency (default) or a specific color
+    Can accept BGRA tuples or hex colors as input
+    """
+
+    def __init__(self, mask_bgra: tuple[int, int, int, int] | str | None = None):
+
+        # Default to black-transparent mask
+        if mask_bgra is None:
+            mask_bgra = (0, 0, 0, 0)
+
+        # Handle hex inputs
+        if isinstance(mask_bgra, str):
+            mask_bgra = self.parse_hex_color(mask_bgra)
+
+        # Sanity check
+        assert len(mask_bgra) == 4, "Error got unexpected mask color, expecting BGR or BGRA"
+
+        # Store config
+        self._include_alpha = mask_bgra[-1] < 255
+        self._mask_color = np.uint8(mask_bgra if self._include_alpha else mask_bgra[0:-1])
+
+    def mask_frame(self, frame: np.ndarray, mask_1ch: np.ndarray) -> np.ndarray:
+        """Apply masking with mask color. Returns bgra image if mask color is transparent (otherwise bgr only)"""
+        in_frame = frame if not self._include_alpha else cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
+        return cv2.copyTo(in_frame, mask_1ch, np.full_like(in_frame, self._mask_color))
+
+    @staticmethod
+    def parse_hex_color(color_hex_str: str) -> tuple[int, int, int, int]:
+        """Helper used to parse a color hex code into a BGRA tuple"""
+
+        color_hex = str(color_hex_str).removeprefix("0x")
+        assert len(color_hex) in (2, 6, 8), "Must provide color with 2 (grayscale), 6 (RGB) or 8 (RGBA) digits!"
+
+        # Handle 2/6 character cases
+        if len(color_hex) == 2:
+            # Interpret one byte (2 hex characters), as a grayscale value
+            color_hex = "".join([color_hex_str, color_hex_str, color_hex_str, "FF"])
+
+        elif len(color_hex) == 6:
+            # Add opaque alpha channel is missing, so we're always dealing with 8 characters
+            color_hex = "".join([color_hex, "FF"])
+
+        # Parse hex code as rgba color
+        hex_as_int = int(color_hex, 16)
+        digit_shifts = (8, 16, 24, 0)  # reversed for BGRA ordering!
+        color_bgra = tuple((hex_as_int >> shift) & 255 for shift in digit_shifts)
+
+        return color_bgra
+
+
 class CheckerPattern:
     """
     Class used to draw a checker pattern as the background of images
@@ -24,7 +77,7 @@ class CheckerPattern:
 
     # .................................................................................................................
 
-    def __init__(self, checker_size_px=64, brightness_pct=75, contrast_pct=35, flipped=False):
+    def __init__(self, checker_size_px=64, brightness_pct=75, contrast_pct=35, flipped=False, mask_color_bgra=None):
 
         # Force percent values to be 0-to-100
         brightness_pct = min(abs(brightness_pct), 100)
@@ -45,6 +98,8 @@ class CheckerPattern:
         base_pattern = cv2.resize(base_pattern, dsize=base_wh, interpolation=cv2.INTER_NEAREST_EXACT)
         self._base: ndarray = base_pattern
         self._full_pattern: ndarray = cv2.cvtColor(self._base.copy(), cv2.COLOR_GRAY2BGR)
+        self._mask_color = np.uint8((0, 0, 0, 0) if mask_color_bgra is None else mask_color_bgra)
+        self._need_mask_color = self._mask_color[-1] > 0
 
     # .................................................................................................................
 
@@ -83,6 +138,14 @@ class CheckerPattern:
             # Funky sanity check, in case the given frame sizing is smaller than our base pattern!
             pattern = pattern[0:frame_h, 0:frame_w]
             self._full_pattern = cv2.cvtColor(pattern, cv2.COLOR_GRAY2BGR)
+
+            # Mix in mask color if it isn't fully transparent
+            mask_alpha = self._mask_color[-1]
+            if mask_alpha > 0:
+                alpha_norm = mask_alpha / 255
+                inv_alpha = 1.0 - alpha_norm
+                mask_img = np.full_like(self._full_pattern, self._mask_color[0:-1])
+                self._full_pattern = cv2.addWeighted(self._full_pattern, inv_alpha, mask_img, alpha_norm, 0)
 
         return self._full_pattern
 

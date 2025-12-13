@@ -30,6 +30,7 @@ from muggled_sam.demo_helpers.ui.static import StaticMessageBar
 from muggled_sam.demo_helpers.ui.text import ValueBlock, TextBlock
 from muggled_sam.demo_helpers.ui.base import force_same_min_width
 from muggled_sam.demo_helpers.ui.overlays import DrawPolygonsOverlay
+from muggled_sam.demo_helpers.ui.helpers.images import FrameCompositing
 
 from muggled_sam.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
 from muggled_sam.demo_helpers.crop_ui import run_crop_ui
@@ -56,7 +57,7 @@ default_max_memory_history = 6
 default_max_pointer_history = 15
 default_num_object_buffers = 4
 default_object_score_threshold = 0.0
-default_background_color = None
+default_bg_color_hex = "ff00ff00"
 default_ffmpeg = get_default_ffmpeg_command()
 
 # Define script arguments
@@ -170,10 +171,11 @@ parser.add_argument(
     help="If set, a cropping UI will appear on start-up to allow for the image to be cropped prior to processing",
 )
 parser.add_argument(
-    "--background_color",
-    default=default_background_color,
+    "-bg",
+    "--bg_color_hex",
+    default=default_bg_color_hex,
     type=str,
-    help="Background color for saved masks as RGB or RGBA tuple (e.g., '255,255,255' or '255,0,0,128'). Default is transparent black (0,0,0,0)",
+    help=f"Color of segmented regions, given as RGB or RGBA hex code (default: {default_bg_color_hex})",
 )
 
 # For convenience
@@ -195,26 +197,8 @@ object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
+bg_color_hex = args.bg_color_hex
 arg_ffmpeg = args.ffmpeg
-
-# Parse background color if provided
-background_color = None
-if args.background_color is not None:
-    try:
-        color_values = [int(x.strip()) for x in args.background_color.split(",")]
-        if len(color_values) == 3:
-            background_color = tuple(color_values + [255])  # Add full opacity for RGB
-        elif len(color_values) == 4:
-            background_color = tuple(color_values)
-        else:
-            raise ValueError("Background color must have 3 (RGB) or 4 (RGBA) values")
-        # Validate range
-        if not all(0 <= v <= 255 for v in background_color):
-            raise ValueError("Color values must be between 0 and 255")
-    except Exception as e:
-        print(f"Warning: Invalid background_color format '{args.background_color}': {e}")
-        print("Using default transparent black (0,0,0,0)")
-        background_color = None
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -240,6 +224,10 @@ else:
 
 # Check that we can call ffmpeg if flag was given
 use_ffmpeg, ffmpeg_path = verify_ffmpeg_path(arg_ffmpeg)
+
+# Set up masking/chroma-keying for saving frames (do this early so we fail on bad inputs before loading bigger files!)
+mask_color_bgra = FrameCompositing.parse_hex_color(bg_color_hex)
+save_masking = FrameCompositing(mask_color_bgra)
 
 # Set up shared image encoder settings (needs to be consistent across image/video frame encodings)
 imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": use_square_sizing}
@@ -357,7 +345,7 @@ playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=True
 
 # Set up shared UI elements & control logic
 ui_elems = PromptUI(sample_frame, init_mask_preds, 2)
-uictrl = PromptUIControl(ui_elems)
+uictrl = PromptUIControl(ui_elems, mask_color_bgra)
 
 # Add extra polygon drawer for unselected objects
 unselected_olay = DrawPolygonsOverlay((50, 5, 130), (25, 0, 60))
@@ -757,23 +745,8 @@ try:
                     save_mask_1ch_uint8 = full_mask_1ch
                     save_frame = full_frame
 
-                # Apply background color if specified, otherwise clear masked RGB data
-                if background_color is not None:
-                    # Create BGRA frame with custom background
-                    save_frame_bgra = np.zeros((*save_frame.shape[:2], 4), dtype=np.uint8)
-                    # Set background color (convert RGBA to BGRA for OpenCV)
-                    bg_bgra = (background_color[2], background_color[1], background_color[0], background_color[3])
-                    save_frame_bgra[:] = bg_bgra
-                    # Copy original frame pixels where mask is active
-                    mask_bool = save_mask_1ch_uint8 > 0
-                    save_frame_bgra[mask_bool, :3] = save_frame[mask_bool]
-                    save_frame_bgra[mask_bool, 3] = save_mask_1ch_uint8[mask_bool]
-                    save_frame = save_frame_bgra
-                else:
-                    # Original behavior: clear masked RGB data (reduces file size!)
-                    save_frame = cv2.bitwise_and(save_frame, cv2.cvtColor(save_mask_1ch_uint8, cv2.COLOR_GRAY2BGR))
-                    save_frame = cv2.cvtColor(save_frame, cv2.COLOR_BGR2BGRA)
-                    save_frame[:, :, -1] = save_mask_1ch_uint8
+                # Mask out image for saving
+                save_frame = save_masking.mask_frame(save_frame, save_mask_1ch_uint8)
 
                 # Encode frame data in memory (want to save in bulk, to avoid killing filesystem)
                 ok_encode, png_encoding = cv2.imencode(".png", save_frame)
