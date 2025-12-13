@@ -14,12 +14,10 @@ from dataclasses import dataclass
 import torch
 import cv2
 import numpy as np
-import subprocess
-import tempfile
-import shutil
 
 from muggled_sam.make_sam import make_sam_from_state_dict
 
+from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_ffmpeg_path, render_png_dict_to_video
 from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
 from muggled_sam.demo_helpers.ui.video import (
     ReversibleLoopingVideoReader,
@@ -59,6 +57,7 @@ default_max_pointer_history = 15
 default_num_object_buffers = 4
 default_object_score_threshold = 0.0
 default_background_color = None
+default_ffmpeg = get_default_ffmpeg_command()
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything-V2 (SAMv2) on a video")
@@ -156,14 +155,13 @@ parser.add_argument(
     action="store_true",
     help="If set, this simplifies the UI by hiding the element associated with saving",
 )
-
 parser.add_argument(
     "--ffmpeg",
     nargs="?",
-    const="ffmpeg",
+    const=default_ffmpeg,
     default=None,
     type=str,
-    help="Path to ffmpeg binary to render video output (optional). If provided without a value the script will try to invoke 'ffmpeg' from PATH. If provided with a path, that executable will be used.",
+    help=f"Save as mp4 (using FFmpeg). Can optionally provide a path to executable (default: {default_ffmpeg})",
 )
 parser.add_argument(
     "--crop",
@@ -197,36 +195,7 @@ object_score_threshold = args.objscore_threshold
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
-
-# Resolve ffmpeg option: allow `--ffmpeg` with no value to mean `ffmpeg` on PATH.
-ffmpeg_path = None
-if args.ffmpeg is not None:
-    requested = args.ffmpeg
-    # If user passed the flag without a value, argparse sets it to the `const` value ('ffmpeg')
-    if requested in ("ffmpeg", "ffmpeg.exe"):
-        # Try to resolve on PATH
-        resolved = shutil.which(requested)
-        if resolved:
-            ffmpeg_path = resolved
-        else:
-            print(
-                f"Warning: --ffmpeg specified but '{requested}' was not found on PATH. Video rendering will be disabled."
-            )
-            ffmpeg_path = None
-    else:
-        # User provided a path or command name; prefer exact path if it exists, otherwise try PATH lookup
-        if osp.exists(requested) and osp.isfile(requested):
-            ffmpeg_path = requested
-        else:
-            resolved = shutil.which(requested)
-            if resolved:
-                ffmpeg_path = resolved
-            else:
-                print(
-                    f"Warning: ffmpeg binary not found at '{requested}' and not on PATH. Video rendering will be disabled."
-                )
-                ffmpeg_path = None
-
+arg_ffmpeg = args.ffmpeg
 
 # Parse background color if provided
 background_color = None
@@ -268,6 +237,9 @@ else:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Load resources
+
+# Check that we can call ffmpeg if flag was given
+use_ffmpeg, ffmpeg_path = verify_ffmpeg_path(arg_ffmpeg)
 
 # Set up shared image encoder settings (needs to be consistent across image/video frame encodings)
 imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": use_square_sizing}
@@ -379,70 +351,6 @@ class SaveBufferData:
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up UI
-
-
-def render_png_dict_to_video(
-    save_folder: str, save_index: str, object_index: int, png_dict: dict, ffmpeg_bin: str, fps: float | None = None
-) -> str | None:
-    """Render PNG frames (from `png_dict`) into a video using the provided ffmpeg binary.
-
-    The function writes the PNGs to a temporary folder (inside `save_folder`) named sequentially
-    and invokes ffmpeg to encode them to an MP4 placed alongside other saved results.
-    Returns the output video path on success, or None on failure.
-    """
-
-    if ffmpeg_bin is None:
-        return None
-
-    # Create a temporary directory to hold sequentially named PNGs
-    tmpdir = tempfile.mkdtemp(prefix=f"{save_index}_obj{1+object_index}_", dir=save_folder)
-    try:
-        # Sort frame indices and write files sequentially starting at 0
-        frame_idxs = sorted(png_dict.keys())
-        if len(frame_idxs) == 0:
-            return None
-
-        min_idx = frame_idxs[0]
-        max_idx = frame_idxs[-1]
-        for seq_idx, frame_idx in enumerate(frame_idxs):
-            png_enc = png_dict[frame_idx]
-            out_name = osp.join(tmpdir, f"{seq_idx:0>8}.png")
-            with open(out_name, "wb") as fh:
-                fh.write(png_enc.tobytes())
-
-        # Determine framerate
-        frm = int(fps) if (fps is not None and fps > 0) else 30
-
-        out_video_name = f"{save_index}_obj{1+object_index}_{min_idx}_to_{max_idx}.mp4"
-        out_video_path = osp.join(save_folder, out_video_name)
-
-        cmd = [
-            ffmpeg_bin,
-            "-y",
-            "-framerate",
-            str(frm),
-            "-i",
-            osp.join(tmpdir, "%08d.png"),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            out_video_path,
-        ]
-
-        try:
-            subprocess.run(cmd, check=True)
-            return out_video_path
-        except Exception as e:
-            print(f"Warning: ffmpeg render failed: {e}")
-            return None
-
-    finally:
-        try:
-            shutil.rmtree(tmpdir)
-        except Exception:
-            pass
-
 
 # Playback control UI for adjusting video position
 playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=True)
@@ -889,7 +797,7 @@ try:
             if num_frames > 0:
                 save_folder, save_idx = get_save_name(video_path, "run_video")
                 # If ffmpeg requested, render MP4 only. Otherwise, create tar of PNGs as before.
-                if ffmpeg_path:
+                if use_ffmpeg:
                     try:
                         rendered_video = render_png_dict_to_video(
                             save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=video_fps
@@ -897,10 +805,20 @@ try:
                         if rendered_video:
                             print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
                         else:
-                            print("", f"No video produced by ffmpeg for buffer {buffer_select_idx}", sep="\n")
+                            print(
+                                "",
+                                f"No video produced by ffmpeg for buffer {buffer_select_idx}",
+                                "-> Falling back to saving .pngs",
+                                sep="\n",
+                            )
+                            use_ffmpeg = False
                     except Exception as _e:
                         print(f"Warning: failed to render video via ffmpeg: {_e}")
-                else:
+                        use_ffmpeg = False
+
+                # Not using 'else' here, because we may update 'use_ffmpeg' command if it failed
+                # -> This makes ffmpeg failure fallback to saving pngs
+                if not use_ffmpeg:
                     save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
                     print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
                 buffer_clear_btn.click()
@@ -927,7 +845,7 @@ finally:
         num_frames = len(png_per_frame_dict.keys())
         if num_frames > 0:
             save_folder, save_idx = get_save_name(video_path, "video")
-            if ffmpeg_path:
+            if use_ffmpeg:
                 try:
                     rendered_video = render_png_dict_to_video(
                         save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=video_fps
@@ -936,9 +854,13 @@ finally:
                         print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
                     else:
                         print("", f"No video produced by ffmpeg for obj {objidx}", sep="\n")
+                        use_ffmpeg = False
                 except Exception as _e:
                     print(f"Warning: failed to render video via ffmpeg: {_e}")
-            else:
+                    use_ffmpeg = False
+
+            # Do this as a separate check, in case ffmpeg failed
+            if not use_ffmpeg:
                 save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
                 print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
 
