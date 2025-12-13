@@ -209,7 +209,9 @@ if args.ffmpeg is not None:
         if resolved:
             ffmpeg_path = resolved
         else:
-            print(f"Warning: --ffmpeg specified but '{requested}' was not found on PATH. Video rendering will be disabled.")
+            print(
+                f"Warning: --ffmpeg specified but '{requested}' was not found on PATH. Video rendering will be disabled."
+            )
             ffmpeg_path = None
     else:
         # User provided a path or command name; prefer exact path if it exists, otherwise try PATH lookup
@@ -220,7 +222,9 @@ if args.ffmpeg is not None:
             if resolved:
                 ffmpeg_path = resolved
             else:
-                print(f"Warning: ffmpeg binary not found at '{requested}' and not on PATH. Video rendering will be disabled.")
+                print(
+                    f"Warning: ffmpeg binary not found at '{requested}' and not on PATH. Video rendering will be disabled."
+                )
                 ffmpeg_path = None
 
 
@@ -228,7 +232,7 @@ if args.ffmpeg is not None:
 background_color = None
 if args.background_color is not None:
     try:
-        color_values = [int(x.strip()) for x in args.background_color.split(',')]
+        color_values = [int(x.strip()) for x in args.background_color.split(",")]
         if len(color_values) == 3:
             background_color = tuple(color_values + [255])  # Add full opacity for RGB
         elif len(color_values) == 4:
@@ -376,7 +380,9 @@ class SaveBufferData:
 # %% Set up UI
 
 
-def render_png_dict_to_video(save_folder: str, save_index: str, object_index: int, png_dict: dict, ffmpeg_bin: str, fps: float | None = None) -> str | None:
+def render_png_dict_to_video(
+    save_folder: str, save_index: str, object_index: int, png_dict: dict, ffmpeg_bin: str, fps: float | None = None
+) -> str | None:
     """Render PNG frames (from `png_dict`) into a video using the provided ffmpeg binary.
 
     The function writes the PNGs to a temporary folder (inside `save_folder`) named sequentially
@@ -409,7 +415,19 @@ def render_png_dict_to_video(save_folder: str, save_index: str, object_index: in
         out_video_name = f"{save_index}_obj{1+object_index}_{min_idx}_to_{max_idx}.mp4"
         out_video_path = osp.join(save_folder, out_video_name)
 
-        cmd = [ffmpeg_bin, "-y", "-framerate", str(frm), "-i", osp.join(tmpdir, "%08d.png"), "-c:v", "libx264", "-pix_fmt", "yuv420p", out_video_path]
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-framerate",
+            str(frm),
+            "-i",
+            osp.join(tmpdir, "%08d.png"),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            out_video_path,
+        ]
 
         try:
             subprocess.run(cmd, check=True)
@@ -423,6 +441,7 @@ def render_png_dict_to_video(save_folder: str, save_index: str, object_index: in
             shutil.rmtree(tmpdir)
         except Exception:
             pass
+
 
 # Playback control UI for adjusting video position
 playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=True)
@@ -871,7 +890,14 @@ try:
                 # If ffmpeg requested, render MP4 only. Otherwise, create tar of PNGs as before.
                 if ffmpeg_path:
                     try:
-                        rendered_video = render_png_dict_to_video(save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
+                        rendered_video = render_png_dict_to_video(
+                            save_folder,
+                            save_idx,
+                            buffer_select_idx,
+                            png_per_frame_dict,
+                            ffmpeg_path,
+                            fps=getattr(vreader, "_fps", None),
+                        )
                         if rendered_video:
                             print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
                         else:
@@ -907,7 +933,14 @@ finally:
             save_folder, save_idx = get_save_name(video_path, "video")
             if ffmpeg_path:
                 try:
-                    rendered_video = render_png_dict_to_video(save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=getattr(vreader, "_fps", None))
+                    rendered_video = render_png_dict_to_video(
+                        save_folder,
+                        save_idx,
+                        objidx,
+                        png_per_frame_dict,
+                        ffmpeg_path,
+                        fps=getattr(vreader, "_fps", None),
+                    )
                     if rendered_video:
                         print("", f"Rendered video: ", f"@ {rendered_video}", sep="\n")
                     else:
