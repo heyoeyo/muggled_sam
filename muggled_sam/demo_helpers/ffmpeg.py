@@ -6,10 +6,8 @@
 # %% Imports
 
 import os
-import os.path as osp
 import subprocess
-import tempfile
-import shutil
+from shutil import which
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -19,6 +17,9 @@ import shutil
 def get_default_ffmpeg_command():
     """Helper used to guess at the default name for an ffmpeg executable"""
     return "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+
+
+# .....................................................................................................................
 
 
 def verify_ffmpeg_path(ffmpeg_executable_path: str | None = None) -> tuple[bool, str | None]:
@@ -38,7 +39,7 @@ def verify_ffmpeg_path(ffmpeg_executable_path: str | None = None) -> tuple[bool,
         return ok_path, full_ffmpeg_path
 
     # Bail if the given path isn't valid
-    full_ffmpeg_path = shutil.which(ffmpeg_executable_path)
+    full_ffmpeg_path = which(ffmpeg_executable_path)
     ok_path = full_ffmpeg_path is not None
     if not ok_path:
         raise FileNotFoundError(f"Invalid FFmpeg path: {ffmpeg_executable_path}")
@@ -61,64 +62,42 @@ def verify_ffmpeg_path(ffmpeg_executable_path: str | None = None) -> tuple[bool,
     return ok_path, full_ffmpeg_path
 
 
-def render_png_dict_to_video(
-    save_folder: str, save_index: str, object_index: int, png_dict: dict, ffmpeg_bin: str, fps: float | None = None
-) -> str | None:
-    """Render PNG frames (from `png_dict`) into a video using the provided ffmpeg binary.
+# .....................................................................................................................
 
-    The function writes the PNGs to a temporary folder (inside `save_folder`) named sequentially
-    and invokes ffmpeg to encode them to an MP4 placed alongside other saved results.
-    Returns the output video path on success, or None on failure.
+
+def save_video_stream(
+    ffmpeg_path: str,
+    save_path_no_ext: str,
+    video_fps: float,
+    save_frames_dict: dict,
+) -> tuple[bool, str]:
+    """
+    Function used to save a video by 'streaming' image data to ffmpeg,
+    this does not involve any disk io!
+    Returns:
+        ok_save, save_path
     """
 
-    if ffmpeg_bin is None:
-        return None
+    # Set up ffmpeg commands
+    save_path = f"{save_path_no_ext}.mp4"
+    ffmpeg_config = f"-r {video_fps} -f image2pipe -i - -vcodec libx264"
+    ffmpeg_command_list = [ffmpeg_path, *ffmpeg_config.split(" "), save_path]  # Using split on paths isn't safe!
+    io_kwargs = {"stdin": subprocess.PIPE, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 
-    # Create a temporary directory to hold sequentially named PNGs
-    tmpdir = tempfile.mkdtemp(prefix=f"{save_index}_obj{1+object_index}_", dir=save_folder)
+    ok_save = False
     try:
-        # Sort frame indices and write files sequentially starting at 0
-        frame_idxs = sorted(png_dict.keys())
-        if len(frame_idxs) == 0:
-            return None
+        frame_idxs = sorted(save_frames_dict.keys())
+        with subprocess.Popen(ffmpeg_command_list, **io_kwargs) as ffmpeg_proc:
+            for fidx in frame_idxs:
+                png_encoding = save_frames_dict[fidx]
+                ffmpeg_proc.stdin.write(png_encoding.tobytes())
 
-        min_idx = frame_idxs[0]
-        max_idx = frame_idxs[-1]
-        for seq_idx, frame_idx in enumerate(frame_idxs):
-            png_enc = png_dict[frame_idx]
-            out_name = osp.join(tmpdir, f"{seq_idx:0>8}.png")
-            with open(out_name, "wb") as fh:
-                fh.write(png_enc.tobytes())
+            # Signal end of video so ffmpeg knows we're done
+            ffmpeg_proc.stdin.close()
+            ffmpeg_proc.wait()
+        ok_save = True
 
-        # Determine framerate
-        frm = int(fps) if (fps is not None and fps > 0) else 30
+    except Exception as err:
+        print("Error encoding video with FFmpeg:", err, sep="\n")
 
-        out_video_name = f"{save_index}_obj{1+object_index}_{min_idx}_to_{max_idx}.mp4"
-        out_video_path = osp.join(save_folder, out_video_name)
-
-        cmd = [
-            ffmpeg_bin,
-            "-y",
-            "-framerate",
-            str(frm),
-            "-i",
-            osp.join(tmpdir, "%08d.png"),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            out_video_path,
-        ]
-
-        try:
-            subprocess.run(cmd, check=True)
-            return out_video_path
-        except Exception as e:
-            print(f"Warning: ffmpeg render failed: {e}")
-            return None
-
-    finally:
-        try:
-            shutil.rmtree(tmpdir)
-        except Exception:
-            pass
+    return ok_save, save_path

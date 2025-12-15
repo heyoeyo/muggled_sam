@@ -105,28 +105,22 @@ def save_image_segmentation(
 
 
 def save_video_frames(
-    save_folder_path: str,
-    save_index: str,
-    object_index: int,
+    save_path_no_ext: str,
     save_frames_dict: dict,
-    base_save_folder: str | None = None,
 ) -> str:
     """Helper used to handle saving of video segmentation results. Returns save file pathing"""
 
-    # Get frame index range for file name
-    all_frame_idxs = list(save_frames_dict.keys())
-    min_frame_idx, max_frame_idx = min(all_frame_idxs), max(all_frame_idxs)
-
     # Save tarfile containing all frames
-    file_name = f"{save_index}_obj{1+object_index}_{min_frame_idx}_to_{max_frame_idx}_frames.tar"
-    save_file_path = os.path.join(save_folder_path, file_name)
-    with tarfile.open(save_file_path, "w") as tar:
-        for frame_idx, png_encoding in save_frames_dict.items():
+    save_path = f"{save_path_no_ext}.tar"
+    frame_idxs = sorted(save_frames_dict.keys())
+    with tarfile.open(save_path, "w") as tar:
+        for frame_idx in frame_idxs:
+            png_encoding = save_frames_dict[frame_idx]
             tarinfo = tarfile.TarInfo(name=f"{frame_idx:0>8}.png")
             tarinfo.size = len(png_encoding)
             tar.addfile(tarinfo, BytesIO(png_encoding.tobytes()))
 
-    return save_file_path
+    return save_path
 
 
 # ---------------------------------------------------------------------------------------------------------------------

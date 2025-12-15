@@ -17,7 +17,6 @@ import numpy as np
 
 from muggled_sam.make_sam import make_sam_from_state_dict
 
-from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_ffmpeg_path, render_png_dict_to_video
 from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
 from muggled_sam.demo_helpers.ui.video import (
     ReversibleLoopingVideoReader,
@@ -41,6 +40,7 @@ from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_mo
 from muggled_sam.demo_helpers.contours import get_contours_from_mask
 from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
 from muggled_sam.demo_helpers.saving import save_video_frames, get_save_name
+from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_ffmpeg_path, save_video_stream
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -224,6 +224,8 @@ else:
 
 # Check that we can call ffmpeg if flag was given
 use_ffmpeg, ffmpeg_path = verify_ffmpeg_path(arg_ffmpeg)
+if use_ffmpeg:
+    print("", "Found valid FFmpeg path:", f"@ {ffmpeg_path}", sep="\n", flush=True)
 
 # Set up masking/chroma-keying for saving frames (do this early so we fail on bad inputs before loading bigger files!)
 mask_color_bgra = FrameCompositing.parse_hex_color(bg_color_hex)
@@ -335,6 +337,45 @@ class SaveBufferData:
         self.bytes_per_frame_dict = {}
         self.total_bytes = 0
         return self
+
+
+def save_segmentation_results(
+    video_path: str,
+    video_fps: float,
+    buffer_index: int,
+    save_frames_dict: dict,
+    ffmpeg_path: str | None,
+    use_ffmpeg: bool,
+) -> bool:
+    """
+    Wrapper around saving tarfiles vs. video (with ffmpeg)
+    Returns updated 'use_ffmpeg' which may be toggled false if video encoding fails!
+    """
+
+    # Build save pathing
+    save_folder, save_idx = get_save_name(video_path, "run_video")
+    min_fidx, max_fidx = min(save_frames_dict.keys()), max(save_frames_dict.keys())
+    save_name = f"{save_idx}_obj{1+buffer_index}_{min_fidx}_to_{max_fidx}_frames"
+    save_path_no_ext = osp.join(save_folder, save_name)
+
+    # Save with ffmpeg
+    if use_ffmpeg:
+        print("", "Encoding video", sep="\n", flush=True)
+        ok_save, save_path = save_video_stream(ffmpeg_path, save_path_no_ext, video_fps, save_frames_dict)
+        if ok_save:
+            print(f"@ {save_path}")
+        else:
+            print("-> Error saving with FFmpeg, will fall back to saving tarfile")
+            use_ffmpeg = False
+
+    # Not using 'else' here, because encoding may have failed
+    # -> This makes ffmpeg failure fallback to saving pngs
+    if not use_ffmpeg:
+        print("", f"Saving frame data ({num_frames} frames)...", sep="\n", flush=True)
+        save_file_path = save_video_frames(save_path_no_ext, save_frames_dict)
+        print(f"@ {save_file_path}")
+
+    return use_ffmpeg
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -768,32 +809,11 @@ try:
             png_per_frame_dict = savebuffers_list[buffer_select_idx].png_per_frame_dict
             num_frames = len(png_per_frame_dict.keys())
             if num_frames > 0:
-                save_folder, save_idx = get_save_name(video_path, "run_video")
-                # If ffmpeg requested, render MP4 only. Otherwise, create tar of PNGs as before.
-                if use_ffmpeg:
-                    try:
-                        rendered_video = render_png_dict_to_video(
-                            save_folder, save_idx, buffer_select_idx, png_per_frame_dict, ffmpeg_path, fps=video_fps
-                        )
-                        if rendered_video:
-                            print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
-                        else:
-                            print(
-                                "",
-                                f"No video produced by ffmpeg for buffer {buffer_select_idx}",
-                                "-> Falling back to saving .pngs",
-                                sep="\n",
-                            )
-                            use_ffmpeg = False
-                    except Exception as _e:
-                        print(f"Warning: failed to render video via ffmpeg: {_e}")
-                        use_ffmpeg = False
+                use_ffmpeg = save_segmentation_results(
+                    video_path, video_fps, buffer_select_idx, png_per_frame_dict, ffmpeg_path, use_ffmpeg
+                )
 
-                # Not using 'else' here, because we may update 'use_ffmpeg' command if it failed
-                # -> This makes ffmpeg failure fallback to saving pngs
-                if not use_ffmpeg:
-                    save_file_path = save_video_frames(save_folder, save_idx, buffer_select_idx, png_per_frame_dict)
-                    print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
+                # Trigger clear of data so we don't re-save it
                 buffer_clear_btn.click()
 
         # Wipe out save data if needed
@@ -804,37 +824,21 @@ try:
 except KeyboardInterrupt:
     print("", "Closed with Ctrl+C", sep="\n")
 
-except Exception as err:
-    raise err
-
 finally:
     # Clean up resources
     cv2.destroyAllWindows()
     vreader.release()
 
-    # Save any buffered frame data
-    for objidx, savebuffer in enumerate(savebuffers_list):
-        png_per_frame_dict = savebuffer.png_per_frame_dict
-        num_frames = len(png_per_frame_dict.keys())
-        if num_frames > 0:
-            save_folder, save_idx = get_save_name(video_path, "video")
-            if use_ffmpeg:
-                try:
-                    rendered_video = render_png_dict_to_video(
-                        save_folder, save_idx, objidx, png_per_frame_dict, ffmpeg_path, fps=video_fps
-                    )
-                    if rendered_video:
-                        print("", "Rendered video: ", f"@ {rendered_video}", sep="\n")
-                    else:
-                        print("", f"No video produced by ffmpeg for obj {objidx}", sep="\n")
-                        use_ffmpeg = False
-                except Exception as _e:
-                    print(f"Warning: failed to render video via ffmpeg: {_e}")
-                    use_ffmpeg = False
 
-            # Do this as a separate check, in case ffmpeg failed
-            if not use_ffmpeg:
-                save_file_path = save_video_frames(save_folder, save_idx, objidx, png_per_frame_dict)
-                print("", f"Saving frame data ({num_frames} frames)...", f"@ {save_file_path}", sep="\n")
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Final clean up
 
+# Save any buffered frame data
+for objidx, savebuffer in enumerate(savebuffers_list):
+    png_per_frame_dict = savebuffer.png_per_frame_dict
+    num_frames = len(png_per_frame_dict.keys())
+    if num_frames > 0:
+        use_ffmpeg = save_segmentation_results(
+            video_path, video_fps, objidx, png_per_frame_dict, ffmpeg_path, use_ffmpeg
+        )
     pass
