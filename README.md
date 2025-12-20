@@ -117,6 +117,8 @@ mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
 
 ## Run Image
 
+_(Supports SAMv1, SAMv2, SAMv3)_
+
 <p align="center">
   <img src=".readme_assets/run_image_anim.gif">
 </p>
@@ -133,21 +135,21 @@ If you don't provide an image path (using the `-i` flag), then you will be asked
 
 ## Run Video (or webcam)
 
+_(Supports SAMv2, SAMv3)_
 
 <p align="center">
   <img src=".readme_assets/run_video_anim.gif">
 </p>
 
 
-The `run_video.py` script allows for segmentation of videos using an interactive UI running locally. However, it only works with SAMv2 models!
-To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
+The `run_video.py` script allows for segmentation of videos using an interactive UI running locally. To use the script, make sure you've activated the virtual environment (from the installation step) and then, from the repo folder use:
 ```bash
 python run_video.py
 ```
 
 As with the image script, you can add `--help` to the end of this command to see a list of additional flags. For example, you can add the flag `--use_webcam` to run segmentation on a live webcam feed. Using `-b 512` to reduce the processing resolution can provide a significant speed up if needed (box prompting works better at reduced resolutions btw!). 
 
-The per-frame segmentation results can be saved as .pngs (in a TAR archive) or as an .mp4 video file (using `--ffmpeg`), please see [video_from_frames.md](.readme_assets/video_from_frames.md) for more info.
+The segmentation results can be saved as .pngs (in a [tarfile](https://en.wikipedia.org/wiki/Tar_(computing))) or as an .mp4 video file (using `--ffmpeg`), please see the [video from frames](.readme_assets/video_from_frames.md) explainer for more info.
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 

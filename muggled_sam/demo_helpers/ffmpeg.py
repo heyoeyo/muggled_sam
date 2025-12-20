@@ -70,6 +70,7 @@ def save_video_stream(
     save_path_no_ext: str,
     video_fps: float,
     save_frames_dict: dict,
+    print_progress_indicator: bool = True,
 ) -> tuple[bool, str]:
     """
     Function used to save a video by 'streaming' image data to ffmpeg,
@@ -84,17 +85,31 @@ def save_video_stream(
     ffmpeg_command_list = [ffmpeg_path, *ffmpeg_config.split(" "), save_path]  # Using split on paths isn't safe!
     io_kwargs = {"stdin": subprocess.PIPE, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 
+    # Helper for printing out progress
+    prog_print = lambda message, end="": print(message, end=end, flush=True) if print_progress_indicator else None
+
     ok_save = False
     try:
         frame_idxs = sorted(save_frames_dict.keys())
+        total_frames = max(len(frame_idxs), 1)
+        num_progress_print_total, num_progress_printed = 10, 0
+        prog_print("0%[")
         with subprocess.Popen(ffmpeg_command_list, **io_kwargs) as ffmpeg_proc:
-            for fidx in frame_idxs:
+            for list_idx, fidx in enumerate(frame_idxs):
                 png_encoding = save_frames_dict[fidx]
                 ffmpeg_proc.stdin.write(png_encoding.tobytes())
+
+                # Update progress indicator
+                progress_dots = int(((list_idx + 1) / total_frames) * num_progress_print_total)
+                num_dots_to_print = progress_dots - num_progress_printed
+                if num_dots_to_print > 0:
+                    prog_print("|" * num_dots_to_print)
+                    num_progress_printed += num_dots_to_print
 
             # Signal end of video so ffmpeg knows we're done
             ffmpeg_proc.stdin.close()
             ffmpeg_proc.wait()
+            prog_print("]100%", end="\n")
         ok_save = True
 
     except Exception as err:

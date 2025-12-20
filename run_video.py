@@ -360,7 +360,7 @@ def save_segmentation_results(
 
     # Save with ffmpeg
     if use_ffmpeg:
-        print("", "Encoding video", sep="\n", flush=True)
+        print("", "Encoding video...", sep="\n", flush=True)
         ok_save, save_path = save_video_stream(ffmpeg_path, save_path_no_ext, video_fps, save_frames_dict)
         if ok_save:
             print(f"@ {save_path}")
