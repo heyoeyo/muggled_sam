@@ -54,8 +54,10 @@ class RPEComplex(nn.Module):
         self._rope_w = rope_hw[1]
 
         # Pre-compute base angles used to construct rotation amounts
-        powers = torch.linspace(0, 1, 1 + (features_per_token // 4))[:-1]
-        base_angles = torch.pow(theta, -powers)
+        # -> 'powers' are just evenly spaced values on interval [0,1), ex: [0.0, 0.25, 0.5, 0.75]
+        quarter_features = features_per_token // 4
+        powers = torch.arange(0, quarter_features) / quarter_features
+        base_angles = 1.0 / torch.pow(theta, powers)  # WARNING: torch.pow(theta, -powers) is not the same numerically!
         self.register_buffer("base_angles", base_angles, persistent=False)
 
         # Allocate storage for caching results, so we don't re-compute position encodings repeatedly
@@ -115,8 +117,8 @@ class RPEComplex(nn.Module):
         k_out = torch.view_as_real(k_as_xy * k_rot_amt)
 
         # Restore to original (non-xy pairing) shape: BxDxNx(C/2)x2 -> BxDxNxC
-        q_out = q_out.to(q.device, q.dtype).flatten(3)
-        k_out = k_out.to(q.device, q.dtype).flatten(3)
+        q_out = q_out.flatten(3).to(q.device, q.dtype)
+        k_out = k_out.flatten(3).to(q.device, q.dtype)
         return q_out, k_out
 
     # .................................................................................................................
@@ -342,9 +344,6 @@ class SinusoidalPE2D(nn.Module):
     image tokens, but scales the values for each token based on the normalized
     x/y position of the token, prior to computing the sin(...) & cos(...) result.
 
-    There are minor numerical differences between this version and the original,
-    due to differences in caching and an 'division epsilon' that is omitted here.
-
     See original code:
     https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/position_encoding.py#L10
     """
@@ -359,14 +358,16 @@ class SinusoidalPE2D(nn.Module):
         # Sanity check. Need even number so we can make (x,y) pairings
         assert features_per_token % 2 == 0, "Need an even number of features for sinusoidal position encoding!"
 
-        # Pre-compute frequencies with 'geometric scaling' (e.g. temperature ^ scaling)
-        # -> These are of the form: '2πf' where 'f' is different for each feature index
+        # Pre-compute periods with 'geometric scaling' (e.g. temperature ^ scaling)
+        # -> These are associated with frequencies: 2πf where 'f' is 1/p, p being the calculate frequency,
+        #    the values are calculated this way to maintain numerical consistency with original implementation
         # -> There are C/2 'scale_factors' and they look like repeated-normalized values,
         #    for example, with features_per_token = 16, result is: [0, 0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75]
         half_features = features_per_token // 2
         scale_factors = (torch.arange(half_features, dtype=torch.float32) // 2) * (2 / half_features)
         per_channel_period = temperature**scale_factors
-        self.register_buffer("per_channel_frequency_factors", 2.0 * torch.pi / per_channel_period, persistent=False)
+        self.register_buffer("per_channel_period", per_channel_period, persistent=False)
+        self.register_buffer("twopi", torch.tensor(2.0 * torch.pi), persistent=False)
 
         # Also allocate storage for re-using encodings
         self.register_buffer("cached_posenc_bchw", torch.empty((1, 1, 1, 1)), persistent=False)
@@ -374,6 +375,7 @@ class SinusoidalPE2D(nn.Module):
     # .................................................................................................................
 
     def forward(self, height: int, width: int) -> Tensor:
+        """Computes (non-learned) 2D sinusoidal position encodings, with shape: BxCxHxW"""
 
         # Re-generate cached result if needed
         cache_h, cache_w = self.cached_posenc_bchw.shape[-2:]
@@ -384,20 +386,13 @@ class SinusoidalPE2D(nn.Module):
 
             # Make index sequence (e.g. sequences like: 1, 2, 3, 4, ..., height or width) that is then normalized
             # -> For a height of 5, result would be: [0.2, 0.4, 0.6, 0.8, 1.0]
-            y_idx_norm = torch.arange(1, 1 + height, dtype=torch.float32, device=device).unsqueeze(-1) / height
-            x_idx_norm = torch.arange(1, 1 + width, dtype=torch.float32, device=device).unsqueeze(-1) / width
+            # -> Original includes 'divide-by-zero' eps protection for some reason... included here to match original
+            eps = 1e-6
+            y_idx_norm = torch.arange(1, 1 + height, dtype=torch.float32, device=device) / (height + eps)
+            x_idx_norm = torch.arange(1, 1 + width, dtype=torch.float32, device=device) / (width + eps)
 
-            # Compute 'xy frequency' terms, these are of the form: α*2πf
-            # where α is a normalized x-/y-index and f is pre-compute frequency value
-            # -> Note the shapes here are: Hx(C/2) and Wx(C/2), where C is expected features-per-token
-            y_frequencies = y_idx_norm * self.per_channel_frequency_factors
-            x_frequencies = x_idx_norm * self.per_channel_frequency_factors
-
-            # Calculate the sine of even index angles, cosine of odd index angles & stack together
-            # -> Gives intermediate shapes: Hx(C/4)x2 & Wx(C/4)x2
-            # -> Then flatten last 2 dimensions back to: Hx(C/2), Wx(C/2)
-            y_sincos = torch.stack((y_frequencies[:, 0::2].sin(), y_frequencies[:, 1::2].cos()), dim=-1).flatten(-2)
-            x_sincos = torch.stack((x_frequencies[:, 0::2].sin(), x_frequencies[:, 1::2].cos()), dim=-1).flatten(-2)
+            # Encode x/y grid coordinates
+            x_sincos, y_sincos = self.encode_xy(x_idx_norm, y_idx_norm)
 
             # Repeat x/y components along h/w dimensions and stack to form a single BxCxHxW tensor
             x_sincos_hwc = x_sincos.unsqueeze(0).repeat(height, 1, 1)
@@ -406,3 +401,27 @@ class SinusoidalPE2D(nn.Module):
             self.cached_posenc_bchw = xy_stacked_bchw.to(dtype)
 
         return self.cached_posenc_bchw
+
+    # .................................................................................................................
+
+    def encode_xy(self, x_norm: Tensor, y_norm: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Encode x & y coordinates using sinusoids with scaled frequencies (different per channel).
+        Returns:
+            x_sincos, y_sincos
+            -> Shape is Nx(C/2) for both X & Y (where N is number of x_norm/y_norm inputs)
+        """
+
+        # Compute xy angles using pre-computed periods, these are of the form: α*2πf
+        # where α is a normalized x-/y-index and f is 1/p, where p are the pre-computed period values
+        # -> Note the shapes here are: YNx(C/2) and XNx(C/2), where C is features-per-token, YN/XN are input sizes
+        y_angles = y_norm.unsqueeze(-1) * self.twopi / self.per_channel_period
+        x_angles = x_norm.unsqueeze(-1) * self.twopi / self.per_channel_period
+
+        # Calculate the sine of even index angles, cosine of odd index angles & stack together
+        # -> Gives intermediate shapes: YNx(C/4)x2 & XNx(C/4)x2
+        # -> Then flatten last 2 dimensions back to: YNx(C/2), XNx(C/2)
+        y_sincos = torch.stack((y_angles[:, 0::2].sin(), y_angles[:, 1::2].cos()), dim=-1).flatten(-2)
+        x_sincos = torch.stack((x_angles[:, 0::2].sin(), x_angles[:, 1::2].cos()), dim=-1).flatten(-2)
+
+        return x_sincos, y_sincos
