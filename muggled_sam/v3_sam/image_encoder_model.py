@@ -6,7 +6,6 @@
 # %% Imports
 
 import cv2
-import numpy as np
 
 import torch
 import torch.nn as nn
@@ -118,23 +117,17 @@ class SAMV3ImageEncoder(nn.Module):
     ) -> Tensor:
         """
         Helper function used to prepare an (OpenCV) image for processing by the image encoder.
-        Note that this is done slightly differently compared to the original SAM3 implementation which does:
-            1. Convert to uint8
-            2. Resize to target HW (using torchvision.transforms.v2)
-            3. Convert to float32
-            4. Normalize RGB
-
-        The original image preparation code can be seen here:
-        https://github.com/facebookresearch/sam3/blob/2d1cbaeac7b52ca64baf61e58973d0940ae843d0/sam3/model/sam3_image_processor.py#L47-L55
-
-        In this implementation, the order is different and uses pytorch's built-in interpolation:
+        Note that steps are slightly different compared to how the original model handles images.
+        This function does the following::
             1. Convert to RGB (assumes OpenCV image, which is uint8 in BGR order)
             2. Convert to model data type (e.g. float32 or float16)
-            3. Resize to target HW (using torch.nn.functional.interpolate)
+            3. Resize to target HW
             4. Normalize RGB
 
-        The reason for the difference is that resizing in float format should keep more data
-        and using pytorch interpolation allows the torchvision dependency to be dropped.
+        By comparison, the original implementation resizes in uint8 format and relies on torchvision.
+        This can lead to significant numerical differences compared (to the original model) when processing images!
+
+        Consider using the '.prepare_image_like_original' function if numerical consistency is needed
 
         Returns:
             image_tensor_bchw
@@ -162,9 +155,9 @@ class SAMV3ImageEncoder(nn.Module):
         # Scale RGB image to correct size and re-order from HWC to BCHW (with batch of 1)
         device, dtype = self.mean_rgb.device, self.mean_rgb.dtype
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        image_tensor_chw = torch.tensor(np.transpose(image_rgb, (2, 0, 1)), device=device, dtype=dtype)
+        image_tensor_bchw = torch.tensor(image_rgb, device=device, dtype=dtype).permute(2, 0, 1).unsqueeze(0)
         image_tensor_bchw = torch.nn.functional.interpolate(
-            image_tensor_chw.unsqueeze(0),
+            image_tensor_bchw,
             size=(scaled_h, scaled_w),
             align_corners=False,
             antialias=True,
@@ -175,6 +168,71 @@ class SAMV3ImageEncoder(nn.Module):
         image_tensor_bchw = (image_tensor_bchw - self.mean_rgb) * self.stdev_scale_rgb
 
         return image_tensor_bchw
+
+    # .................................................................................................................
+
+    def prepare_image_like_original(
+        self,
+        image_bgr: ndarray,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> Tensor:
+        """
+        This function is included to help with debugging/comparison with the original SAM3 implementation.
+        Unlike the normal 'prepare_image' function, this implementation
+        exactly matches the behavior of the original model (numerically).
+
+        The steps are as follows:
+            1. Convert to uint8
+            2. Resize to target HW
+            3. Convert to float32
+            4. Normalize RGB
+            5. Convert to model data type (e.g. bfloat16)
+        See: https://github.com/facebookresearch/sam3/blob/5eb25fb54b70ec0cb16f949289053be091e16705/sam3/model/sam3_image_processor.py#L21
+
+        For various reasons, this seems like a 'bad' way to handle inputs however, using alternative
+        image preparation can result in dramatic numerical differences in the image encoder outputs
+        (on the order of +/-100 errors in feature values).
+
+        Returns:
+            image_tensor_bchw
+        """
+        # Fill in default sizing if not given
+        if max_side_length is None:
+            max_side_length = 1008
+
+        # Figure out scaling factor to get target side length
+        img_h, img_w = image_bgr.shape[0:2]
+        largest_side = max(img_h, img_w)
+        scale_factor = max_side_length / largest_side
+
+        # Force sizing to multiples of a specific tiling size
+        tiling_size = self.get_image_tiling_size_constraint()
+        if use_square_sizing:
+            num_tiles = max(1, round((largest_side * scale_factor) / tiling_size))
+            scaled_side = int(num_tiles * tiling_size)
+            scaled_h = scaled_w = scaled_side
+        else:
+            scaled_h = int(max(1, round((img_h * scale_factor) / tiling_size))) * tiling_size
+            scaled_w = int(max(1, round((img_w * scale_factor) / tiling_size))) * tiling_size
+
+        # Convert to RGB format in BCHW ordering and scale to target size
+        device, dtype = self.mean_rgb.device, self.mean_rgb.dtype
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        image_tensor_bchw = torch.tensor(image_rgb, dtype=torch.uint8).permute(2, 0, 1).unsqueeze(0)
+        image_tensor_bchw = torch.nn.functional.interpolate(
+            image_tensor_bchw,
+            size=(scaled_h, scaled_w),
+            align_corners=False,
+            antialias=True,
+            mode="bilinear",
+        )
+
+        # Perform mean/scale normalization
+        image_tensor_bchw = image_tensor_bchw.to(dtype=torch.float32, device=device) * (1.0 / 255.0)
+        image_tensor_bchw = (image_tensor_bchw - 0.5) / 0.5
+
+        return image_tensor_bchw.to(dtype=dtype)
 
     # .................................................................................................................
 
