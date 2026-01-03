@@ -49,7 +49,7 @@ with torch.inference_mode():
 
     # SAMv3 requires a 'samv2' projection step when used for direct mask predictions
     if sammodel.name == "samv3":
-        encoded_img = sammodel.image_projection.project_v2(encoded_img)
+        encoded_img = sammodel.image_projection.v2_projection(encoded_img)
 
 # Process data
 print("Generating masks...")

@@ -65,13 +65,13 @@ class SAMV3ImageProjection(nn.Module):
 
     # .................................................................................................................
 
-    def project_v3(self, tokens_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def v3_projection(self, tokens_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Perform only the 'v3' variant of projection. Returns: (tokens_x1, tokens_2, tokens_x4)"""
         return self.multires_proj_v3(tokens_bchw)
 
     # .................................................................................................................
 
-    def project_v2(self, tokens_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def v2_projection(self, tokens_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Perform only the 'v2' variant of projection. Returns: (tokens_x1, tokens_2, tokens_x4)"""
         return self.multires_proj_v2(tokens_bchw)
 
