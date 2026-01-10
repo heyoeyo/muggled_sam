@@ -52,7 +52,6 @@ class SAMV3ImageEncoder(nn.Module):
     def __init__(
         self,
         features_per_token: int = 1024,
-        output_channels: int = 256,
         num_stages: int = 4,
         num_blocks: int = 32,
         num_heads: int = 16,
@@ -166,7 +165,6 @@ class SAMV3ImageEncoder(nn.Module):
 
         # Perform mean/scale normalization
         image_tensor_bchw = (image_tensor_bchw - self.mean_rgb) * self.stdev_scale_rgb
-
         return image_tensor_bchw
 
     # .................................................................................................................

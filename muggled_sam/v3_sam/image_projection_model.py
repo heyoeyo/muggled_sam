@@ -37,14 +37,14 @@ class SAMV3ImageProjection(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, input_channels: int = 1024, out_channels: int = 256):
+    def __init__(self, input_channels: int = 1024, out_channels_v2: int = 256, out_channels_v3: int = 256):
 
         # Inherit from parent
         super().__init__()
 
         # Create two projection variants (used for different tasks)
-        self.multires_proj_v3 = MultiResProjection(input_channels, out_channels, include_samv2_layers=False)
-        self.multires_proj_v2 = MultiResProjection(input_channels, out_channels, include_samv2_layers=True)
+        self.multires_proj_v2 = MultiResProjection(input_channels, out_channels_v2, include_samv2_layers=True)
+        self.multires_proj_v3 = MultiResProjection(input_channels, out_channels_v3, include_samv2_layers=False)
 
     # .................................................................................................................
 
@@ -52,14 +52,14 @@ class SAMV3ImageProjection(nn.Module):
         """
         Compute 3 projections at different resolutions, 1x, 2x and 4x
         for both a 'v3' and 'v2' variant. In practice, only one of these may
-        be needed, in these cases consider using '.project_v#(...)' functions.
+        be needed, in these cases consider using '.v#_projection#(...)' functions.
 
         Returns:
             v3_tokens_x1_x2_x4, v2_tokens_x1_x2_x4
         """
 
-        v3_tokens_x1, v3_tokens_x2, v3_tokens_x4 = self.multires_proj_v3(tokens_bchw)
         v2_tokens_x1, v2_tokens_x2, v2_tokens_x4 = self.multires_proj_v2(tokens_bchw)
+        v3_tokens_x1, v3_tokens_x2, v3_tokens_x4 = self.multires_proj_v3(tokens_bchw)
 
         return (v3_tokens_x1, v3_tokens_x2, v3_tokens_x4), (v2_tokens_x1, v2_tokens_x2, v2_tokens_x4)
 

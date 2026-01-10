@@ -425,3 +425,27 @@ class SinusoidalPE2D(nn.Module):
         x_sincos = torch.stack((x_angles[:, 0::2].sin(), x_angles[:, 1::2].cos()), dim=-1).flatten(-2)
 
         return x_sincos, y_sincos
+
+    # .................................................................................................................
+
+    def encode_tensor(self, coord_norm_tensor: Tensor) -> Tensor:
+        """
+        Encoding variant that takes in a tensor of coordinate values and encodes
+        each one separately. Assumes the last-most dimension holds the different coordinates.
+        For a 2D input, this is equivalent to calling this model with:
+            .encode_xy(coord_norm_tensor[..., 0], coord_norm_tensor[..., 1])
+
+        However, this function will accept any number of coordinates!
+        If the input has shape: BxNxD, where B is batch size, N is number of
+        coords and D is coord dimension (e.g. D=2 for x & y, or D=4 for x,y,w,h etc.),
+        then the output will have shape: BxNxDx(F/2), where F is the features per token of this model.
+
+        Note that the shape of the input doesn't matter, other than ending with 'D' dimensions.
+        (e.g. Nx1xD or NxD or NxBx1xD etc. are all valid input shapes)
+
+        Returns:
+            coord_sincos
+        """
+
+        angles = coord_norm_tensor.unsqueeze(-1) * self.twopi / self.per_channel_period
+        return torch.stack((angles[..., 0::2].sin(), angles[..., 1::2].cos()), dim=-1).flatten(-2)
