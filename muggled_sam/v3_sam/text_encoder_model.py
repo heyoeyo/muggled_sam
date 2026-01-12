@@ -160,11 +160,11 @@ class TextTransformer(nn.Module):
         additive_posenc = self.posenc[:num_tokens]
         if num_tokens > self.posenc.shape[0]:
             additive_posenc = nn.functional.interpolate(
-                self.posenc.unsqueeze(0).unsqueeze(0),
+                self.posenc.transpose(0, 1).unsqueeze(0),  # Convert from NxC -> 1xCxN (to scale N)
                 size=num_tokens,
                 mode="linear",
             )
-            additive_posenc = additive_posenc[0, 0, :]
+            additive_posenc = additive_posenc.squeeze(0).transpose(0, 1)  # Convert back: 1xCxN -> NxC
         text_embedding = text_embeddings_bnc + additive_posenc
 
         # Run attention blocks with causal mask (prevents attention between early-to-later words)
