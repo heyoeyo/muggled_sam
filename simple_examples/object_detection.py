@@ -29,8 +29,10 @@ pos_box_xy1xy2_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [[(x1, y
 neg_box_xy1xy2_norm_list = []
 pos_point_xy_norm_list = [(0.5, 0.5)]
 neg_point_xy_norm_list = []
-text_prompt = "visual"  # Use None to disable
+text_prompt = "visual"  # This is a default from original implementation. Can be set to None to disable
 detection_score_threshold = 0.5
+max_side_length = 1008
+use_square_sizing = True
 
 # Load image
 img_bgr = cv2.imread(image_path)
@@ -43,7 +45,7 @@ base_model.to(device=device, dtype=dtype)
 detmodel = base_model.make_detector_model()
 
 # Run detection
-encoded_imgs, token_hw, preencode_img_hw = detmodel.encode_detection_image(img_bgr)
+encoded_imgs, token_hw, preencode_hw = detmodel.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
 encoded_exemplars = detmodel.encode_exemplars(
     encoded_imgs,
     text_prompt,
@@ -54,7 +56,7 @@ encoded_exemplars = detmodel.encode_exemplars(
 )
 mask_preds, box_preds, detection_scores, presence_score = detmodel.generate_detections(encoded_imgs, encoded_exemplars)
 
-# Typical post-processing (filter out low-scoring results)
+# (Optional) Typical post-processing to filter out low-scoring results
 filtered_masks, filtered_boxes, filtered_scores, presence_score = detmodel.filter_results(
     mask_preds, box_preds, detection_scores, presence_score, detection_score_threshold
 )
@@ -65,7 +67,7 @@ num_filtered_detections = filtered_masks.shape[0]
 print("")
 print("***** Results *****")
 print("Input image shape:", img_bgr.shape)
-print("Pre-encoded image height & width:", tuple(preencode_img_hw))
+print("Pre-encoded image height & width:", tuple(preencode_hw))
 print("Image tokens height & width:", tuple(token_hw))
 print("Raw masks shape:", tuple(mask_preds.shape))
 print("Raw boxes shape:", tuple(box_preds.shape))

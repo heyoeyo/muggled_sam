@@ -13,13 +13,6 @@ _(Supports SAMv1, SAMv2, SAMv3)_
 This script runs the SAM model as an 'auto-mask generator', similar to the capability provided by the [original repo implementation](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/automatic_mask_generator.py#L36). It works by running the SAM model with a (dense) grid of single point prompts to generate masks from all parts of the image, while filtering bad/overlapping results. This version provides a visualization (if enabled in the settings) of the results as they're being generated.
 
 
-## Image Detection
-
-_(Supports SAMv3)_
-
-This script contains the most basic usage of the SAMv3 detection functionality. It allows multiple objects to be detected using a single text prompt or by specifying a part of the image (using points or bounding boxes) as a reference for what to detect.
-
-
 ## Image Segmentation
 
 _(Supports SAMv1, SAMv2, SAMv3)_
@@ -31,6 +24,13 @@ This script contains the most basic usage of the SAM models, which is to segment
 _(Supports SAMv1, SAMv2, SAMv3)_
 
 This is an extension of the basic image segmentation script, modified to show how an image batch can be processed. Processing a batch of images is the same as processing multiple images, one after another, except batching can be slightly faster when using a GPU. For simplicity, this example just repeats a single image to form a batch, but normally many images would be loaded in and processed together.
+
+
+## Object Detection
+
+_(Supports SAMv3)_
+
+This script contains the most basic usage of the SAMv3 detection functionality. It allows multiple objects to be detected using a single text prompt or by specifying a part of the image (using points or bounding boxes) as a reference for what to detect.
 
 
 ## Speed Benchmarking
@@ -105,6 +105,6 @@ https://www.pexels.com/video/horses-running-on-grassland-4215784/
 
 _(Supports SAMv2, SAMv3)_
 
-This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be easy to modify if needed.
+This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be [easy to modify](https://github.com/heyoeyo/muggled_sam/blob/3ed04b646005d1b1242b8d07008573ef00815405/muggled_sam/demo_helpers/samurai.py#L22) if needed.
 
 This demo is set up to track only one object, but can be changed to handle multiple objects by creating additional prompt/prev. frame memory storage as well as instances of the SAMURAI class for each object.
