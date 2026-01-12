@@ -95,6 +95,96 @@ class DrawPolygonsOverlay(BaseOverlay):
     # .................................................................................................................
 
 
+class DrawBoxOverlay(BaseOverlay):
+    """Simple overlay which draws boxes over top of a base image"""
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        color=(0, 255, 255),
+        bg_color=None,
+        thickness=2,
+    ):
+
+        self._box_xy1xy2_norm_nparray = np.zeros((0, 2, 2), dtype=np.float32)
+        self._fg_color = color
+        self._bg_color = bg_color
+        self._fg_thick = thickness
+
+        super().__init__()
+
+    # .................................................................................................................
+
+    def style(self, color=None, bg_color=None, thickness=None):
+        """Update styling. Any settings given as None will remain unchanged"""
+
+        if color is not None:
+            self._fg_color = color
+        if thickness is not None:
+            self._fg_thick = thickness
+        if bg_color is not None:
+            self._bg_color = bg_color if bg_color != -1 else None
+
+        return self
+
+    # .................................................................................................................
+
+    def clear(self):
+        self._box_xy1xy2_norm_nparray = np.zeros((0, 2, 2), dtype=np.float32)
+        return self
+
+    # .................................................................................................................
+
+    def set_boxes(self, box_xy1xy2_norm_nparray: list[ndarray] | ndarray):
+        """
+        Set or update boxes. Boxes should be provided as either an Nx2x2
+        numpy array or a list of 2x2 numpy arrays, where each 2x2
+        entry is a box with points in normalized (xy1, xy2) format.
+        For example:
+            box_1 = np.float32([(0.1, 0.5), (0.8, 0.7)])
+            box_2 = np.float32([(0.4, 0.2), (0.6, 0.3)])
+            set_boxes([box_1, box_2])
+        """
+
+        # Convert list inputs into Nx2x2 arrays
+        if isinstance(box_xy1xy2_norm_nparray, (tuple, list)):
+            box_xy1xy2_norm_nparray = np.float32(box_xy1xy2_norm_nparray)
+            assert box_xy1xy2_norm_nparray.ndim == 3, "Must provide boxes as list of 2x2 numpy arrays!"
+
+        # Convert single 2x2 arrays into 1x2x2
+        if isinstance(box_xy1xy2_norm_nparray, ndarray):
+            if box_xy1xy2_norm_nparray.ndim == 2:
+                box_xy1xy2_norm_nparray = np.expand_dims(box_xy1xy2_norm_nparray, 0)
+        self._box_xy1xy2_norm_nparray = box_xy1xy2_norm_nparray
+
+        return self
+
+    # .................................................................................................................
+
+    def _render_overlay(self, frame):
+
+        # Bail if we have no boxes to draw
+        if self._box_xy1xy2_norm_nparray.shape[0] == 0:
+            return frame
+
+        # Convert to pixel units
+        frame_h, frame_w = frame.shape[0:2]
+        norm_to_px_scale = np.float32((frame_w - 1, frame_h - 1))
+        box_xy1xy2_px_list = np.int32(self._box_xy1xy2_norm_nparray * norm_to_px_scale).tolist()
+
+        # Draw boxes with background if needed
+        if self._bg_color is not None:
+            for box_xy1, box_xy2 in box_xy1xy2_px_list:
+                cv2.rectangle(frame, box_xy1, box_xy2, self._bg_color, self._fg_thick + 1)
+        for box_xy1, box_xy2 in box_xy1xy2_px_list:
+            cv2.rectangle(frame, box_xy1, box_xy2, self._fg_color, self._fg_thick)
+
+        return frame
+
+    # .................................................................................................................
+
+
 class TextOverlay(BaseOverlay):
 
     # .................................................................................................................
@@ -161,13 +251,14 @@ class HoverOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def __init__(self):
+    def __init__(self, read_right_clicks: bool = False):
         super().__init__()
         self._event_xy = CBEventXY((0, 0), (0, 0), (0, 0), (1, 1), False)
         self._is_valid = False
         self._is_clicked = False
         self._is_changed = False
         self._prev_is_in_region = None
+        self._read_right_clicks = read_right_clicks
 
     # .................................................................................................................
 
@@ -204,6 +295,13 @@ class HoverOverlay(BaseOverlay):
         self._is_changed = True
         self._is_clicked = True
         self._event_xy = cbxy
+        return
+
+    def on_right_click(self, cbxy, cbflags) -> None:
+        if self._read_right_clicks:
+            self._is_changed = True
+            self._is_clicked = True
+            self._event_xy = cbxy
         return
 
     # .................................................................................................................

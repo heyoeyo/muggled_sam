@@ -119,7 +119,9 @@ class StaticMessageBar(BaseCallback):
 
     # .................................................................................................................
 
-    def update_message(self, *messages: str, target_index: int | None = None):
+    def update_message(
+        self, *messages: str, target_index: int | None = None, bar_bg_color: tuple[int, int, int] | None = None
+    ):
         """Helper used to update messages. Warning: This doesn't account for changes in sizing of text!"""
         if target_index is not None:
             assert len(messages) == 1, "Cannot update with multiple message while targeting an index!"
@@ -127,7 +129,21 @@ class StaticMessageBar(BaseCallback):
         else:
             self._msgs_list = [f" {msg}  " for msg in messages if msg is not None]
 
+        # Record message widths, used to assign space when minimum drawing size
+        msg_widths = [self._txtdraw.get_text_size(m)[0] for m in self._msgs_list]
+        total_msg_w = sum(msg_widths)
+
+        # Pre-compute the relative x-positioning of each message for display
+        cumulative_w = [sum(msg_widths[:k]) for k in range(len(self._msgs_list))]
+        self._msg_x_norms = [(cum_w + 0.5 * msg_w) / total_msg_w for cum_w, msg_w in zip(cumulative_w, msg_widths)]
+        if self._space_equal:
+            num_msgs = len(msg_widths)
+            self._msg_x_norms = [(k + 0.5) / num_msgs for k in range(num_msgs)]
+            total_msg_w = max(msg_widths) * num_msgs
+
         # Wipe out cache so we force a re-render
+        if bar_bg_color is not None:
+            self._base_image = blank_image(1, 1, bar_bg_color)
         self._image = self._base_image.copy()
 
         return self

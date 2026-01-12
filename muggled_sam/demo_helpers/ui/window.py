@@ -35,6 +35,7 @@ class DisplayWindow:
         self.title = window_title
         self._frame_delay_ms = 1000 // display_fps
         self._last_display_ms = -self._frame_delay_ms
+        self._enable_keypress_callbacks = True
 
         # Allocate variables for use of callbacks
         self._mouse_cbs = CallbackSequencer()
@@ -99,6 +100,11 @@ class DisplayWindow:
         self._keypress_callbacks_dict[keycode] = callback
         return self
 
+    def toggle_keypress_callbacks(self, enable: bool | None = None):
+        """Toggle keypress callbacks on/off"""
+        self._enable_keypress_callbacks = not self._enable_keypress_callbacks if enable is None else enable
+        return self
+
     def show(self, image, frame_delay_ms=None) -> [bool, int]:
         """
         Function which combines both opencv functions: 'imshow' and 'waitKey'
@@ -117,13 +123,17 @@ class DisplayWindow:
 
         cv2.imshow(self.title, image)
         keypress = cv2.waitKey(int(frame_delay_ms)) & 0xFF
-        request_close = keypress in self.WINDOW_CLOSE_KEYS_SET
         self._last_display_ms = int(1000 * perf_counter())
 
         # Run keypress callbacks
-        for cb_keycode, cb in self._keypress_callbacks_dict.items():
-            if keypress == cb_keycode:
-                cb()
+        request_close = False
+        if self._enable_keypress_callbacks:
+            request_close = keypress in self.WINDOW_CLOSE_KEYS_SET
+            for cb_keycode, cb in self._keypress_callbacks_dict.items():
+                if keypress == cb_keycode:
+                    cb()
+                pass
+            pass
 
         return request_close, keypress
 
