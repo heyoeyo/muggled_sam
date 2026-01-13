@@ -495,6 +495,12 @@ class BoxSelectOverlay(BaseOverlay):
 
     # .................................................................................................................
 
+    def check_is_in_progress(self) -> bool:
+        """Helper used to check if a box is currently being drawn"""
+        return self._tlbr_norm_inprog is not None
+
+    # .................................................................................................................
+
     def read(self, include_in_progress_box=True) -> tuple[bool, tuple]:
         """Returns: is_changed, box_tlbr_list"""
 

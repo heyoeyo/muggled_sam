@@ -51,9 +51,11 @@ default_base_size = None
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
-parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
+parser.add_argument("-i", "--image_path", default=default_image_path, type=str, help="Path to input image")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM3 model weights")
-parser.add_argument("-r", "--ref_image_path", default=default_image_path, help="Path to a (different) reference image")
+parser.add_argument(
+    "-r", "--ref_image_path", nargs="?", default=None, const="", type=str, help="Path to a (different) reference image"
+)
 parser.add_argument("--bpe_vocab_path", default=default_vocab_path, type=str, help="Path to a BPE vocab")
 parser.add_argument(
     "--text_prompt",
@@ -137,13 +139,20 @@ device_config_dict = make_device_config(device_str, use_float32)
 history = HistoryKeeper()
 _, history_imgpath = history.read("image_path")
 _, history_modelpath = history.read("model_path")
+_, history_refimgpath = history.read("reference_image_path")
 
 # Get pathing to resources, if not provided already
+have_different_ref_image = arg_ref_image_path is not None
 image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
+if have_different_ref_image:
+    arg_ref_image_path = ask_for_path_if_missing(arg_ref_image_path, "reference image", history_refimgpath)
 model_path = ask_for_model_path_if_missing(__file__, arg_model_path, history_modelpath)
 
 # Store history for use on reload
-history.store(image_path=image_path, model_path=model_path)
+if have_different_ref_image:
+    history.store(image_path=image_path, model_path=model_path, reference_image_path=arg_ref_image_path)
+else:
+    history.store(image_path=image_path, model_path=model_path)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -157,7 +166,7 @@ model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv3", "Error! Only SAMv3 models support text detection..."
+assert sammodel.name == "samv3", "Error! Only SAMv3 models support detection..."
 sammodel.to(**device_config_dict)
 detmodel = sammodel.make_detector_model(arg_bpe_path)
 
@@ -180,7 +189,6 @@ if enable_crop_ui:
     history.store(crop_tlbr_norm=crop_tlbr_norm)
 
 # Load reference image, if needed
-have_different_ref_image = arg_ref_image_path is not None
 input_ref_image_bgr = cv2.imread(arg_ref_image_path) if have_different_ref_image else input_image_bgr.copy()
 assert input_ref_image_bgr is not None, f"Error loading reference imag: ({arg_ref_image_path})"
 
@@ -230,12 +238,10 @@ if model_device == "cuda":
 # %% Set up the UI
 
 # Colors for convenience
-pos_color = (80, 200, 60)
-pos_color = (50, 80, 45)
-neg_color = (60, 80, 240)
-neg_color = (45, 50, 90)
-txt_ind_color = (90, 10, 215)
-msg_bar_color = (65, 55, 50)
+color_pos_olay, color_neg_olay, color_topn_olay = (0, 255, 0), (0, 0, 255), (0, 120, 255)
+color_pos_btn, color_neg_btn = (50, 80, 45), (45, 50, 90)
+color_txt_ind = (90, 10, 215)
+color_msg_bar = (65, 55, 50)
 
 # Set up main image displays
 ref_img_elem = ExpandingImage(input_image_bgr)
@@ -243,25 +249,25 @@ out_img_elem = ExpandingImage(input_image_bgr)
 
 # Set up display overlays
 hover_olay = HoverOverlay(read_right_clicks=True)
-pos_box_tool_olay = BoxSelectOverlay((0, 255, 0), 2)
-neg_box_tool_olay = BoxSelectOverlay((0, 0, 255), 2)
-pos_point_tool_olay = PointSelectOverlay((0, 255, 0))
-neg_point_tool_olay = PointSelectOverlay((0, 0, 255))
-bounding_box_olay = DrawBoxOverlay((0, 255, 0))
+pos_box_tool_olay = BoxSelectOverlay(color_pos_olay, 2)
+neg_box_tool_olay = BoxSelectOverlay(color_neg_olay, 2)
+pos_point_tool_olay = PointSelectOverlay(color_pos_olay)
+neg_point_tool_olay = PointSelectOverlay(color_neg_olay)
+bounding_box_olay = DrawBoxOverlay(color_pos_olay)
 ref_olay = OverlayStack(
     ref_img_elem, hover_olay, pos_box_tool_olay, pos_point_tool_olay, neg_box_tool_olay, neg_point_tool_olay
 )
 res_olay = OverlayStack(out_img_elem, bounding_box_olay)
 
 # Set up tool bar components
-tool_pospoint_toggle = ToggleButton("Point +", text_scale=0.5, on_color=pos_color)
-tool_posbox_toggle = ToggleButton("Box +", text_scale=0.5, default_state=True, on_color=pos_color)
-tool_negpoint_toggle = ToggleButton("Point -", text_scale=0.5, on_color=neg_color)
-tool_negbox_toggle = ToggleButton("Box -", text_scale=0.5, default_state=True, on_color=neg_color)
-tool_text_toggle = ToggleButton("Text", text_scale=0.5, on_color=txt_ind_color)
+tool_pospoint_toggle = ToggleButton("Point +", text_scale=0.5, on_color=color_pos_btn)
+tool_posbox_toggle = ToggleButton("Box +", text_scale=0.5, default_state=True, on_color=color_pos_btn)
+tool_negpoint_toggle = ToggleButton("Point -", text_scale=0.5, on_color=color_neg_btn)
+tool_negbox_toggle = ToggleButton("Box -", text_scale=0.5, default_state=True, on_color=color_neg_btn)
+tool_text_toggle = ToggleButton("Text", text_scale=0.5, on_color=color_txt_ind)
 tool_clear_btn = ImmediateButton("Clear", text_scale=0.5)
 radio_constraint = RadioConstraint(
-    tool_pospoint_toggle, tool_posbox_toggle, tool_negpoint_toggle, tool_negbox_toggle, tool_text_toggle
+    tool_pospoint_toggle, tool_negpoint_toggle, tool_posbox_toggle, tool_negbox_toggle, tool_text_toggle
 )
 
 # Set up text outputs
@@ -370,7 +376,7 @@ norm_to_px_scale = torch.tensor(out_wh, dtype=torch.float32) - 1.0
 # Set up special image used when activating text mode (to help indicate switch to terminal)
 ref_img_elem.set_image(ref_src_img)
 out_img_elem.set_image((ref_src_img * 0.5).astype(np.uint8))
-txt_drawer = TextDrawer(scale=0.75, thickness=2, color=txt_ind_color, bg_color=(0, 0, 0))
+txt_drawer = TextDrawer(scale=0.75, thickness=2, color=color_txt_ind, bg_color=(0, 0, 0))
 txt_mode_img = (ref_src_img * 0.25).astype(np.uint8)
 _drawtxt_config = {"scale_step_size": 0.25, "margin_xy_px": (20, 20)}
 txt_mode_img = txt_drawer.draw_to_box_norm(txt_mode_img, "Disabled", (0.1, 0.4), (0.9, 0.5), **_drawtxt_config)
@@ -418,7 +424,7 @@ try:
         is_detthresh_changed, det_thresh = thresh_slider.read()
         is_topn_changed, top_n = topn_slider.read()
         is_mask_opacity_changed, mask_opacity = mask_opacity_slider.read()
-        is_mouse_moved, is_mouse_up, mouse_evt_xy = hover_olay.read()
+        is_mouse_moved, is_mouse_clicked, mouse_evt_xy = hover_olay.read()
         _, enable_terminal_text_input = hidden_text_state.read()
 
         # Wipe out prompts on clear
@@ -455,10 +461,10 @@ try:
             # Trigger text mode if tool changes to text
             # (do this to get a display update in before we lock out UI due to terminal usage)
             ref_img_elem.set_image(ref_src_img)
-            new_bar_msgs, new_bar_color = reg_msgs, msg_bar_color
+            new_bar_msgs, new_bar_color = reg_msgs, color_msg_bar
             if is_text_tool:
                 hidden_text_state.toggle(True)
-                new_bar_msgs, new_bar_color = txt_msgs, txt_ind_color
+                new_bar_msgs, new_bar_color = txt_msgs, color_txt_ind
                 ref_img_elem.set_image(txt_mode_img)
                 print(
                     "",
@@ -497,20 +503,20 @@ try:
 
             pass
 
-        # Handle box/point inputs
-        if is_mouse_up or allow_realtime:
+        # Handle point inputs
+        if is_point_tool:
 
             # Handle point updates
             is_new_pos_point, pos_point_xy_list = pos_point_tool_olay.read()
             is_new_neg_point, neg_point_xy_list = neg_point_tool_olay.read()
             is_point_changed = is_new_pos_point or is_new_neg_point
-            if is_point_tool and is_new_pos_point:
+            if is_new_pos_point and is_mouse_clicked:
                 point_xy_norm_list = pos_point_xy_list
                 need_detection_update = True
-            elif is_point_tool and is_new_neg_point:
+            elif is_new_neg_point and is_mouse_clicked:
                 negative_points_list = neg_point_xy_list
                 need_detection_update = True
-            elif is_point_tool and allow_realtime and is_mouse_moved:
+            elif allow_realtime and is_mouse_moved:
                 # Allow for real-time point inputs (e.g. hover) if there are no existing inputs
                 if is_pos_point and len(pos_point_xy_list) == 0:
                     point_xy_norm_list = [mouse_evt_xy.xy_norm] if mouse_evt_xy.is_in_region else []
@@ -519,17 +525,18 @@ try:
                     negative_points_list = [mouse_evt_xy.xy_norm] if mouse_evt_xy.is_in_region else []
                     need_detection_update = True
                 pass
+            pass
 
-            # Handle box updates
+        # Handle box updates
+        if is_box_tool:
             is_new_pos_box, pos_box_xy1xy2_norm = pos_box_tool_olay.read()
             is_new_neg_box, neg_box_xy1xy2_norm = neg_box_tool_olay.read()
-            if is_box_tool and is_new_pos_box:
+            if is_new_pos_box and (allow_realtime or not pos_box_tool_olay.check_is_in_progress()):
                 box_xy1xy2_norm_list = pos_box_xy1xy2_norm
                 need_detection_update = True
-            if is_box_tool and is_new_neg_box:
+            if is_new_neg_box and (allow_realtime or not neg_box_tool_olay.check_is_in_progress()):
                 negative_boxes_list = neg_box_xy1xy2_norm
                 need_detection_update = True
-
             pass
 
         # Trigger detection update if any 'use X' toggle changes and there is data to use/not use
@@ -598,7 +605,7 @@ try:
                 score_range_txtblock.set_value(f"[{100*det_scores.min():.0f}, {100*det_scores.max():.0f}]")
 
             #  Show bounding box predictions
-            bounding_box_olay.style(color=(0, 255, 0) if num_filtered > 0 else (0, 120, 255))
+            bounding_box_olay.style(color=color_pos_olay if num_filtered > 0 else color_topn_olay)
             bounding_box_olay.set_boxes(disp_boxes.float().cpu().numpy())
 
             # Form display mask
