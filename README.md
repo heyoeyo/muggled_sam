@@ -8,12 +8,12 @@ This repo contains a simplified implementation of the awesome 'Segment Anything'
 
 While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
 
-There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam), with documentation for v2 on the way! Support for SAMv3 is currently limited to the functionality found in the v1 & v2 models (e.g. directed image & video segmentation).
+There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam), with documentation for v2/v3 on the way!
 
 
 ## Getting started
 
-This repo includes two demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py) and [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) (along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) and [experiments](https://github.com/heyoeyo/muggled_sam/tree/main/experiments)). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
+This repo includes three demo scripts, [run_image.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_image.py), [run_video.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_video.py) and [run_detections.py](https://github.com/heyoeyo/muggled_sam/blob/main/run_detections.py), along with a number of [simple examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) and [experiments](https://github.com/heyoeyo/muggled_sam/tree/main/experiments). To use these scripts, you'll first need to have [Python](https://www.python.org/) (v3.10+) installed, then set up a virtual environment and install some additional requirements.
 
 ### Install
 Using a terminal, first create and activate a virtual environment (do this inside the repo folder after [cloning/downloading](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) it):
@@ -115,6 +115,8 @@ encoded_prompts = model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
 mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
 ```
 
+A similar example exists for [detecting objects](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection.py) (SAMv3 only).
+
 ## Run Image
 
 _(Supports SAMv1, SAMv2, SAMv3)_
@@ -153,6 +155,15 @@ The segmentation results can be saved as .pngs (in a [tarfile](https://en.wikipe
 
 This script is a messy work-in-progress for now, more features & stability updates to come! If you'd like a more hackable solution, check out the (much easier to follow) [video segmentation example](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py).
 
+## Run Detections
+
+_(Supports SAMv3)_
+
+The `run_detections.py` script provides an interactive visualization of the output from the SAMv3 detection model. This model is capable of detecting many objects in an image using a text prompt or by using points/bounding-boxes around a reference object in the image. As usual, make sure you've activated the virtual environment from installation and then (in a terminal) use:
+```bash
+python run_detections.py
+```
+As with the other scripts, you can add `--help` to the end of this command to see additional flags. One interesting flag is `-r /path/to/other_image.jpg` which enables the use of a separate 'reference' image, so that points/bounding boxes around objects in one image can be used to segment objects in another image (though the model doesn't officially support this, so quality can vary).
 
 # Acknowledgements
 
@@ -195,6 +206,5 @@ The code in this repo is entirely based off the original segment-anything github
 
 
 # TODOs
-- Add support for SAMv3 'detector' functionality
 - Add model structure documentation
 - Inevitable bugfixes
