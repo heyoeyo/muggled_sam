@@ -180,7 +180,7 @@ class SAMV3SamplingEncoder(nn.Module):
         assert boxes_tensor_bn22.ndim == 4, f"Unexpected box shape: {input_shape}, should be Nx2x2 or Nx4 for N boxes"
         return boxes_tensor_bn22
 
-    def prepare_point_input(self, point_xy_norm_list: list[tuple(float, float)] | None) -> Tensor | None:
+    def prepare_point_input(self, point_xy_norm_list: list[tuple[float, float]] | None) -> Tensor | None:
         """
         Helper used to convert points inputs into the tensor format needed by the model.
         Points should be given as a list of (x,y) coordinates, for example:
