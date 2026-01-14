@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -269,7 +270,7 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
-    def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray) -> Tensor:
+    def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray | Tensor) -> Tensor:
         """
         Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'.
         The provided image is assumed to be loaded using opencv, so that it has shape: HxW or HxWxC
@@ -288,20 +289,39 @@ class SAMV2Model(nn.Module):
 
             # For convenience
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
-            token_hw = lowres_imgenc.shape[2:]
             device, dtype = lowres_imgenc.device, lowres_imgenc.dtype
+            token_h, token_w = lowres_imgenc.shape[2:]
 
             # Hard-code the object score as being 'high/confident', since we assume the given mask is accurate
             obj_score = torch.tensor(100.0, device=device, dtype=dtype)
 
-            # Prepare mask image as if it were a prediction from the model
-            if mask_image.ndim == 3:
-                mask_image = mask_image[:, :, 0]
-            mask_tensor = torch.tensor(mask_image > 127, device=device, dtype=dtype)
-            mask_tensor = nn.functional.interpolate(
-                mask_tensor.unsqueeze(0).unsqueeze(0), size=(4 * token_hw[0], 4 * token_hw[1])
-            )
+            # Force input into a boolean mask & convert to torch tensor
+            if isinstance(mask_image, ndarray):
+                if mask_image.dtype != np.bool:
+                    mask_image = mask_image > 0
+                mask_tensor = torch.tensor(mask_image, device=device, dtype=dtype)
+            elif isinstance(mask_image, Tensor):
+                if mask_image.dtype != torch.bool:
+                    mask_image = mask_image > 0
+                mask_tensor = mask_image.to(device=device, dtype=dtype)
+            assert isinstance(mask_tensor, Tensor), "Unsupported mask type! Must be a numpy array or torch tensor"
 
+            # Make sure we get a mask with shape: BxNxHxW
+            if mask_tensor.ndim == 2:
+                # Convert HxW -> 1x1xHxW
+                mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0)
+            elif mask_tensor.ndim == 3 and mask_tensor.shape[-1] <= 3:
+                # Convert (opencv image format) HxWxC -> 1x1xHxW
+                mask_tensor = mask_tensor[:, :, 0].unsqueeze(0).unsqueeze(0)
+            elif mask_tensor.ndim == 3:
+                # Convert BxHxW -> Bx1xHxW
+                mask_tensor = mask_tensor.unsqueeze(1)
+            assert (
+                mask_tensor.ndim == 4 and mask_tensor.shape[1] == 1
+            ), "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
+
+            # Scale input to correct size before encoding
+            mask_tensor = nn.functional.interpolate(mask_tensor, size=(4 * token_h, 4 * token_w))
             memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, obj_score, is_prompt_encoding=True)
 
         return memory_encoding

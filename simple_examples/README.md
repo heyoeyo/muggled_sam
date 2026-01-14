@@ -108,3 +108,13 @@ _(Supports SAMv2, SAMv3)_
 This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be [easy to modify](https://github.com/heyoeyo/muggled_sam/blob/3ed04b646005d1b1242b8d07008573ef00815405/muggled_sam/demo_helpers/samurai.py#L22) if needed.
 
 This demo is set up to track only one object, but can be changed to handle multiple objects by creating additional prompt/prev. frame memory storage as well as instances of the SAMURAI class for each object.
+
+## Video Segmentation from Detections
+
+_(Supports SAMv3)_
+
+This script uses the new detection capabilities of SAMv3 in order to generate initial objects for tracking. It's a bit like a combination of the tracking from masks & multi-object examples above, but ends up being a fully automatic way of doing video segmentation.
+
+Very basic support for repeat detections (every 'N' frames) is included so that newly appearing objects are tracked over time. The logic for this is overly simple, but is hopefully a useful starting point. A visualization can be enabled which shows existing objects (magenta boxes), new detections (green boxes) and detections that overlap existing objects (yellow boxes) to help provide some intuition about what's going on.
+
+For fun, the script also supports using different image encoding configurations for tracking vs. detections (see `track_imgenc_config_dict`). Reducing the `max_side_length` setting (e.g. set to `512`) on the tracking config can be used to speed up tracking significantly at the cost of segmentation quality. It also supports using a SAMv2 model for tracking, though the v3 model is still required for detections.

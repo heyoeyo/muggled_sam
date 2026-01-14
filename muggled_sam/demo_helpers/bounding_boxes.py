@@ -113,7 +113,7 @@ def box_xy1xy2_to_xywh(xy1, xy2) -> tuple[float, float, float, float]:
 # .....................................................................................................................
 
 
-def get_2box_iou(box_a_xy1xy2: tuple, box_b_xy1xy2: tuple, min_union_threshold=0.001) -> float:
+def get_2box_iou(box_a_xy1xy2: tuple, box_b_xy1xy2: tuple, min_union_threshold=1e-6) -> float:
     """
     Helper used to compute the intersection-over-union between 2 boxes,
     also called the 'Jaccard index'.
