@@ -159,11 +159,19 @@ This script is a messy work-in-progress for now, more features & stability updat
 
 _(Supports SAMv3)_
 
+<p align="center">
+  <img src=".readme_assets/run_detections_anim.gif">
+</p>
+
 The `run_detections.py` script provides an interactive visualization of the output from the SAMv3 detection model. This model is capable of detecting many objects in an image using a text prompt or by using points/bounding-boxes around a reference object in the image. As usual, make sure you've activated the virtual environment from installation and then (in a terminal) use:
 ```bash
 python run_detections.py
 ```
 As with the other scripts, you can add `--help` to the end of this command to see additional flags. One interesting flag is `-r /path/to/other_image.jpg` which enables the use of a separate 'reference' image, so that points/bounding boxes around objects in one image can be used to segment objects in another image (though the model doesn't officially support this, so quality can vary).
+
+The basic usage of this script is to input point or box prompts on the left image while the corresponding detections will be displayed on the right. When using text prompts, the UI will 'freeze' and hand off input to your terminal (the one that launched the script) for text input. Entering a blank prompt will return control to the UI.
+
+While this script only works with images, the detection capabilities of SAMv3 can be used with video tracking. See the [video segmentation from detections](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-from-detections) example script for more info.
 
 # Acknowledgements
 
