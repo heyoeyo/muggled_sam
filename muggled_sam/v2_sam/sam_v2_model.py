@@ -272,12 +272,26 @@ class SAMV2Model(nn.Module):
 
     def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray | Tensor) -> Tensor:
         """
-        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'.
-        The provided image is assumed to be loaded using opencv, so that it has shape: HxW or HxWxC
-        If the image has channels (e.g. RGB), only the 0th channel (e.g. red) will be used.
+        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
+        to begin tracking an object.
+
+        The provided mask can either be a numpy array (e.g. image loaded using opencv) or
+        a pytorch tensor (e.g. output from another model). In the simplest cases, a boolean
+        mask should be provided with shape: HxW. If a non-boolean input is given, it will
+        be converted to a boolean mask used a simple 'greater than 0' check
+        (e.g. bool_mask = mask_image > 0).
+
+        - If a mask is given with 3 dimensions, but the last dimension has size <= 3, it's assumed
+          to be shaped as: HxWxC (e.g. a BGR image from opencv). In this case, the 0-th entry
+          of the 3rd dimension will be taken as the (HxW) mask
+        - If a mask is given with 3 dimensions, but the last dimension has size > 3, it's assumed
+          to be shaped as: BxHxW, which is acceptable though batch sizes > 1 may not
+          be directly supported when performing video segmentation steps!
+        - If a mask is given with 4 dimensions, it will be interpretted as: Bx1xHxW, where it
+          must have size '1' in the second-most dimension.
 
         Note that with this form of initializtion, there is no object pointer! The pointer normally
-        comes from the mask prediction, so without a prediction, there is not pointer. The video
+        comes from the mask prediction, so without a prediction, there is no pointer. The video
         masking should therefore be initialized with only the memory encoding and an empty pointer list.
         This doesn't have a substantial impact on the tracking
 

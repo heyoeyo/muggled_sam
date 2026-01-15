@@ -305,12 +305,26 @@ class SAMV3Model(nn.Module):
 
     def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray | Tensor) -> Tensor:
         """
-        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'.
-        The provided image is assumed to be loaded using opencv, so that it has shape: HxW or HxWxC
-        If the image has channels (e.g. RGB), only the 0th channel (e.g. red) will be used.
+        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
+        to begin tracking an object.
+
+        The provided mask can either be a numpy array (e.g. image loaded using opencv) or
+        a pytorch tensor (e.g. output from another model). In the simplest cases, a boolean
+        mask should be provided with shape: HxW. If a non-boolean input is given, it will
+        be converted to a boolean mask used a simple 'greater than 0' check
+        (e.g. bool_mask = mask_image > 0).
+
+        - If a mask is given with 3 dimensions, but the last dimension has size <= 3, it's assumed
+          to be shaped as: HxWxC (e.g. a BGR image from opencv). In this case, the 0-th entry
+          of the 3rd dimension will be taken as the (HxW) mask
+        - If a mask is given with 3 dimensions, but the last dimension has size > 3, it's assumed
+          to be shaped as: BxHxW, which is acceptable though batch sizes > 1 may not
+          be directly supported when performing video segmentation steps!
+        - If a mask is given with 4 dimensions, it will be interpretted as: Bx1xHxW, where it
+          must have size '1' in the second-most dimension.
 
         Note that with this form of initializtion, there is no object pointer! The pointer normally
-        comes from the mask prediction, so without a prediction, there is not pointer. The video
+        comes from the mask prediction, so without a prediction, there is no pointer. The video
         masking should therefore be initialized with only the memory encoding and an empty pointer list.
         This doesn't have a substantial impact on the tracking
 
@@ -535,7 +549,7 @@ class SAMV3DetectorModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The max_side_length setting is used to set the size at which the image is processed, if
@@ -758,6 +772,48 @@ class SAMV3DetectorModel(nn.Module):
         filtered_scores = detection_scores[is_valid_detection]
 
         return filtered_masks, filtered_boxes, filtered_scores, presence_score
+
+    # .................................................................................................................
+
+    def encode_tracking_and_detection_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> tuple[Tensor, Tensor]:
+        """
+        ***Special case function***
+
+        This function is used to compute both the image encodings needed for tracking
+        AND the features for detections, from a bgr formatted input image (e.g. loaded from opencv).
+        It is purely for optimization purposes when combining SAMv3 detections with video tracking.
+
+        This is equivalent to running .encode_image(...) and .encode_detection_image(...)
+        using the SAMv3 model and detection variant (respectively). However, this approach
+        is much more efficient, as the heaviest part of this encoding can be shared between
+        both outputs, so only needs to be computed once.
+
+        Note that the return format is slightly different from the original encoding functions!
+
+        Returns:
+            encoded_tracking_features_list, encoded_detection_features_list
+
+        -> Both outputs contain 3 multi-resolution feature maps
+        -> The tracking features have shapes: Bx256xHxW, Bx64x(2H)x(2W) & Bx32x(4H)x(4W)
+           The detection features have shapes: Bx256xHxW, Bx256x(2H)x(2W) & Bx256x(4H)x(4W)
+        -> Where H & W are the 'low-res' feature map size (72x72 by default)
+
+        The tracking features are the ones used in video tracking (e.g. inside the 'step_video_masking' function)
+        while the detection features are used in the exemplar encoding and generate detections functions.
+        """
+
+        with torch.inference_mode():
+            image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
+            encoded_img = self.image_encoder(image_rgb_normalized_bchw)
+            tracking_features_list = self.image_projection.v2_projection(encoded_img)
+            detection_features_list = self.image_projection.v3_projection(encoded_img)
+
+        return tracking_features_list, detection_features_list
 
     # .................................................................................................................
 
