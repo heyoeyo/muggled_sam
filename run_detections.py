@@ -30,6 +30,7 @@ from muggled_sam.demo_helpers.crop_ui import run_crop_ui
 from muggled_sam.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
+from muggled_sam.demo_helpers.saving import get_save_name, save_json_data, save_image_data
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -46,7 +47,7 @@ default_device = get_default_device_string()
 default_image_path = None
 default_model_path = None
 default_vocab_path = None
-default_display_size = 640
+default_display_size = 680
 default_base_size = None
 
 # Define script arguments
@@ -276,8 +277,12 @@ numbox_txtblock = ValueBlock("Boxes: ", "-")
 tokens_txtblock = ValueBlock("Tokens: ", "-")
 txtpmt_txtblock = ValueBlock("Text: ", default_text_prompt)
 numdet_txtblock = ValueBlock("Detections: ", 0)
-force_same_min_width(numpts_txtblock, numbox_txtblock, txtpmt_txtblock, numdet_txtblock)
 score_range_txtblock = ValueBlock("Scores: ", "-")
+
+# Set up slider for adjusting image encoding size after-the-fact (and swapping if using separate ref. image)
+init_encsize = max(preencode_img_hw)
+imgsize_slider = HSlider("Encoding Size", init_encsize, 28, 2 * init_encsize, 14, marker_steps=18)
+imgswap_button = ImmediateButton("Swap", (185, 120, 75), text_scale=0.5)
 
 # Set up controls under the images
 allow_realtime_toggle = ToggleButton("Real-time", default_state=default_realtime, text_scale=0.5, on_color=(90, 40, 70))
@@ -288,7 +293,7 @@ include_coords_toggle = ToggleButton("Include Coords", default_state=True, text_
 thresh_slider = HSlider("Detection Threshold", 0.5, 0, 1, 0.01, marker_steps=10)
 topn_slider = HSlider("Top-N (missing only)", 5, 0, 25, 1, marker_steps=5)
 mask_opacity_slider = HSlider("Mask Opacity", 0.5, 0, 1, 0.05, marker_steps=5)
-force_same_min_width(topn_slider, score_range_txtblock, mask_opacity_slider)
+save_btn = ImmediateButton("Save", (60, 170, 20), text_scale=0.5)
 
 # Set up message bars
 device_dtype_str = f"{model_device}/{model_dtype}"
@@ -306,18 +311,26 @@ tool_btns = (
     tool_text_toggle,
     tool_clear_btn,
 )
+
+# Set up element sizing
+force_same_min_width(numpts_txtblock, numbox_txtblock, txtpmt_txtblock, numdet_txtblock)
 force_flex_min_width(*tool_btns, flex=(1, 1, 1, 1, 1, 0.5))
+force_flex_min_width(topn_slider, mask_opacity_slider, save_btn, flex=(2.5, 2.5, 1))
 force_same_min_width(allow_realtime_toggle, use_boxes_toggle, use_points_toggle, use_text_toggle, include_coords_toggle)
+force_flex_min_width(thresh_slider, score_range_txtblock, flex=(2, 1))
+if have_different_ref_image:
+    force_flex_min_width(imgswap_button, imgsize_slider, flex=(0.2, 1))
 
 # Set up full display layout
 disp_layout = VStack(
     header_msgbar if show_info else None,
     HStack(*tool_btns),
     HStack(numpts_txtblock, numbox_txtblock, txtpmt_txtblock, tokens_txtblock, numdet_txtblock),
+    HStack(imgswap_button, imgsize_slider) if have_different_ref_image else imgsize_slider,
     HStack(ref_olay, HSeparator(8), res_olay),
     HStack(allow_realtime_toggle, use_points_toggle, use_boxes_toggle, use_text_toggle, include_coords_toggle),
-    thresh_slider,
-    HStack(topn_slider, score_range_txtblock, mask_opacity_slider),
+    HStack(thresh_slider, score_range_txtblock),
+    HStack(topn_slider, mask_opacity_slider, save_btn),
     footer_msgbar if show_info else None,
 )
 
@@ -346,9 +359,14 @@ window.attach_keypress_callback("b", use_boxes_toggle.toggle)
 window.attach_keypress_callback("t", use_text_toggle.toggle)
 window.attach_keypress_callback("i", include_coords_toggle.toggle)
 window.attach_keypress_callback("c", tool_clear_btn.click)
+window.attach_keypress_callback("s", save_btn.click)
 window.attach_keypress_callback(KEY.LEFT_ARROW, radio_constraint.previous)
 window.attach_keypress_callback(KEY.RIGHT_ARROW, radio_constraint.next)
+window.attach_keypress_callback("[", imgsize_slider.decrement)
+window.attach_keypress_callback("]", imgsize_slider.increment)
 window.attach_keypress_callback(KEY.SPACEBAR, lambda: radio_constraint.change_to(tool_text_toggle))
+if have_different_ref_image:
+    window.attach_keypress_callback(KEY.TAB, imgswap_button.click)
 print(
     "",
     "Keypress controls:",
@@ -356,8 +374,10 @@ print(
     "p, b, t: Toggle use points/boxes/text",
     "i: Toggle inclusion of coord. encoding in exemplars",
     "c: Clear all prompts (resets text to default input)",
+    "s: Save detection results",
     "spacebar: Enter text input mode",
     "Left/right arrows: Change selected tool",
+    "Use [, ] brackets to adjust encoding size (heavy!)",
     sep="\n",
 )
 
@@ -366,8 +386,8 @@ KEY_ZOOM_IN = ord("=")
 KEY_ZOOM_OUT = ord("-")
 
 # Set up data used in display loop
-ref_hw = get_image_hw_for_max_side_length(input_ref_image_bgr, max_side_length=800)
-out_hw = get_image_hw_for_max_side_length(input_image_bgr, max_side_length=800)
+ref_hw = get_image_hw_for_max_side_length(input_ref_image_bgr, max_side_length=max(800, display_size_px))
+out_hw = get_image_hw_for_max_side_length(input_image_bgr, max_side_length=max(800, display_size_px))
 ref_src_img = cv2.resize(input_ref_image_bgr, dsize=(ref_hw[::-1]))
 out_src_img = cv2.resize(input_image_bgr, dsize=(out_hw[::-1]))
 out_wh = (out_hw[1], out_hw[0])
@@ -375,12 +395,16 @@ norm_to_px_scale = torch.tensor(out_wh, dtype=torch.float32) - 1.0
 
 # Set up special image used when activating text mode (to help indicate switch to terminal)
 ref_img_elem.set_image(ref_src_img)
-out_img_elem.set_image((ref_src_img * 0.5).astype(np.uint8))
+out_img_elem.set_image((out_src_img * 0.5).astype(np.uint8))
 txt_drawer = TextDrawer(scale=0.75, thickness=2, color=color_txt_ind, bg_color=(0, 0, 0))
-txt_mode_img = (ref_src_img * 0.25).astype(np.uint8)
-_drawtxt_config = {"scale_step_size": 0.25, "margin_xy_px": (20, 20)}
-txt_mode_img = txt_drawer.draw_to_box_norm(txt_mode_img, "Disabled", (0.1, 0.4), (0.9, 0.5), **_drawtxt_config)
-txt_mode_img = txt_drawer.draw_to_box_norm(txt_mode_img, "(use terminal)", (0.1, 0.5), (0.9, 0.6), **_drawtxt_config)
+txt_mode_imgs_list = []
+for img in (ref_src_img, out_src_img):
+    txt_img = (img * 0.25).astype(np.uint8)
+    _txt_config = {"scale_step_size": 0.25, "margin_xy_px": (20, 20)}
+    txt_img = txt_drawer.draw_to_box_norm(txt_img, "Disabled", (0.1, 0.4), (0.9, 0.5), **_txt_config)
+    txt_img = txt_drawer.draw_to_box_norm(txt_img, "(use terminal)", (0.1, 0.5), (0.9, 0.6), **_txt_config)
+    txt_mode_imgs_list.append(txt_img)
+txt_mode_ref_img, txt_mode_out_img = txt_mode_imgs_list
 
 # Set up initial prompts
 radio_constraint.change_to(0)
@@ -389,6 +413,11 @@ point_xy_norm_list = []
 box_xy1xy2_norm_list = []
 negative_points_list = []
 negative_boxes_list = []
+
+# Make sure certain values exist before loop updates them
+num_filtered = 0
+prompts_dict = {}
+mask_preds = None
 
 # Some feedback
 print(
@@ -416,6 +445,7 @@ try:
 
         # Read controls
         is_tool_select_changed, _, tool_ref = radio_constraint.read()
+        is_size_changed, img_enc_size = imgsize_slider.read()
         _, allow_realtime = allow_realtime_toggle.read()
         is_use_points_changed, use_points = use_points_toggle.read()
         is_use_box_changed, use_boxes = use_boxes_toggle.read()
@@ -426,6 +456,29 @@ try:
         is_mask_opacity_changed, mask_opacity = mask_opacity_slider.read()
         is_mouse_moved, is_mouse_clicked, mouse_evt_xy = hover_olay.read()
         _, enable_terminal_text_input = hidden_text_state.read()
+
+        # Handle image swapping
+        if have_different_ref_image and imgswap_button.read():
+            input_image_bgr, input_ref_image_bgr = input_ref_image_bgr, input_image_bgr
+            encoded_imgs, ref_encoded_imgs = ref_encoded_imgs, encoded_imgs
+            out_src_img, ref_src_img = ref_src_img, out_src_img
+            txt_mode_out_img, txt_mode_ref_img = txt_mode_ref_img, txt_mode_out_img
+            out_hw, ref_hw = ref_hw, out_hw
+            out_wh = (out_hw[1], out_hw[0])
+            norm_to_px_scale = torch.tensor(out_wh, dtype=torch.float32) - 1.0
+
+            out_img_elem.set_image(out_src_img)
+            ref_img_elem.set_image(ref_src_img)
+            need_detection_update = True
+
+        # Handle re-encoding of image data if sizing changes
+        if is_size_changed:
+            imgenc_config_dict["max_side_length"] = img_enc_size
+            encoded_imgs, _, _ = detmodel.encode_detection_image(input_image_bgr, **imgenc_config_dict)
+            ref_encoded_imgs = encoded_imgs
+            if have_different_ref_image:
+                ref_encoded_imgs, _, _ = detmodel.encode_detection_image(input_ref_image_bgr, **imgenc_config_dict)
+            need_detection_update = True
 
         # Wipe out prompts on clear
         if tool_clear_btn.read():
@@ -465,7 +518,7 @@ try:
             if is_text_tool:
                 hidden_text_state.toggle(True)
                 new_bar_msgs, new_bar_color = txt_msgs, color_txt_ind
-                ref_img_elem.set_image(txt_mode_img)
+                ref_img_elem.set_image(txt_mode_ref_img)
                 print(
                     "",
                     "*** Entering text mode ***",
@@ -557,15 +610,18 @@ try:
 
         # Run model to update detections
         if need_detection_update:
-            exemplars = detmodel.encode_exemplars(
-                ref_encoded_imgs,
-                text_prompt if use_text else None,
-                box_xy1xy2_norm_list if use_boxes else None,
-                point_xy_norm_list if use_points else None,
-                negative_boxes_list if use_boxes else None,
-                negative_points_list if use_points else None,
-                include_coordinate_encodings=include_coords,
-            )
+
+            # Bundle prompts (makes it easier to save later)
+            prompts_dict = {
+                "text": text_prompt if use_text else None,
+                "box_xy1xy2_norm_list": box_xy1xy2_norm_list if use_boxes else None,
+                "point_xy_norm_list": point_xy_norm_list if use_points else None,
+                "negative_boxes_list": negative_boxes_list if use_boxes else None,
+                "negative_points_list": negative_points_list if use_points else None,
+                "include_coordinate_encodings": include_coords,
+            }
+
+            exemplars = detmodel.encode_exemplars(ref_encoded_imgs, **prompts_dict)
             mask_preds, box_preds, det_scores, _ = detmodel.generate_detections(encoded_imgs, exemplars)
 
             # Update reporting
@@ -629,6 +685,67 @@ try:
         if keypress == KEY_ZOOM_OUT:
             display_size_px = max(display_size_px - 50, min_display_size_px)
             render_limit_dict = {render_side: display_size_px}
+
+        # Handle saving
+        if save_btn.read():
+
+            # Bail if we don't have masks
+            if num_filtered == 0 or mask_preds is None:
+                print("No masks to save!")
+                continue
+
+            # Create save pathing & get mask/boxes to save
+            save_folder, _ = get_save_name(image_path, "run_detections", create_nested_indexing=True)
+            save_masks_raw = mask_preds[is_good_score]
+            save_boxes_norm = box_preds[is_good_score]
+
+            # If user cropped the input, save the cropped image for reference
+            if enable_crop_ui:
+                save_image_data(save_folder, "cropped_input_image.png", input_image_bgr)
+
+            # Save the display image for reference
+            save_image_data(save_folder, "display.jpg", display_image)
+
+            # Save prompt data for reference
+            save_prompts_dict = {**prompts_dict, "image": image_path, "reference_image": arg_ref_image_path}
+            save_json_data(save_folder, "prompts.json", save_prompts_dict)
+
+            # Save bounding boxes
+            boxes_xy1xy2_list = save_boxes_norm.float().cpu().tolist()
+            save_json_data(save_folder, "boxes_xy1xy2.json", boxes_xy1xy2_list)
+
+            save_hw = input_image_bgr.shape[0:2]
+            num_results = save_masks_raw.shape[0]
+            combined_mask_bool = torch.zeros(save_hw, dtype=torch.bool, device=mask_preds.device)
+            for mask_idx in range(num_results):
+
+                # Add mask to combined output
+                mask_raw = save_masks_raw[mask_idx]
+                scaled_mask = torch.nn.functional.interpolate(
+                    mask_raw[None, None, :, :], save_hw, mode="bilinear", align_corners=True
+                )
+                mask_bool = scaled_mask[0, 0, :, :] > 0
+                combined_mask_bool = torch.bitwise_or(combined_mask_bool, mask_bool)
+
+                # Find tight-fitting bounding box for each mask
+                mask_uint8 = (255 * mask_bool.byte()).cpu().numpy()
+                contours_list, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                all_contour_xys = np.concat(contours_list, axis=0).squeeze(1)
+                x1, y1 = np.min(all_contour_xys, axis=0)
+                x2, y2 = np.max(all_contour_xys, axis=0)
+
+                # Crop to each mask and save as standalone image
+                crop_slice = (slice(y1, 1 + y2), slice(x1, 1 + x2))
+                cropped_mask = mask_uint8[crop_slice]
+                cropped_img_bgr = cv2.copyTo(input_image_bgr[crop_slice], cropped_mask)
+                cropped_img_bgra = cv2.cvtColor(cropped_img_bgr, cv2.COLOR_BGR2BGRA)
+                cropped_img_bgra[:, :, -1] = cropped_mask
+                save_image_data(save_folder, f"object_{mask_idx:0>3}.png", cropped_img_bgra)
+
+            # Save combined mask of all detected objects
+            combined_mask_uint8 = (255 * combined_mask_bool.byte()).cpu().numpy()
+            save_image_data(save_folder, "combined_mask.png", combined_mask_uint8)
+            print("SAVED:", save_folder)
 
         pass
 

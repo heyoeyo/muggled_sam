@@ -96,7 +96,7 @@ def save_image_segmentation(
     # Save all dictionary/json results
     for name, data_dict in name_to_dict_lut.items():
         if data_dict is not None:
-            save_json_data(save_folder_path, save_index, name, data_dict)
+            save_json_data(save_folder_path, f"{save_index}_{name}.json", data_dict)
 
     return
 
@@ -140,6 +140,7 @@ def get_save_name(
     sub_folder_name: str,
     base_save_folder: str | None = None,
     create_save_folder=True,
+    create_nested_indexing: bool = False,
 ) -> tuple[str, str]:
     """
     Helper used to build the pathing to a save folder for saving segmentation images.
@@ -155,6 +156,10 @@ def get_save_name(
     a 'save index', which can be used to prefix saved results to make them unique.
     For example, the first time a result is saved, it will be given index: 000,
     follow up results will be given indexes: 001, 002, 003 etc.
+
+    If 'created_nested_indexing' is True, then an indexing folder will be created,
+    so that the structure (and returned path) look like:
+        {base_save_folder} / saved_images / {sub_folder_name} / {input_file_name} / <index>
 
     Returns:
         save_folder_path, save_index_as_str
@@ -181,6 +186,12 @@ def get_save_name(
 
     # Save all results
     save_idx_str = str(save_idx).zfill(3)
+
+    # Create nested folder if needed
+    if create_nested_indexing:
+        save_folder = osp.join(save_folder, save_idx_str)
+        if create_save_folder:
+            os.makedirs(save_folder, exist_ok=True)
 
     return save_folder, save_idx_str
 
@@ -322,12 +333,26 @@ def make_crop_coord_save_data(yx_crop_slices: tuple[slice, slice]) -> dict[str, 
 # .....................................................................................................................
 
 
-def save_json_data(save_folder_path: str, save_index: str, plain_file_name: str, save_data_dict: dict) -> str:
+def save_json_data(save_folder_path: str, save_name: str, save_data: dict | list) -> str:
     """Helper used to save json-friendly data (i.e. dictionaries with coords)"""
 
-    save_file_name = f"{save_index}_{plain_file_name}.json"
+    save_file_name = save_name if save_name.endswith(".json") else f"{save_name}.json"
     save_file_path = osp.join(save_folder_path, save_file_name)
     with open(save_file_path, "w") as outfile:
-        json.dump(save_data_dict, outfile, indent=2)
+        json.dump(save_data, outfile, indent=2)
+
+    return save_file_path
+
+
+def save_image_data(save_folder_path: str, save_file_name: str, image_data: ndarray, file_ext: str = ".png") -> str:
+    """Basic helper used for saving image data with folder/filename separation"""
+
+    # Add missing file extension if needed
+    name_no_ext, ext = osp.splitext(save_file_name)
+    if len(ext) == 0:
+        save_file_name = f"{save_file_name}{file_ext}"
+
+    save_file_path = osp.join(save_folder_path, save_file_name)
+    cv2.imwrite(save_file_path, image_data)
 
     return save_file_path
