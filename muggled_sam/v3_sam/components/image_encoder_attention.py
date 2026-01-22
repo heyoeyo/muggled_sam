@@ -7,7 +7,7 @@
 
 import torch.nn as nn
 
-from .position_encoding import RPEComplex, RPEMatrix
+from .position_encoding import RPEComplex, RPEReal
 
 # For type hints
 from torch import Tensor
@@ -318,7 +318,7 @@ class RoPEAttentionBHWC(nn.Module):
         self.qkv = nn.Linear(features_per_token, num_qkv_features, bias=True)
 
         # Set up rotary position encoder (no learned components!)
-        PosEncoder = RPEComplex if use_complex_numbers else RPEMatrix
+        PosEncoder = RPEComplex if use_complex_numbers else RPEReal
         self.rope_encoder = PosEncoder(self.features_per_head, rope_theta, rope_hw)
 
         # Output layer used to mix channel information (this seems unnescessary?)

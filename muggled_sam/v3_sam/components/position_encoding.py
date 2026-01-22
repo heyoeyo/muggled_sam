@@ -193,13 +193,23 @@ class RPEComplex(nn.Module):
     # .................................................................................................................
 
 
-class RPEMatrix(nn.Module):
+class RPEReal(nn.Module):
     """
-    Rotational-Position-Encoder which uses 2x2 rotation matrices.
-    This is meant as an alternative to the RPEComplex module.
+    Alternate version of RPEComplex, which doesn't use complex numbers.
 
-    While using rotation matrices is conceptually simpler, it's far
-    slower than using complex numbers...
+    The basic idea is to perform complex multiplication using only real numbers.
+    For example:
+        Complex multiplication: (a + ib) * (c + id) = (a*c - b*d) + i(a*d + b*c)
+    We can treat a,b,c,d as 4 real numbers and compute the result as:
+        x_out = (a*c - b*d)
+        y_out = (a*d + b*c)
+
+    Compared to the 'complex' version, this implementation is very slightly
+    slower, but should have better support across other run-times.
+
+    It replaces an earlier implementation which used 2D rotation matrices
+    but was significantly (>2x) slower, see:
+    https://github.com/heyoeyo/muggled_sam/blob/f7ae0cdfa2de7e2432b4b0b4628a85e3103725aa/muggled_sam/v3_sam/components/position_encoding.py#L196
 
     Note: This module does not contain any learnable parameters!
     """
@@ -219,14 +229,17 @@ class RPEMatrix(nn.Module):
         self._rope_w = rope_hw[1]
 
         # Pre-compute base angles used to construct rotation amounts
-        powers = torch.linspace(0, 1, 1 + (features_per_token // 4))[:-1]
-        base_angles = torch.pow(theta, -powers)
+        # -> 'powers' are just evenly spaced values on interval [0,1), ex: [0.0, 0.25, 0.5, 0.75]
+        quarter_features = features_per_token // 4
+        powers = torch.arange(0, quarter_features) / quarter_features
+        base_angles = 1.0 / torch.pow(theta, powers)  # WARNING: torch.pow(theta, -powers) is not the same numerically!
         self.register_buffer("base_angles", base_angles, persistent=False)
 
         # Allocate storage for caching results, so we don't re-compute position encodings repeatedly
         # (encodings don't change for a fixed sized input, e.g. video frames)
         self._cache_hw = (0, 0)
-        self.register_buffer("rotmats", torch.empty(1, 1, 1, 1, 1, 1), persistent=False)
+        self.register_buffer("x_rotors_bdnc", torch.empty(1, 1, 1, 1), persistent=False)
+        self.register_buffer("y_rotors_bdnc", torch.empty(1, 1, 1, 1), persistent=False)
 
     # .................................................................................................................
 
@@ -238,44 +251,65 @@ class RPEMatrix(nn.Module):
         associated with the token, and then converted back to the original
         non-paired representation.
 
+        For example, if a token comes is as:
+            [1,2,3,4,5,6,7,8],
+        it first gets broken into xy pairs:
+            [[1,2], [3,4], [5,6], [7,8]]
+
+        Then each of these gets rotated based on it's indexing.
+        For the sake of convenience, let's say the rotation amount
+        for these four indexes are: [0, 90degrees, 180degrees, 270degrees]
+        Then the rotation result would be:
+            [[1,2], [-4,3], [-5,-6], [8,-7]]
+        The final output un-pairs these values:
+            [1,2,-4,3,-5,-6,8,-7]
+
         Returns:
             q_out, k_out
         """
 
         # For clarity
+        # -> Tokens assumed to have shape: BxDxNxC (B is batch, D is num heads, N is number tokens, C is channels)
         bq, dq, nq, cq = q.shape
         bk, dk, nk, ck = k.shape
 
-        # Re-build rotations if needed
+        # Re-build rotation vectors if needed
         if self._cache_hw != q_tokens_hw:
-            self.rotmats = self.get_rotation_matrices(q_tokens_hw)
+            self.x_rotors_bdnc, self.y_rotors_bdnc = self.get_real_rotors(q_tokens_hw)
             self._cache_hw = q_tokens_hw
 
-        # Convert each consecutive feature value pair into 'xy' format and rotate
-        q_out = torch.matmul(self.rotmats, q.reshape(bq, dq, nq, cq // 2, 2, 1))
+        # Apply rotations to q tokens
+        q_as_xy = q.reshape(bq, dq, nq, cq // 2, 2)
+        q_x = q_as_xy[:, :, :, :, 0]
+        q_y = q_as_xy[:, :, :, :, 1]
+        q_out_x = (q_x * self.x_rotors_bdnc) - (q_y * self.y_rotors_bdnc)
+        q_out_y = (q_x * self.y_rotors_bdnc) + (q_y * self.x_rotors_bdnc)
+        q_out = torch.stack((q_out_x, q_out_y), dim=-1).flatten(3)
 
-        # Convert key tokens and handle potential mismatched q vs. k sizing
-        k_rotmat = self.rotmats if nk == nq else self.rotmats.repeat(1, 1, nk // nq, 1, 1, 1)
-        k_out = torch.matmul(k_rotmat, k.reshape(bk, dk, nk, ck // 2, 2, 1))
+        # Apply rotations to k tokens
+        k_as_xy = k.reshape(bk, dk, nk, ck // 2, 2)
+        k_x = k_as_xy[:, :, :, :, 0]
+        k_y = k_as_xy[:, :, :, :, 1]
+        x_rotors = self.x_rotors_bdnc if nk == nq else self.x_rotors_bdnc.repeat(1, 1, nk // nq, 1)
+        y_rotors = self.y_rotors_bdnc if nk == nq else self.y_rotors_bdnc.repeat(1, 1, nk // nq, 1)
+        k_out_x = (k_x * x_rotors) - (k_y * y_rotors)
+        k_out_y = (k_x * y_rotors) + (k_y * x_rotors)
+        k_out = torch.stack((k_out_x, k_out_y), dim=-1).flatten(3)
 
-        # Convert back to non-paired format for output
-        q_out = q_out.flatten(3)
-        k_out = k_out.flatten(3)
         return q_out, k_out
 
     # .................................................................................................................
 
-    def get_rotation_matrices(self, tokens_hw: tuple[int, int]) -> Tensor:
+    def get_real_rotors(self, tokens_hw: tuple[int, int]) -> tuple[Tensor, Tensor]:
         """
-        This function is equivalent to a function called 'compute_axial_cis' from the original implementation:
-        https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/vitdet.py#L41
-
-        Unlike the original function, here we compute rotation matrices rather than
-        their complex number equivalents. Each possible (x,y) position is represented
-        by a 2x2 rotation matrix, where the rotation amount 'IS' the position encoding.
+        See the RPEComplex 'get_complex_rotors' for more info.
+        In this implementation, rotors are held as separate
+        x & y tensors.
+        These correspond to the real & imaginary parts
+        of the rotors from the original implementation.
 
         Returns:
-            rotation_matrices (shape: 1x1xNxDx2x2)
+            x_rotors_bdnc, y_rotors_bdnc
         """
 
         # For clarity
@@ -292,36 +326,17 @@ class RPEMatrix(nn.Module):
         y_mults = torch.arange(h, device=device, dtype=dtype).repeat_interleave(w) * y_mult_scale
 
         # Calculate angles as multiples of (pre-computed) base angles
-        # -> Base angles have length equal to 1/4 of the features per token/head (64/4 = 16 by default)
+        # -> Base angles have length equal to 1/4 of the features per token/head
         # -> x/y_mults have length equal to h*w = number of tokens
         # -> So result has shape: Nx(f/4)
-        x_angles = torch.outer(x_mults, self.base_angles).float()
-        y_angles = torch.outer(y_mults, self.base_angles).float()
+        x_angles = torch.outer(x_mults, self.base_angles)
+        y_angles = torch.outer(y_mults, self.base_angles)
 
-        # Form final 2x2 rotation matrices
-        x_rotmat = self.make_rotation_matrix(x_angles).to(dtype=dtype)
-        y_rotmat = self.make_rotation_matrix(y_angles).to(dtype=dtype)
-
-        # Combine x and y matrices into a single: 1x1xNxdx2x2 tensor
-        # -> Extra leading 1's are for batch & head dimensions
-        return torch.cat([x_rotmat, y_rotmat], dim=1).unsqueeze(0).unsqueeze(0)
-
-    # .................................................................................................................
-
-    @staticmethod
-    def make_rotation_matrix(angles_tensor) -> Tensor:
-        """Helper used to create a rotation matrix of shape: Nxdx2x2, assuming the given angles are of shape Nxd"""
-
-        sin_term, cos_term = torch.sin(-angles_tensor), torch.cos(-angles_tensor)
-        rotation_matrix = torch.stack(
-            [
-                torch.stack([cos_term, -sin_term], dim=-1),
-                torch.stack([sin_term, cos_term], dim=-1),
-            ],
-            dim=-1,
-        )
-
-        return rotation_matrix
+        # Form final 'rows-of-tokens' output with batch and 'heads' dimensions
+        # -> Each rotor has shape: 1x1xNx(f/2)
+        x_rotors = torch.cat((torch.cos(x_angles), torch.cos(y_angles)), dim=-1).unsqueeze(0).unsqueeze(0)
+        y_rotors = torch.cat((torch.sin(x_angles), torch.sin(y_angles)), dim=-1).unsqueeze(0).unsqueeze(0)
+        return x_rotors, y_rotors
 
     # .................................................................................................................
 

@@ -7,7 +7,7 @@
 
 import torch.nn as nn
 
-from .position_encoding import RPEComplex, RPEMatrix
+from .position_encoding import RPEComplex, RPEReal
 
 # For type hints
 from torch import Tensor
@@ -64,7 +64,7 @@ class RoPEAttentionBNC(nn.Module):
         self.v_proj = nn.Linear(features_per_kv_token, features_per_token)
 
         # Set up rotary position encoder
-        PosEncoder = RPEComplex if use_complex_numbers else RPEMatrix
+        PosEncoder = RPEComplex if use_complex_numbers else RPEReal
         self.rotposenc = PosEncoder(self.features_per_head, rope_theta)
 
         # Output layer used to restore input feature count
