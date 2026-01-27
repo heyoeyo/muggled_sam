@@ -663,6 +663,7 @@ class SAMV3DetectorModel(nn.Module):
         encoded_exemplars_bnc: Tensor,
         detection_filter_threshold: float = 0.0,
         exemplar_padding_mask_bn: Tensor | None = None,
+        blank_no_exemplar_outputs: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Takes in encoded image features and exemplar tokens, along with an optional padding mask,
@@ -702,6 +703,14 @@ class SAMV3DetectorModel(nn.Module):
         lowres_imgenc_bchw, hiresx2_imgenc_bchw, hiresx4_imgenc_bchw = encoded_image_features_list
 
         with torch.inference_mode():
+
+            # Return 'blank' results if we don't get any exemplars
+            # -> Not required (model still works with no exemplars), but blanked results make more sense
+            no_exemplars = encoded_exemplars_bnc.shape[1] == 0
+            if no_exemplars and blank_no_exemplar_outputs:
+                blk_tok, blk_box, blk_score, blk_pres = self.exemplar_detector.create_blank_output(lowres_imgenc_bchw)
+                blk_masks, _ = self.exemplar_segmentation.create_blank_output(blk_tok, lowres_imgenc_bchw)
+                return blk_masks, blk_box, blk_score, blk_pres
 
             # Mix exemplar data into image tokens
             fused_imgexm_tokens_bchw = self.image_exemplar_fusion(

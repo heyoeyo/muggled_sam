@@ -238,6 +238,43 @@ class SAMV3ExemplarDetector(nn.Module):
 
     # .................................................................................................................
 
+    def create_blank_output(self, image_tokens_bchw: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """
+        Helper used to create 'blank' outputs. This is meant to be used
+        as an alternative to running the .forward(...) function when
+        no exemplars are provided.
+
+        The outputs are the same as the forward function:
+            detection_tokens_bnc, box_xy1xy2_bn22, detection_scores_bn, presence_score
+
+        Note that (mostly out of interest) the detection tokens are given directly
+        as the learned tokens (without any processing) while the boxes are also
+        given directly as the original learned anchor points (with no processing).
+        The scores are given as zeros.
+        """
+
+        # For convenience
+        num_tokens = self.detection_tokens.shape[1]
+        img_b, _, img_h, img_w = image_tokens_bchw.shape
+        device, dtype = image_tokens_bchw.device, image_tokens_bchw.dtype
+        data_dict = {"device": device, "dtype": dtype}
+
+        # Use learned tokens as 'blank' token output
+        out_detection_tokens_bnc = self.detection_tokens.repeat(img_b, 1, 1).detach()
+
+        # Use learned anchor boxes as blank box prediction
+        box_pred_cxcywh_bn4 = self.anchor_boxes_cxcywh.repeat(img_b, 1, 1).detach().sigmoid()
+        box_pred_xyxy_bn4 = self._box_cxcywh_to_xyxy(box_pred_cxcywh_bn4)
+        out_box_xy1xy2_bn22 = box_pred_xyxy_bn4.view(img_b, num_tokens, 2, 2)
+
+        # Use zeros for blank score predictions
+        out_det_scores_bn = torch.zeros((img_b, num_tokens), **data_dict)
+        out_presence_scores = torch.zeros(img_b, **data_dict)
+
+        return out_detection_tokens_bnc, out_box_xy1xy2_bn22, out_det_scores_bn, out_presence_scores
+
+    # .................................................................................................................
+
 
 class DetectionFusionLayer(nn.Module):
     """

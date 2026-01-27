@@ -119,6 +119,32 @@ class SAMV3ExemplarSegmentation(nn.Module):
 
     # .................................................................................................................
 
+    def create_blank_output(
+        self, detector_tokens_bnc: Tensor, image_exemplar_tokens_bchw: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Helper used to create 'blank' outputs. This is meant to be used
+        as an alternative to running the .forward(...) function when
+        no exemplars are provided.
+
+        The outputs are the same as the forward function:
+            mask_predictions_bnhw, semantic_seg_bhw
+
+        The mask prediction are given with all values set to -10,
+        while the semantic segmentation will be given as all zeros
+        """
+
+        num_tokens = detector_tokens_bnc.shape[1]
+        out_b, _, img_h, img_w = image_exemplar_tokens_bchw.shape
+        device, dtype = image_exemplar_tokens_bchw.device, image_exemplar_tokens_bchw.dtype
+
+        out_h, out_w = 4 * img_h, 4 * img_w
+        blank_mask_preds = torch.full((out_b, num_tokens, out_h, out_w), -10, device=device, dtype=dtype)
+        blank_semseg = torch.zeros((out_b, out_h, out_w), device=device, dtype=dtype)
+        return blank_mask_preds, blank_semseg
+
+    # .................................................................................................................
+
 
 class ImageExemplarCrossAttentionBlock(nn.Module):
     """
