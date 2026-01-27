@@ -111,6 +111,12 @@ parser.add_argument(
     help="If set, real-time prompt inputs will be enabled by default",
 )
 parser.add_argument(
+    "--compile",
+    default=False,
+    action="store_true",
+    help="If enabled, the model detection components will be compiled, which may improve performance",
+)
+parser.add_argument(
     "--crop",
     default=False,
     action="store_true",
@@ -131,6 +137,7 @@ use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 show_info = not args.hide_info
 default_realtime = args.realtime
+enable_compilation = args.compile
 enable_crop_ui = args.crop
 
 # Set up device config
@@ -192,6 +199,12 @@ if enable_crop_ui:
 # Load reference image, if needed
 input_ref_image_bgr = cv2.imread(arg_ref_image_path) if have_different_ref_image else input_image_bgr.copy()
 assert input_ref_image_bgr is not None, f"Error loading reference imag: ({arg_ref_image_path})"
+
+# Handle compilation
+if enable_compilation:
+    print("", "Compiling model... (experimental)", sep="\n", flush=True)
+    time_compile_ms = detmodel.enable_compilation(input_image_bgr, **imgenc_config_dict, compile_image_encoding=False)
+    print("  Done! Took", time_compile_ms, "ms")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -277,6 +290,7 @@ numbox_txtblock = ValueBlock("Boxes: ", "-")
 tokens_txtblock = ValueBlock("Tokens: ", "-")
 txtpmt_txtblock = ValueBlock("Text: ", default_text_prompt)
 numdet_txtblock = ValueBlock("Detections: ", 0)
+time_txtblock = ValueBlock("", "-", "ms")
 score_range_txtblock = ValueBlock("Scores: ", "-")
 
 # Set up slider for adjusting image encoding size after-the-fact (and swapping if using separate ref. image)
@@ -317,19 +331,20 @@ force_same_min_width(numpts_txtblock, numbox_txtblock, txtpmt_txtblock, numdet_t
 force_flex_min_width(*tool_btns, flex=(1, 1, 1, 1, 1, 0.5))
 force_flex_min_width(topn_slider, mask_opacity_slider, save_btn, flex=(2.5, 2.5, 1))
 force_same_min_width(allow_realtime_toggle, use_boxes_toggle, use_points_toggle, use_text_toggle, include_coords_toggle)
-force_flex_min_width(thresh_slider, score_range_txtblock, flex=(2, 1))
+force_flex_min_width(time_txtblock, thresh_slider, score_range_txtblock, flex=(1, 4, 1))
 if have_different_ref_image:
     force_flex_min_width(imgswap_button, imgsize_slider, flex=(0.2, 1))
 
 # Set up full display layout
+imgsize_stack = HStack(imgswap_button, imgsize_slider) if have_different_ref_image else imgsize_slider
 disp_layout = VStack(
     header_msgbar if show_info else None,
     HStack(*tool_btns),
     HStack(numpts_txtblock, numbox_txtblock, txtpmt_txtblock, tokens_txtblock, numdet_txtblock),
-    HStack(imgswap_button, imgsize_slider) if have_different_ref_image else imgsize_slider,
+    imgsize_stack if not enable_compilation else None,
     HStack(ref_olay, HSeparator(8), res_olay),
     HStack(allow_realtime_toggle, use_points_toggle, use_boxes_toggle, use_text_toggle, include_coords_toggle),
-    HStack(thresh_slider, score_range_txtblock),
+    HStack(time_txtblock, thresh_slider, score_range_txtblock),
     HStack(topn_slider, mask_opacity_slider, save_btn),
     footer_msgbar if show_info else None,
 )
@@ -362,11 +377,12 @@ window.attach_keypress_callback("c", tool_clear_btn.click)
 window.attach_keypress_callback("s", save_btn.click)
 window.attach_keypress_callback(KEY.LEFT_ARROW, radio_constraint.previous)
 window.attach_keypress_callback(KEY.RIGHT_ARROW, radio_constraint.next)
-window.attach_keypress_callback("[", imgsize_slider.decrement)
-window.attach_keypress_callback("]", imgsize_slider.increment)
 window.attach_keypress_callback(KEY.SPACEBAR, lambda: radio_constraint.change_to(tool_text_toggle))
-if have_different_ref_image:
-    window.attach_keypress_callback(KEY.TAB, imgswap_button.click)
+if not enable_compilation:
+    window.attach_keypress_callback("[", imgsize_slider.decrement)
+    window.attach_keypress_callback("]", imgsize_slider.increment)
+    if have_different_ref_image:
+        window.attach_keypress_callback(KEY.TAB, imgswap_button.click)
 print(
     "",
     "Keypress controls:",
@@ -621,8 +637,12 @@ try:
                 "include_coordinate_encodings": include_coords,
             }
 
+            # Run model with timing
+            t1 = perf_counter()
             exemplars = detmodel.encode_exemplars(ref_encoded_imgs, **prompts_dict)
             mask_preds, box_preds, det_scores, _ = detmodel.generate_detections(encoded_imgs, exemplars)
+            t2 = perf_counter()
+            time_txtblock.set_value(round(1000 * (t2 - t1)))
 
             # Update reporting
             num_pos_box = len(box_xy1xy2_norm_list) if use_boxes else 0

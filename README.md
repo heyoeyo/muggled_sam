@@ -173,7 +173,7 @@ The `run_detections.py` script provides an interactive visualization of the outp
 ```bash
 python run_detections.py
 ```
-As with the other scripts, you can add `--help` to the end of this command to see additional flags. One interesting flag is `-r /path/to/other_image.jpg` which enables the use of a separate 'reference' image, so that points/bounding boxes around objects in one image can be used to segment objects in another image (though the model doesn't officially support this, so quality can vary).
+As with the other scripts, you can add `--help` to the end of this command to see additional flags. One interesting flag is `-r /path/to/other_image.jpg` which enables the use of a separate 'reference' image, so that points/bounding boxes around objects in one image can be used to segment objects in another image (though the model doesn't officially support this!). There is also (experimental) support for compilation using the `--compile` flag.
 
 The basic usage of this script is to input point or box prompts on the left image while the corresponding detections will be displayed on the right. When using text prompts, the UI will 'freeze' and hand off input to your terminal (the one that launched the script) for text input. Entering a blank prompt will return control to the UI.
 

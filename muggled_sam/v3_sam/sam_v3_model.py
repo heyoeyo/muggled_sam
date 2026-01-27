@@ -6,6 +6,7 @@
 # %% Imports
 
 import os.path as osp
+from time import perf_counter
 
 import numpy as np
 import torch
@@ -853,5 +854,105 @@ class SAMV3DetectorModel(nn.Module):
         )
 
         raise NotImplementedError("This model isn't meant to be used with .forward(...)")
+
+    # .................................................................................................................
+
+    def enable_compilation(
+        self,
+        example_image_bgr: ndarray | None = None,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+        compile_image_encoding: bool = True,
+        compile_exemplar_encoding: bool = True,
+        compile_detection_segmentation: bool = True,
+        custom_config: dict | None = None,
+    ) -> int:
+        """
+        Enable (experimental) compilation of model components.
+        Anecdotally, this seems to give around a 10% reduction in
+        inference time of large components and 30-40% reduction for
+        smaller components, though this is likely dependent on hardware!
+
+        Note that any adjustments to model usage (e.g. different input parameters)
+        after calling this function may result in re-compilation.
+
+        The 'custom_config' input can be given to provide custom compilation
+        settings. This is used as:
+            torch.compile(<model_code>, **custom_config)
+        If not provided, some (fairly aggressive) default settings will be used.
+
+        Compilation for certain components can be toggled on/off using the
+        'compile_image_encoding' and similar args. This can be useful to disable
+        heavy compilation on components that are only called once for example.
+        This can also be used to provide different custom compilation configs
+        to different model components, if needed.
+
+        Returns:
+            total_time_taken_ms
+        """
+
+        # Special optimization to speed up float32 usage
+        if next(self.parameters()).dtype == torch.float32:
+            torch.set_float32_matmul_precision("high")
+
+        # Fill in default compilation settings
+        comp_kwargs = custom_config
+        dyncomp_kwargs = custom_config
+        if custom_config is None:
+            compile_options = {
+                "shape_padding": True,
+                "epilogue_fusion": True,
+                "max-autotune": True,
+            }
+            comp_kwargs = {"mode": None, "fullgraph": True, "options": compile_options}
+            dyncomp_kwargs = {**comp_kwargs, "dynamic": True}
+
+        # Create dummy arguments to run model
+        exm_args_1 = ("visual", [[(0.2, 0.3), (0.5, 0.6)]], [(0.5, 0.5)], [[(0.1, 0.1), (0.2, 0.2)]], [(0.9, 0.1)])
+        exm_args_2 = ("visual", None, None, None, None)
+        exm_args_3 = (None, *exm_args_1[1:])
+        if example_image_bgr is None:
+            example_image_bgr = np.zeros((1, 1, 3), dtype=np.uint8)
+
+        # Switch away from using complex numbers (not well supported by compiler)
+        if compile_image_encoding:
+            self.image_encoder.toggle_use_complex_numbers(False)
+
+        # Run model to fill caches
+        encoded_imgs, _, _ = self.encode_detection_image(example_image_bgr, max_side_length, use_square_sizing)
+        encoded_exemplars = self.encode_exemplars(encoded_imgs, *exm_args_1)
+        self.generate_detections(encoded_imgs, encoded_exemplars)
+
+        # Start timing
+        t1 = perf_counter()
+
+        if compile_image_encoding:
+            self.image_encoder.forward = torch.compile(self.image_encoder.forward, **comp_kwargs)
+            self.image_projection.v3_projection = torch.compile(self.image_projection.v3_projection, **comp_kwargs)
+
+        if compile_exemplar_encoding:
+            self.text_encoder.text_encoder.forward = torch.compile(
+                self.text_encoder.text_encoder.forward, **dyncomp_kwargs
+            )
+            self.sampling_encoder.fusion_transformer.forward = torch.compile(
+                self.sampling_encoder.fusion_transformer.forward, **dyncomp_kwargs
+            )
+            self.image_exemplar_fusion.forward = torch.compile(self.image_exemplar_fusion.forward, **dyncomp_kwargs)
+
+        if compile_detection_segmentation:
+            self.exemplar_detector.forward = torch.compile(self.exemplar_detector.forward, **dyncomp_kwargs)
+            self.exemplar_segmentation.forward = torch.compile(self.exemplar_segmentation.forward, **dyncomp_kwargs)
+
+        # Compilation doesn't occur until we actually run the model!
+        for exm_args in [exm_args_3, exm_args_2, exm_args_1]:
+            encoded_imgs, _, _ = self.encode_detection_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_exemplars = self.encode_exemplars(encoded_imgs, *exm_args)
+            self.generate_detections(encoded_imgs, encoded_exemplars)
+
+        # Finish timing
+        t2 = perf_counter()
+        time_taken_ms = round(1000 * (t2 - t1))
+
+        return time_taken_ms
 
     # .................................................................................................................

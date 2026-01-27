@@ -60,6 +60,7 @@ class SAMV3ImageEncoder(nn.Module):
         window_size: int = 24,
         mlp_ratio: float = 4.625,
         norm_eps: float = 1e-5,
+        use_complex_numbers: bool = True,
     ):
 
         # Inherit from parent
@@ -73,10 +74,20 @@ class SAMV3ImageEncoder(nn.Module):
 
         # Create transformer stages blocks (bulk of the model)
         num_blocks_per_stage = num_blocks // num_stages
-        shared_args = (features_per_token, num_blocks_per_stage, num_heads, window_size, mlp_ratio)
-        self.stages = nn.Sequential(
-            *(TransformerStage(*shared_args, debug_stage_index=idx) for idx in range(num_stages))
-        )
+        stages_list = []
+        for idx in range(num_stages):
+            new_stage = TransformerStage(
+                features_per_token,
+                num_blocks_per_stage,
+                num_heads,
+                window_size,
+                mlp_ratio,
+                norm_eps,
+                use_complex_numbers,
+                debug_stage_index=idx,
+            )
+            stages_list.append(new_stage)
+        self.stages = nn.Sequential(*stages_list)
 
         # Store image scaling values
         self.register_buffer("mean_rgb", torch.tensor(self.rgb_offset).view(-1, 1, 1), persistent=False)
@@ -272,6 +283,22 @@ class SAMV3ImageEncoder(nn.Module):
 
     # .................................................................................................................
 
+    def toggle_use_complex_numbers(self, use_complex_numbers: bool | None = False) -> bool:
+        """
+        Toggles the use of complex numbers (or not) in transformer stages.
+        Use of complex numbers tends to run fastest within pytorch, but may not
+        be as well supported by other runtimes, so this function can be used to
+        switch to using real-numbers only (with a small performance penalty).
+        """
+
+        is_now_using_complex_numbers = True
+        for stage in self.stages:
+            is_now_using_complex_numbers = stage.toggle_use_complex_numbers(use_complex_numbers)
+
+        return is_now_using_complex_numbers
+
+    # .................................................................................................................
+
 
 class TransformerStage(nn.Module):
     """
@@ -290,6 +317,7 @@ class TransformerStage(nn.Module):
         window_size: int = 24,
         mlp_ratio: float = 4.625,
         norm_eps: float = 1e-5,
+        use_complex_numbers: bool = True,
         debug_stage_index: int = -1,
     ):
 
@@ -307,6 +335,7 @@ class TransformerStage(nn.Module):
             "rope_hw": rope_hw,
             "mlp_ratio": mlp_ratio,
             "norm_eps": norm_eps,
+            "use_complex_numbers": use_complex_numbers,
             "parent_stage_index": debug_stage_index,
         }
 
@@ -341,6 +370,25 @@ class TransformerStage(nn.Module):
             block.set_window_size(window_size)
 
         return self
+
+    # .................................................................................................................
+
+    def toggle_use_complex_numbers(self, use_complex_numbers: bool | None = False) -> bool:
+        """
+        Toggles the use of complex numbers (or not) in attention calculations.
+        Use of complex numbers tends to run fastest within pytorch, but may not
+        be as well supported by other runtimes, so this function can be used to
+        switch to using real-numbers only (with a small performance penalty).
+
+        Returns:
+            is_now_using_complex_numbers
+        """
+
+        is_now_using_complex_numbers = self.global_attn_block.toggle_use_complex_numbers(use_complex_numbers)
+        for widx, wblock_ref in enumerate(self.windowed_attn_blocks):
+            wblock_ref.toggle_use_complex_numbers(is_now_using_complex_numbers)
+
+        return is_now_using_complex_numbers
 
     # .................................................................................................................
 

@@ -38,6 +38,7 @@ class GlobalAttentionBlock(nn.Module):
         rope_hw: tuple[int, int] = (24, 24),
         mlp_ratio: float = 4.625,
         norm_eps: float = 1e-5,
+        use_complex_numbers: bool = True,
         parent_stage_index: int = -1,
     ):
 
@@ -49,7 +50,7 @@ class GlobalAttentionBlock(nn.Module):
 
         # Set up nn processing components
         self.norm_preattn = nn.LayerNorm(features_per_token, eps=norm_eps)
-        self.attn = RoPEAttentionBHWC(features_per_token, num_heads, rope_hw)
+        self.attn = RoPEAttentionBHWC(features_per_token, num_heads, rope_hw, use_complex_numbers=use_complex_numbers)
         self.norm_premlp = nn.LayerNorm(features_per_token, eps=norm_eps)
         self.mlp = MLP2Layers_GELU(features_per_token, mlp_ratio)
 
@@ -79,6 +80,10 @@ class GlobalAttentionBlock(nn.Module):
         """This block does not use windowing, so do nothing. This is included for compatibility with window blocks"""
         return self
 
+    def toggle_use_complex_numbers(self, use_complex_numbers: bool | None = False) -> bool:
+        """Toggles between using/not using complex RoPE encoder"""
+        return self.attn.toggle_use_complex_numbers(use_complex_numbers)
+
     # .................................................................................................................
 
 
@@ -104,6 +109,7 @@ class WindowedAttentionBlock(nn.Module):
         window_size: int = 24,
         mlp_ratio: float = 4.625,
         norm_eps: float = 1e-5,
+        use_complex_numbers: bool = True,
         parent_stage_index: int = -1,
         debug_sequence_index: int = -1,
     ):
@@ -117,7 +123,7 @@ class WindowedAttentionBlock(nn.Module):
 
         # Set up nn processing components
         self.norm_preattn = nn.LayerNorm(features_per_token, eps=norm_eps)
-        self.attn = RoPEAttentionBHWC(features_per_token, num_heads, rope_hw)
+        self.attn = RoPEAttentionBHWC(features_per_token, num_heads, rope_hw, use_complex_numbers=use_complex_numbers)
         self.norm_premlp = nn.LayerNorm(features_per_token, eps=norm_eps)
         self.mlp = MLP2Layers_GELU(features_per_token, mlp_ratio)
 
@@ -162,6 +168,10 @@ class WindowedAttentionBlock(nn.Module):
         self._window_size = self._init_window_size if window_size is None else max(1, window_size)
 
         return self
+
+    def toggle_use_complex_numbers(self, use_complex_numbers: bool | None = False) -> bool:
+        """Toggles between using/not using complex RoPE encoder"""
+        return self.attn.toggle_use_complex_numbers(use_complex_numbers)
 
     # .................................................................................................................
 
@@ -298,6 +308,8 @@ class RoPEAttentionBHWC(nn.Module):
     @ https://arxiv.org/abs/2104.09864
     """
 
+    # .................................................................................................................
+
     def __init__(
         self,
         features_per_token: int = 1024,
@@ -312,6 +324,8 @@ class RoPEAttentionBHWC(nn.Module):
         # Store config for re-use
         self.num_heads = num_heads
         self.features_per_head = features_per_token // num_heads
+        self._rope_theta = rope_theta
+        self._rope_hw = rope_hw
 
         # Set up q/k/v attention mapping
         num_qkv_features = 3 * features_per_token
@@ -351,6 +365,31 @@ class RoPEAttentionBHWC(nn.Module):
         # Run final 'projection' (though this doesn't change channel count!) shape is same as input: BxHxWxC
         return self.proj(attn)
 
+    # .................................................................................................................
+
+    def toggle_use_complex_numbers(self, use_complex_numbers: bool | None = False) -> bool:
+        """
+        Toggles the use of complex or real-only RoPE encoding
+        The complex variant tends to be fastest within pytorch,
+        but may not be well supported by other run-times.
+        Returns:
+            is_now_using_complex_numbers
+        """
+
+        # For convenience
+        device, dtype = self.proj.weight.device, self.proj.weight.dtype
+
+        # Handle toggle case
+        if use_complex_numbers is None:
+            use_complex_numbers = not isinstance(self.rope_encoder, RPEComplex)
+        PosEncoder = RPEComplex if use_complex_numbers else RPEReal
+        new_rope_encoder = PosEncoder(self.features_per_head, self._rope_theta, self._rope_hw)
+        self.rope_encoder = new_rope_encoder.to(device=device, dtype=dtype)
+
+        return use_complex_numbers
+
+    # .................................................................................................................
+
 
 class MLP2Layers_GELU(nn.Module):
     """
@@ -373,3 +412,5 @@ class MLP2Layers_GELU(nn.Module):
 
     def forward(self, imagelike_bhwc: Tensor) -> Tensor:
         return self.layers(imagelike_bhwc)
+
+    # .................................................................................................................
