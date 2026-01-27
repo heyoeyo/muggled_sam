@@ -58,19 +58,8 @@ class SAMV3SamplingEncoder(nn.Module):
         self.point_encoder = PointSampleEncoder(features_per_token)
         self.box_encoder = BoxSampleEncoder(features_per_token)
 
-        # Set up pre-processing of tokens used prior to transformer layers
-        self.layer_pre_norm = nn.Sequential(
-            nn.Linear(features_per_token, features_per_token),
-            nn.LayerNorm(features_per_token),
-        )
-
-        # Create transformer layers (bulk of the model)
-        self.fusion_layers = nn.ModuleList(
-            (SamplingFusionLayer(features_per_token, num_heads) for idx in range(num_layers))
-        )
-
-        # Final output norm
-        self.output_norm = nn.LayerNorm(features_per_token)
+        # Cross-attention transformer used to mix image data into sampling tokens
+        self.fusion_transformer = SamplingFusionTransformer(features_per_token, num_layers, num_heads)
 
         # Set up storage for keeping track of the model device
         self.register_buffer("missing_token_bnc", torch.zeros(1, 0, features_per_token), persistent=False)
@@ -123,15 +112,7 @@ class SAMV3SamplingEncoder(nn.Module):
         sampling_tokens_bnc = torch.cat(sampling_tokens_list, dim=1)
 
         # Mix image feature information into sampling tokens
-        sampling_tokens_bnc = self.layer_pre_norm(sampling_tokens_bnc)
-        for fusion_layer in self.fusion_layers:
-            sampling_tokens_bnc = fusion_layer(
-                sampling_tokens_bnc=sampling_tokens_bnc,
-                image_tokens_bnc=img_tensor_bnc,
-                image_posenc_bnc=img_pos_enc_bnc,
-            )
-
-        return self.output_norm(sampling_tokens_bnc)
+        return self.fusion_transformer(sampling_tokens_bnc, img_tensor_bnc, img_pos_enc_bnc)
 
     # .................................................................................................................
 
@@ -208,6 +189,55 @@ class SAMV3SamplingEncoder(nn.Module):
         # Sanity check
         assert points_tensor_bn2.ndim == 3, f"Unexpected points shape: {input_shape}, should be Nx2x2 for N boxes"
         return points_tensor_bn2
+
+    # .................................................................................................................
+
+
+class SamplingFusionTransformer(nn.Module):
+    """
+    This is a simple wrapper around the transformer layers used within the sampling encoder.
+
+    While this module is simple enough to include directly in the parent encoder, by splitting
+    it into it's own module it can be compiled independently of the encoder. This is beneficial,
+    since it is otherwise difficult to compile the encoder due to it's flexible inputs.
+
+    This isn't handled as a standalone module in the original implementation, see:
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/geometry_encoders.py#L832-L844
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token: int = 256, num_layers: int = 3, num_heads: int = 8):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Create transformer layers (bulk of the model)
+        self.fusion_layers = nn.ModuleList(
+            (SamplingFusionLayer(features_per_token, num_heads) for idx in range(num_layers))
+        )
+
+        # Set up pre- & post-processing of tokens used with fusion layers
+        self.pre_norm = nn.Sequential(
+            nn.Linear(features_per_token, features_per_token),
+            nn.LayerNorm(features_per_token),
+        )
+        self.out_norm = nn.LayerNorm(features_per_token)
+
+    # .................................................................................................................
+
+    def forward(self, sampling_tokens_bnc: Tensor, img_tensor_bnc: Tensor, img_pos_enc_bnc: Tensor) -> Tensor:
+
+        # Mix image feature information into sampling tokens
+        sampling_tokens_bnc = self.pre_norm(sampling_tokens_bnc)
+        for fusion_layer in self.fusion_layers:
+            sampling_tokens_bnc = fusion_layer(
+                sampling_tokens_bnc=sampling_tokens_bnc,
+                image_tokens_bnc=img_tensor_bnc,
+                image_posenc_bnc=img_pos_enc_bnc,
+            )
+
+        return self.out_norm(sampling_tokens_bnc)
 
     # .................................................................................................................
 

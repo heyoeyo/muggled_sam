@@ -52,7 +52,7 @@ class SAMV3ImageProjection(nn.Module):
         """
         Compute 3 projections at different resolutions, 1x, 2x and 4x
         for both a 'v3' and 'v2' variant. In practice, only one of these may
-        be needed, in these cases consider using '.v#_projection#(...)' functions.
+        be needed, in these cases consider using '.v#_projection(...)' functions.
 
         Returns:
             v3_tokens_x1_x2_x4, v2_tokens_x1_x2_x4
@@ -114,24 +114,18 @@ class MultiResProjection(nn.Module):
             UpscaleCT2x2Layer(half_channels),
             Conv1x1Layer(quarter_channels, out_channels),
             Conv3x3Layer(out_channels),
+            nn.Identity() if not include_samv2_layers else Conv1x1Layer(out_channels, out_channels // 8),
         )
         self.proj_x2 = nn.Sequential(
             UpscaleCT2x2Layer(input_channels),
             Conv1x1Layer(input_channels // 2, out_channels),
             Conv3x3Layer(out_channels),
+            nn.Identity() if not include_samv2_layers else Conv1x1Layer(out_channels, out_channels // 4),
         )
         self.proj_x1 = nn.Sequential(
             Conv1x1Layer(input_channels, out_channels),
             Conv3x3Layer(out_channels),
         )
-
-        # Odd detail. SAMv3 has a separate 'v2' projection, used for 'direct prompting'
-        # -> The v2 projection includes extra layers that reduce the channel count of the hi-res tokens
-        if include_samv2_layers:
-            self.proj_x4.append(Conv1x1Layer(out_channels, out_channels // 8))
-            self.proj_x2.append(Conv1x1Layer(out_channels, out_channels // 4))
-
-        pass
 
     # .................................................................................................................
 

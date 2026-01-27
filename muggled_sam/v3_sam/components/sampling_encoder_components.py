@@ -280,7 +280,7 @@ def custom_roi_align(
         # Compute all sample points in x (note: we need -1 to +1 normalization)
         num_x_interp = (roi_w * num_sample_points_x).to(dtype=torch.int32)
         x_halfstep = (x2_norm - x1_norm) / (2 * num_x_interp).to(dtype=dtype)
-        ix1, ix2 = iy1, iy2 = [(2.0 * x) - 1.0 for x in [(x1_norm + x_halfstep), (x2_norm - x_halfstep)]]
+        ix1, ix2 = [(2.0 * x) - 1.0 for x in [(x1_norm + x_halfstep), (x2_norm - x_halfstep)]]
         x_interp = torch.linspace(ix1, ix2, num_x_interp, device=device, dtype=dtype)
 
         # Compute all sample points in y (note: we need -1 to +1 normalization)

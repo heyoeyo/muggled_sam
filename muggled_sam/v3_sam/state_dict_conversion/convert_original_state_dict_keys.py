@@ -5,8 +5,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-from enum import StrEnum
-
 from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_match_by_lut
 
 
@@ -14,7 +12,7 @@ from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_m
 # %% Stage type
 
 
-class SAM3StageType(StrEnum):
+class SAM3StageType:
     image_encoder = "imgenc"
     image_projection = "imgproj"
     coordinate_encoder = "coordenc"
@@ -817,7 +815,7 @@ def _convert_samplingencoder_keys(key: str) -> None | str:
 
     # Handle encoder layer keys (e.g. 'detector.geometry_encoder.encode.2...')
     if key.startswith("encode."):
-        new_key = key.replace("encode.", "fusion_layers.")
+        new_key = key.replace("encode.", "fusion_transformer.fusion_layers.")
         find_and_replace_lut = {
             "norm1": "selfattn.norm",
             "self_attn": "selfattn.attn",
@@ -833,7 +831,7 @@ def _convert_samplingencoder_keys(key: str) -> None | str:
 
     # Handle layer that's just called 'norm' (otherwise have problems matching to other keys that contain 'norm')
     if key.startswith("norm."):
-        return key.replace("norm.", "layer_pre_norm.1.")
+        return key.replace("norm.", "fusion_transformer.pre_norm.1.")
 
     # Handle re-structuring for all other keys (all stand-alone)
     find_and_replace_lut = {
@@ -845,9 +843,9 @@ def _convert_samplingencoder_keys(key: str) -> None | str:
         "boxes_direct_project": "box_encoder.cxcywh_proj",
         "boxes_pool_project": "box_encoder.img_sample_conv",
         "boxes_pos_enc_project": "box_encoder.posenc_proj",
-        "final_proj": "layer_pre_norm.0",
+        "final_proj": "fusion_transformer.pre_norm.0",
         "img_pre_norm": "img_pre_norm",
-        "encode_norm": "output_norm",
+        "encode_norm": "fusion_transformer.out_norm",
     }
     has_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
     if has_match:

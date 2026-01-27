@@ -1,12 +1,12 @@
 # MuggledSAM
 
-This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch](https://ai.meta.com/research/#projects) ([SAM1](https://github.com/facebookresearch/segment-anything), [SAM2](https://github.com/facebookresearch/sam2) & [SAM3](https://github.com/facebookresearch/sam3)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand. Most of the changes come from separating/simplifying the different components of the model structure.
+This repo contains a simplified implementation of the awesome 'Segment Anything' models from [facebookresearch](https://ai.meta.com/research/#projects) ([SAM1](https://github.com/facebookresearch/segment-anything), [SAM2](https://github.com/facebookresearch/sam2) & [SAM3](https://github.com/facebookresearch/sam3)), with the intention of [removing the magic](https://en.wikipedia.org/wiki/Muggle) from the original code base to make it easier to understand.
 
 <p align="center">
   <img src=".readme_assets/demo_anim.gif">
 </p>
 
-While the focus of this implementation is on interactivity and readability of the model code, it includes support for arbitrary input resolutions, which can improve performance in some cases. For example, at reduced resolutions, SAMv2 gets a [~4x speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) on video segmentation.
+As a result of simplifying the code, this repo supports video tracking on _arbitrarily long_ videos (using the v2 or v3 models). It also supports adjustments to the input image resolution, which can [speed up](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation) model inference in some cases.
 
 There is a written walkthrough explaining the structure of the [SAMv1 model](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/v1_sam), with documentation for v2/v3 on the way!
 
@@ -53,6 +53,11 @@ It's also possible to install this repo directly from Github:
 pip install git+https://github.com/heyoeyo/muggled_sam
 ```
 This will make the repo available as a library (e.g. to use models in another project), though the demo scripts will not be available through this installation method.
+
+
+#### Alternative methods
+
+Using an alternative package manager like [conda](https://docs.conda.io/projects/conda/en/stable/user-guide/getting-started.html) or [uv](https://docs.astral.sh/uv/) can also work but may require slightly different installation commands. If you have an existing python environment set up for another pytorch image model, it can probably be reused with this repo.
 
 
 ### Model Weights
@@ -134,6 +139,7 @@ You can also add  `--help` to the end of this command to see a list of additiona
 
 If you don't provide an image path (using the `-i` flag), then you will be asked to provide one when you run the script, likewise for a path to the model weights. Afterwards, a window will pop-up, with options for how to 'prompt' the model (e.g. bounding boxes or clicking to add points) along the top and various sliders to alter the segmentation results at the bottom. Results can be saved by pressing the `s` key.
 
+Check out the [image segmentation](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) example for a simpler, hackable version of this functionality.
 
 ## Run Video (or webcam)
 
