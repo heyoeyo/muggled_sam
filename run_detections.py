@@ -31,6 +31,7 @@ from muggled_sam.demo_helpers.video_frame_select_ui import run_video_frame_selec
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.saving import get_save_name, save_json_data, save_image_data
+from muggled_sam.demo_helpers.mask_postprocessing import sample_points_from_mask
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -46,6 +47,7 @@ from muggled_sam.demo_helpers.text_input import read_user_text_input
 default_device = get_default_device_string()
 default_image_path = None
 default_model_path = None
+default_mask_path = None
 default_vocab_path = None
 default_display_size = 680
 default_base_size = None
@@ -54,6 +56,12 @@ default_base_size = None
 parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (SAM) on a single image")
 parser.add_argument("-i", "--image_path", default=default_image_path, type=str, help="Path to input image")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM3 model weights")
+parser.add_argument(
+    "--mask_path",
+    default=default_mask_path,
+    type=str,
+    help="Path to a mask image, which will be used to generate initial point prompts for detection",
+)
 parser.add_argument(
     "-r", "--ref_image_path", nargs="?", default=None, const="", type=str, help="Path to a (different) reference image"
 )
@@ -127,6 +135,7 @@ parser.add_argument(
 args = parser.parse_args()
 arg_image_path = args.image_path
 arg_model_path = args.model_path
+arg_mask_path = args.mask_path
 arg_ref_image_path = args.ref_image_path
 arg_bpe_path = args.bpe_vocab_path
 default_text_prompt = args.text_prompt if len(args.text_prompt) > 0 else None
@@ -151,9 +160,9 @@ _, history_refimgpath = history.read("reference_image_path")
 
 # Get pathing to resources, if not provided already
 have_different_ref_image = arg_ref_image_path is not None
-image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
 if have_different_ref_image:
     arg_ref_image_path = ask_for_path_if_missing(arg_ref_image_path, "reference image", history_refimgpath)
+image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
 model_path = ask_for_model_path_if_missing(__file__, arg_model_path, history_modelpath)
 
 # Store history for use on reload
@@ -198,7 +207,16 @@ if enable_crop_ui:
 
 # Load reference image, if needed
 input_ref_image_bgr = cv2.imread(arg_ref_image_path) if have_different_ref_image else input_image_bgr.copy()
-assert input_ref_image_bgr is not None, f"Error loading reference imag: ({arg_ref_image_path})"
+assert input_ref_image_bgr is not None, f"Error loading reference image: {arg_ref_image_path}"
+
+# Load mask for sampling, if needed
+initial_prompt_points_list = []
+if arg_mask_path is not None:
+    mask_image = cv2.imread(arg_mask_path)
+    assert mask_image is not None, f"Error loading mask: {arg_mask_path}"
+    print("", "Loading mask for initial point prompts...", sep="\n", flush=True)
+    initial_prompt_points_list = sample_points_from_mask(mask_image)
+    print(f"  Done! Generated {len(initial_prompt_points_list)} points")
 
 # Handle compilation
 if enable_compilation:
@@ -506,6 +524,10 @@ try:
             for olay in (pos_box_tool_olay, neg_box_tool_olay, pos_point_tool_olay, neg_point_tool_olay):
                 olay.clear()
             need_detection_update = True
+
+            # Populate tool overlay points (in case we used a mask on startup)
+            if len(initial_prompt_points_list) > 0:
+                pos_point_tool_olay.add_points(*initial_prompt_points_list)
 
         # Handle enabling/disabling of inputs when switching tools
         if is_tool_select_changed:

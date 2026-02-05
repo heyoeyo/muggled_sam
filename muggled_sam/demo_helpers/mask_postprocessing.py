@@ -282,3 +282,77 @@ def get_box_nms_indexing(
         box_idx_left_to_check = other_idxs[idx_of_non_overlaps]
 
     return box_idx_to_keep
+
+
+def sample_points_from_mask(mask_image: ndarray, num_points_approx: int = 25) -> list[tuple[float, float]]:
+    """
+    Helper used to sample points from a mask.
+    Uses a fibonnaci spiral sampling pattern to give somewhat
+    jittered sampling pattern.
+
+    The input mask image is expected to be a numpy array with a
+    shape of either HxW or HxWxC (i.e. an image loaded using opencv).
+
+    The 'num_points_approx' setting controls how densely the mask
+    will be sampled, but actual sample counts can be much lower,
+    depending on the mask shape. Also note that each 'island' of the
+    input mask will be sampled separately!
+
+    Returns:
+        sample_xy_norm_list
+        -> This is a list with 'N' entries, each of the form: (x,y),
+           where both x & y are normalized 0-to-1
+    """
+
+    # Compute fib. spiral polar values
+    golden_ratio = (1.0 + 5.0**0.5) / 2.0
+    num_fib_pts = golden_ratio * num_points_approx
+    pt_idx = np.arange(0, num_fib_pts, dtype=np.float32)
+    r = (1) * np.sqrt(pt_idx / num_fib_pts) / np.sqrt(2, dtype=np.float32)
+    theta = 2.0 * np.pi * (pt_idx / golden_ratio)
+
+    # Convert from polar to xy coords
+    fib_sample_x_norm = 0.5 + r * np.cos(theta)
+    fib_sample_y_norm = 0.5 + r * np.sin(theta)
+
+    # Remove out-of-bounds points (we generate lots of these due to circular perimeter vs. square image!)
+    ok_x_pts = np.bitwise_and(fib_sample_x_norm > 0.0, fib_sample_x_norm < 1.0)
+    ok_y_pts = np.bitwise_and(fib_sample_y_norm > 0.0, fib_sample_y_norm < 1.0)
+    ok_pts = np.bitwise_and(ok_x_pts, ok_y_pts)
+    fib_sample_x_norm, fib_sample_y_norm = fib_sample_x_norm[ok_pts], fib_sample_y_norm[ok_pts]
+
+    # Force mask to be grayscale
+    ref_h, ref_w = mask_image.shape[0:2]
+    if mask_image.ndim > 2:
+        assert mask_image.ndim == 3, "Must provide a mask with shape HxW or HxWxC"
+        mask_image = cv2.cvtColor(mask_image, cv2.COLOR_BGR2GRAY) if mask_image.shape[2] == 3 else mask_image[:, :, 0]
+
+    # Get each 'island' of the mask for sampling
+    mask_bin = mask_image > 0
+    contours_px_list, _ = cv2.findContours(np.uint8(mask_bin), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Overlay fib. sampling pattern with each mask island and remove out-of-mask points
+    final_sample_xy_px_list = []
+    for contour_pts_list in contours_px_list:
+
+        # Skip bad contours
+        if len(contour_pts_list) < 3:
+            continue
+
+        # Skip over zero-dimension masks (can happen due to how opencv handles contours)
+        x1_px, y1_px, w_px, h_px = cv2.boundingRect(contour_pts_list)
+        if w_px < 1 or h_px < 1:
+            continue
+
+        # Map sample points into pixel units
+        sample_x_px = np.round(x1_px + fib_sample_x_norm * (w_px - 1)).astype(np.int32)
+        sample_y_px = np.round(y1_px + fib_sample_y_norm * (h_px - 1)).astype(np.int32)
+
+        # Only store points that land on valid mask points
+        is_in_mask = mask_bin[sample_y_px, sample_x_px]
+        final_sample_xy_px = np.column_stack((sample_x_px[is_in_mask], sample_y_px[is_in_mask]))
+        final_sample_xy_px_list.append(final_sample_xy_px)
+
+    # Normalize sample points for output
+    out_xy_norm = np.concatenate(final_sample_xy_px_list) / np.float32((ref_w - 1, ref_h - 1))
+    return out_xy_norm.tolist()
