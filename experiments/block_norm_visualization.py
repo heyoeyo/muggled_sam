@@ -292,7 +292,7 @@ norm_grid = GridStack(*norm_btns, target_aspect_ratio=token_hw[0] / token_hw[1])
 # Set up text displays
 block_txt = ValueBlock("Block: ", 0)
 min_txt = ValueBlock("Min: ", "-")
-max_txt = ValueBlock("Min: ", "-")
+max_txt = ValueBlock("Max: ", "-")
 channel_txt = ValueBlock("Channel: ", 0)
 show_norm_btn = ToggleButton("Show Norm", default_state=False, text_scale=0.35, on_color=(35, 75, 200))
 text_row = VStack(HStack(block_txt, min_txt, max_txt), HStack(show_norm_btn, channel_txt))
