@@ -284,6 +284,7 @@ def get_box_nms_indexing(
     return box_idx_to_keep
 
 
+# %%
 def sample_points_from_mask(mask_image: ndarray, num_points_approx: int = 25) -> list[tuple[float, float]]:
     """
     Helper used to sample points from a mask.
@@ -331,22 +332,28 @@ def sample_points_from_mask(mask_image: ndarray, num_points_approx: int = 25) ->
     mask_bin = mask_image > 0
     contours_px_list, _ = cv2.findContours(np.uint8(mask_bin), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # Figure out contour areas, which will be used to allocate sample points
+    contours_px_list = [cont for cont in contours_px_list if len(cont) > 2]
+    contour_areas = [cv2.contourArea(cont) for cont in contours_px_list]
+    total_mask_area = max(sum(contour_areas), 1.0)
+
     # Overlay fib. sampling pattern with each mask island and remove out-of-mask points
     final_sample_xy_px_list = []
-    for contour_pts_list in contours_px_list:
-
-        # Skip bad contours
-        if len(contour_pts_list) < 3:
-            continue
+    for contour_pts_list, c_area in zip(contours_px_list, contour_areas):
 
         # Skip over zero-dimension masks (can happen due to how opencv handles contours)
         x1_px, y1_px, w_px, h_px = cv2.boundingRect(contour_pts_list)
         if w_px < 1 or h_px < 1:
             continue
 
+        # Take only a subset of sampling points, based on area of this mask island
+        num_sample_pts = max(round(num_fib_pts * c_area / total_mask_area), 1)
+        fib_subset_x_norm = fib_sample_x_norm[:num_sample_pts]
+        fib_subset_y_norm = fib_sample_y_norm[:num_sample_pts]
+
         # Map sample points into pixel units
-        sample_x_px = np.round(x1_px + fib_sample_x_norm * (w_px - 1)).astype(np.int32)
-        sample_y_px = np.round(y1_px + fib_sample_y_norm * (h_px - 1)).astype(np.int32)
+        sample_x_px = np.round(x1_px + fib_subset_x_norm * (w_px - 1)).astype(np.int32)
+        sample_y_px = np.round(y1_px + fib_subset_y_norm * (h_px - 1)).astype(np.int32)
 
         # Only store points that land on valid mask points
         is_in_mask = mask_bin[sample_y_px, sample_x_px]

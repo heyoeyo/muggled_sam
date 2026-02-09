@@ -114,6 +114,12 @@ parser.add_argument(
     help="Hide text info elements from UI",
 )
 parser.add_argument(
+    "--printouts",
+    default=False,
+    action="store_true",
+    help="If true, raw prompt data will printed out to the terminal",
+)
+parser.add_argument(
     "--realtime",
     action="store_true",
     help="If set, real-time prompt inputs will be enabled by default",
@@ -145,6 +151,7 @@ use_float32 = args.use_float32
 use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 show_info = not args.hide_info
+enable_printouts = args.printouts
 default_realtime = args.realtime
 enable_compilation = args.compile
 enable_crop_ui = args.crop
@@ -529,6 +536,11 @@ try:
             if len(initial_prompt_points_list) > 0:
                 pos_point_tool_olay.add_points(*initial_prompt_points_list)
 
+                # A bit hacky, fake point clicks to reset initial point prompts
+                tool_ref = radio_constraint.change_to(0)
+                is_tool_select_changed = True
+                is_mouse_clicked = True
+
         # Handle enabling/disabling of inputs when switching tools
         if is_tool_select_changed:
             is_pos_point, is_neg_point = [tool_ref is elem for elem in (tool_pospoint_toggle, tool_negpoint_toggle)]
@@ -658,6 +670,10 @@ try:
                 "negative_points_list": negative_points_list if use_points else None,
                 "include_coordinate_encodings": include_coords,
             }
+            if enable_printouts:
+                print("")
+                for key, value in prompts_dict.items():
+                    print(key, ":", value)
 
             # Run model with timing
             t1 = perf_counter()
