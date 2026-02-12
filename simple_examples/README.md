@@ -33,6 +33,13 @@ _(Supports SAMv3)_
 This script contains the most basic usage of the SAMv3 detection functionality. It allows multiple objects to be detected using a single text prompt or by specifying a part of the image (using points or bounding boxes) as a reference for what to detect.
 
 
+## Object Detection (cross-image)
+
+_(Supports SAMv3)_
+
+This is a variation of the object detection example where an object from a 'reference' image is used to detect objects in a separate 'target' image.
+
+
 ## Speed Benchmarking
 
 _(Supports SAMv1, SAMv2, SAMv3)_

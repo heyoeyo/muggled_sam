@@ -14,12 +14,13 @@ except ModuleNotFoundError:
     else:
         raise ImportError("Can't find path to muggled_sam folder!")
 import cv2
+import numpy as np
 import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
 
 # Define pathing
 image_path = "/path/to/image.jpg"
-model_path = "/path/to/samv3_model.pth"
+model_path = "/path/to/sam3.pt"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
@@ -40,9 +41,9 @@ if img_bgr is None:
     raise FileNotFoundError(f"Error loading image from: {image_path}")
 
 # Load and set up detector model
-model_config_dict, base_model = make_sam_from_state_dict(model_path)
-base_model.to(device=device, dtype=dtype)
-detmodel = base_model.make_detector_model()
+model_config_dict, full_model = make_sam_from_state_dict(model_path)
+full_model.to(device=device, dtype=dtype)
+detmodel = full_model.make_detector_model()
 
 # Run detection
 encoded_imgs, token_hw, preencode_hw = detmodel.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
@@ -75,3 +76,37 @@ print("Raw scores shape:", tuple(detection_scores.shape))
 print("Presence score:", *presence_score.tolist())
 print("Num filtered detections:", num_filtered_detections)
 print("Filtered masks shape:", tuple(filtered_masks.shape))
+
+# Set up image for display
+disp_scale_factor = 0.5
+scaled_img = cv2.resize(img_bgr, dsize=None, fx=disp_scale_factor, fy=disp_scale_factor)
+masked_img = scaled_img.copy()
+
+# Draw prompts onto image
+norm_to_px_scale = np.float32((scaled_img.shape[1] - 1, scaled_img.shape[0] - 1))
+for pt in pos_point_xy_norm_list:
+    pt_xy_px = np.round((np.float32(pt) * norm_to_px_scale)).astype(np.int32).tolist()
+    cv2.circle(scaled_img, pt_xy_px, 3, (0, 255, 0), -1)
+for pt in neg_box_xy1xy2_norm_list:
+    pt_xy_px = np.round((np.float32(pt) * norm_to_px_scale)).astype(np.int32).tolist()
+    cv2.circle(scaled_img, pt_xy_px, 3, (0, 0, 255), -1)
+for xy1xy2 in pos_box_xy1xy2_norm_list:
+    xy1_px, xy2_px = np.round(np.float32(xy1xy2) * norm_to_px_scale).astype(np.int32).tolist()
+    cv2.rectangle(scaled_img, xy1_px, xy2_px, (0, 255, 0), 2)
+for xy1xy2 in neg_point_xy_norm_list:
+    xy1_px, xy2_px = np.round(np.float32(xy1xy2) * norm_to_px_scale).astype(np.int32).tolist()
+    cv2.rectangle(scaled_img, xy1_px, xy2_px, (0, 0, 255), 2)
+
+# Draw masked image (with black-out if we didn't get any masks)
+num_filtered_detections = filtered_masks.shape[0]
+if num_filtered_detections == 0:
+    filtered_masks = torch.full((1, filtered_masks.shape[-2], filtered_masks.shape[-1]), -10.0).to(filtered_masks)
+    print("", "No masks detected!", sep="\n")
+scaled_masks = torch.nn.functional.interpolate(filtered_masks[None], masked_img.shape[0:2]).squeeze(0)
+combined_mask, _ = (scaled_masks > 0).max(dim=0)
+masked_img = cv2.copyTo(masked_img, combined_mask.byte().cpu().numpy())
+
+# Final display
+cv2.imshow("Detection result", np.hstack((scaled_img, masked_img)))
+cv2.waitKey(0)
+cv2.destroyAllWindows()
