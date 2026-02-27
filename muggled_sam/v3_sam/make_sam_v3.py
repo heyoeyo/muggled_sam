@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+import json
 import torch
 
 from .sam_v3_model import SAMV3Model
@@ -119,6 +120,57 @@ def make_samv3_from_original_state_dict(
 # .....................................................................................................................
 
 
+def make_samv3_from_muggled_state_dict(
+    muggled_state_dict: dict | str,
+    strict_load: bool = True,
+    weights_only: bool = True,
+) -> [dict, SAMV3Model]:
+    """
+    Similar to the '...from_original_state_dict' function, this function instantiates a
+    SAMV3 model from a state dictionary file (e.g. model weights) and automatically
+    handles setting up the model configuration/sizing parameters.
+
+    This variant of the function is meant for loading from weights that were directly
+    saved from a muggled-SAMV3 instance, rather than the original model weights.
+
+    The state dict can be provided directly (e.g. from state_dict = torch.load(...)) or
+    a string can be given, in which case it will be assumed to be a path to load the state dict
+
+    Returns:
+        model_config_dict, sam_v3_model
+    """
+
+    # If we're given a string, assume it's a path to the state dict
+    need_to_load = isinstance(muggled_state_dict, str)
+    if need_to_load:
+        path_to_state_dict = muggled_state_dict
+        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
+        try:
+            muggled_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
+        except RuntimeError:
+            muggled_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
+
+    # Try to get config from state dict
+    config_key = "config_muggled_samv3"
+    config_as_tensor = muggled_state_dict.get(config_key, None)
+    if config_as_tensor is None:
+        raise KeyError(f"Cannot load model! State dict is missing configuration ({config_key})")
+
+    # Convert config from tensor->bytes->string/json->dictionary
+    config_as_bytes = bytearray(config_as_tensor.cpu().tolist())
+    config_as_str = config_as_bytes.decode()
+    config_dict = json.loads(config_as_str)
+
+    # Load model & set model weights
+    sam_model = make_sam_v3(**config_dict)
+    sam_model.load_state_dict(muggled_state_dict, strict_load)
+
+    return config_dict, sam_model
+
+
+# .....................................................................................................................
+
+
 def make_sam_v3(
     features_per_prompt_token=256,
     features_per_decoder_token=128,
@@ -158,6 +210,11 @@ def make_sam_v3(
     See the original 'model builder' code for more information:
     https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model_builder.py
     """
+
+    # Convert config to byte-data so it can be stored with the model
+    config_dict = locals()
+    config_as_str = json.dumps(config_dict, separators=(",", ":"), indent=None)
+    config_bytes = bytearray(config_as_str.encode())
 
     # Construct model components
     imgenc_model = SAMV3ImageEncoder(
@@ -225,4 +282,5 @@ def make_sam_v3(
         imgexm_model,
         exmdet_model,
         exmseg_model,
+        config_bytes,
     )

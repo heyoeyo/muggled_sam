@@ -41,10 +41,14 @@ class SAMV2Model(nn.Module):
         mask_decoder_model: SAMV2MaskDecoder,
         memory_encoder_model: SAMV2MemoryEncoder,
         memory_image_fusion_model: SAMV2MemoryImageFusion,
+        config_bytes: bytearray,
     ):
 
         # Inherit from parent
         super().__init__()
+
+        # Store config data
+        self.config_muggled_samv2 = nn.Parameter(torch.tensor(config_bytes, dtype=torch.uint8), requires_grad=False)
 
         # Store SAM model components
         self.image_encoder = image_encoder_model

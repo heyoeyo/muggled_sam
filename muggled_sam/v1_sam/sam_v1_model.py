@@ -36,10 +36,14 @@ class SAMV1Model(nn.Module):
         coordinate_encoder: SAMV1CoordinateEncoder,
         prompt_encoder_model: SAMV1PromptEncoder,
         mask_decoder_model: SAMV1MaskDecoder,
+        config_bytes: bytearray,
     ):
 
         # Inherit from parent
         super().__init__()
+
+        # Store config data
+        self.config_muggled_samv1 = nn.Parameter(torch.tensor(config_bytes, dtype=torch.uint8), requires_grad=False)
 
         # Store SAM model components
         self.image_encoder = image_encoder_model

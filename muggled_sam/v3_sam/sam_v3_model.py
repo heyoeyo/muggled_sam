@@ -62,10 +62,14 @@ class SAMV3Model(nn.Module):
         image_exemplar_fusion_model: SAMV3ImageExemplarFusion,
         exemplar_detector_model: SAMV3ExemplarDetector,
         exemplar_segmentation_model: SAMV3ExemplarSegmentation,
+        config_bytes: bytearray,
     ):
 
         # Inherit from parent
         super().__init__()
+
+        # Store config data
+        self.config_muggled_samv3 = nn.Parameter(torch.tensor(config_bytes, dtype=torch.uint8), requires_grad=False)
 
         # Store base SAM components
         self.image_encoder = image_encoder_model
