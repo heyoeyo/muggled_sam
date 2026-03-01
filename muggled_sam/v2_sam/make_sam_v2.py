@@ -18,7 +18,7 @@ from .memory_encoder_model import SAMV2MemoryEncoder
 from .memory_image_fusion_model import SAMV2MemoryImageFusion
 
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
-from .state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
+from .state_dict_conversion.convert_original_state_dict_keys import SAM2ModuleType, convert_state_dict_keys
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -69,16 +69,16 @@ def make_samv2_from_original_state_dict(
 
     # Get model config from weights (i.e. sam large vs sam base) & convert to new keys/state dict
     model_config_dict = get_model_config_from_state_dict(original_state_dict)
-    new_state_dict = convert_state_dict_keys(model_config_dict, original_state_dict)
+    new_state_dict, _ = convert_state_dict_keys(model_config_dict, original_state_dict)
 
     # Load model & set model weights
     sam_model = make_sam_v2(**model_config_dict)
-    sam_model.image_encoder.load_state_dict(new_state_dict["imgencoder"], strict_load)
-    sam_model.coordinate_encoder.load_state_dict(new_state_dict["coordencoder"], strict_load)
-    sam_model.prompt_encoder.load_state_dict(new_state_dict["promptencoder"], strict_load)
-    sam_model.mask_decoder.load_state_dict(new_state_dict["maskdecoder"], strict_load)
-    sam_model.memory_encoder.load_state_dict(new_state_dict["memoryencoder"], strict_load)
-    sam_model.memory_image_fusion.load_state_dict(new_state_dict["memoryfusion"], strict_load)
+    sam_model.image_encoder.load_state_dict(new_state_dict[SAM2ModuleType.image_encoder], strict_load)
+    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM2ModuleType.coordinate_encoder], strict_load)
+    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM2ModuleType.prompt_encoder], strict_load)
+    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM2ModuleType.mask_decoder], strict_load)
+    sam_model.memory_encoder.load_state_dict(new_state_dict[SAM2ModuleType.memory_encoder], strict_load)
+    sam_model.memory_image_fusion.load_state_dict(new_state_dict[SAM2ModuleType.memory_image_fusion], strict_load)
 
     return model_config_dict, sam_model
 

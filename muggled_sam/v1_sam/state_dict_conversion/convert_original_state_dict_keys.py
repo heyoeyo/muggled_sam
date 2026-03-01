@@ -5,24 +5,47 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from collections import defaultdict
+
 from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_match_by_lut
+
+from torch import Tensor
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Define sub-module names
+
+
+class SAM1ModuleType:
+    image_encoder = "image_encoder"
+    coordinate_encoder = "coordinate_encoder"
+    prompt_encoder = "prompt_encoder"
+    mask_decoder = "mask_decoder"
+    text_encoder = "text_encoder"
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Main function
 
 
-def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dict[str, dict]:
+def convert_state_dict_keys(
+    config_dict: dict,
+    original_state_dict: dict,
+    warn_missing: bool = True,
+    report_unused: bool = False,
+) -> tuple[dict[SAM1ModuleType, dict], dict[str, str]]:
     """
     Function which converts original Segment-Anything model weights
     into the new format needed by the model implementation in this repo (MuggledSAM)
     (layer names are renamed to make the model easier to understand, some are deleted or re-arranged)
 
     Returns:
-        new_state_dict
+        new_state_dict, reverse_key_lut
 
-    Note: The new state dict has keys corresponding the the model components:
-        "imgencoder", "coordencoder", "promptencoder", "maskdecoder"
+    - The 'reverse_key_lut' has keys corresponding to the new name of the
+      model weights and values which represent the original weight names.
+      This is meant to help convert from muggled-sam names back to
+      the original weight names
     """
 
     # Grab model config info for properly interpreting model structure
@@ -30,11 +53,14 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
     num_imgenc_blocks = config_dict["num_encoder_blocks"]
     imgenc_blocks_per_stage = num_imgenc_blocks // num_imgenc_stages
 
-    # Allocate storage for state dict of each (new) model component
-    imgenc_sd = {}
-    coordencoder_sd = {}
-    promptencoder_sd = {}
-    maskdecoder_sd = {}
+    # Allocate storage for new state dict & reverse lookup (i.e. how new keys map to original keys)
+    new_state_dict = defaultdict(dict)
+    reverse_key_lut = {}
+
+    def _update_sd(stage_type: str, old_key: str, new_key: str, new_data: Tensor):
+        new_state_dict[stage_type][new_key] = new_data
+        reverse_key_lut[f"{stage_type}.{new_key}"] = old_key
+        return
 
     # Loop over all midas state dict keys and convert them to new formatting
     found_key = lambda key: key is not None
@@ -54,17 +80,17 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             if new_key == "posenc.base_embedding_bchw":
                 mod_data = mod_data.permute(0, 3, 1, 2)
 
-            imgenc_sd[new_key] = mod_data
+            _update_sd(SAM1ModuleType.image_encoder, orig_key, new_key, mod_data)
             continue
 
         new_key = _convert_coordencoder_keys(orig_key)
         if found_key(new_key):
-            coordencoder_sd[new_key] = orig_data
+            _update_sd(SAM1ModuleType.coordinate_encoder, orig_key, new_key, orig_data)
             continue
 
         new_key = _convert_promptencoder_keys(orig_key)
         if found_key(new_key):
-            promptencoder_sd[new_key] = orig_data
+            _update_sd(SAM1ModuleType.prompt_encoder, orig_key, new_key, orig_data)
             continue
 
         new_key = _convert_maskdecoder_keys(orig_key)
@@ -74,27 +100,20 @@ def convert_state_dict_keys(config_dict: dict, original_state_dict: dict) -> dic
             layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.1")
             mod_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
-            maskdecoder_sd[new_key] = mod_data
+            _update_sd(SAM1ModuleType.mask_decoder, orig_key, new_key, mod_data)
             continue
 
         # Warn about any missed weights
-        print(
-            "",
-            "Warning, model weight not handled on load:",
-            f"    Key: '{orig_key}'",
-            f"  Shape: {tuple(orig_data.shape)}",
-            sep="\n",
-        )
+        if warn_missing:
+            print(
+                "",
+                "Warning, model weight not handled on load:",
+                f"    Key: '{orig_key}'",
+                f"  Shape: {tuple(orig_data.shape)}",
+                sep="\n",
+            )
 
-    # Bundle new state dict model components together for easier handling
-    new_state_dict = {
-        "imgencoder": imgenc_sd,
-        "coordencoder": coordencoder_sd,
-        "promptencoder": promptencoder_sd,
-        "maskdecoder": maskdecoder_sd,
-    }
-
-    return new_state_dict
+    return new_state_dict, reverse_key_lut
 
 
 # ---------------------------------------------------------------------------------------------------------------------

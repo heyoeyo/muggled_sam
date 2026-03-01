@@ -5,26 +5,30 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from collections import defaultdict
+
 from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_match_by_lut
+
+from torch import Tensor
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# %% Stage type
+# %% Define sub-module names
 
 
-class SAM3StageType:
-    image_encoder = "imgenc"
-    image_projection = "imgproj"
-    coordinate_encoder = "coordenc"
-    prompt_encoder = "promptenc"
-    mask_decoder = "maskdec"
-    memory_encoder = "memenc"
-    memory_image_fusion = "memimgfusion"
-    text_encoder = "txtenc"
-    sampling_encoder = "samplingenc"
-    image_exemplar_fusion = "imgexmfusion"
-    exemplar_detector = "exmdetector"
-    exemplar_segmentation = "exmsegmentation"
+class SAM3ModuleType:
+    image_encoder = "image_encoder"
+    image_projection = "image_projection"
+    coordinate_encoder = "coordinate_encoder"
+    prompt_encoder = "prompt_encoder"
+    mask_decoder = "mask_decoder"
+    memory_encoder = "memory_encoder"
+    memory_image_fusion = "memory_image_fusion"
+    text_encoder = "text_encoder"
+    sampling_encoder = "sampling_encoder"
+    image_exemplar_fusion = "image_exemplar_fusion"
+    exemplar_detector = "exemplar_detector"
+    exemplar_segmentation = "exemplar_segmentation"
     not_used = "not_used"
     unknown = "unknown"
 
@@ -34,18 +38,23 @@ class SAM3StageType:
 
 
 def convert_state_dict_keys(
-    config_dict: dict, original_state_dict: dict, warn_missing: bool = True, report_unused: bool = False
-) -> dict[SAM3StageType, dict]:
+    config_dict: dict,
+    original_state_dict: dict,
+    warn_missing: bool = True,
+    report_unused: bool = False,
+) -> tuple[dict[SAM3ModuleType, dict], dict[str, str]]:
     """
     Function which converts original SAM3 model weights into the new format
     needed by the model implementation in this repo (MuggledSAM).
     (layer names are renamed to make the model easier to understand, some are deleted or re-arranged)
 
     Returns:
-        new_state_dict
+        new_state_dict, reverse_key_lut
 
-    Note: The new state dict has keys corresponding the the model components,
-          see the SAM3StageType enum for more details.
+    - The 'reverse_key_lut' has keys corresponding to the new name of the
+      model weights and values which represent the original weight names.
+      This is meant to help convert from muggled-sam names back to
+      the original weight names
     """
 
     # Grab model config info for properly interpreting model structure
@@ -53,29 +62,24 @@ def convert_state_dict_keys(
     num_imgenc_blocks = config_dict["imgencoder_num_blocks"]
     imgenc_blocks_per_stage = num_imgenc_blocks // num_imgenc_stages
 
-    # Allocate storage for state dict of each (newly organized) model component
-    imgenc_sd = {}
-    imgproj_sd = {}
-    coordencoder_sd = {}
-    promptencoder_sd = {}
-    maskdecoder_sd = {}
-    memencoder_sd = {}
-    memimgfusion_sd = {}
-    txtencoder_sd = {}
-    samplingencoder_sd = {}
-    imgexmfusion_sd = {}
-    exmdetector_sd = {}
-    exmsegmentation_sd = {}
+    # Allocate storage for new state dict & reverse lookup (i.e. how new keys map to original keys)
+    new_state_dict = defaultdict(dict)
+    reverse_key_lut = {}
+
+    def _update_sd(module_type: str, old_key: str, new_key: str, new_data: Tensor):
+        new_state_dict[module_type][new_key] = new_data
+        reverse_key_lut[f"{module_type}.{new_key}"] = old_key
+        return
 
     # Loop over all state dict keys and convert them to new formatting
     for orig_key, orig_data in original_state_dict.items():
 
         # For sanity, make sure the key is definitely a string
         orig_key = str(orig_key)
-        sam_stage_type = get_stage_type(orig_key)
+        sam_module_type = get_module_type(orig_key)
         new_key, new_data = orig_key, orig_data
 
-        if sam_stage_type == SAM3StageType.image_encoder:
+        if sam_module_type == SAM3ModuleType.image_encoder:
 
             # Skip unused keys
             new_key = _convert_imgenc_keys(orig_key, imgenc_blocks_per_stage)
@@ -89,33 +93,33 @@ def convert_state_dict_keys(
                 new_data = new_data[0, 1:, :].reshape(1, 24, 24, 1024).permute(0, 3, 1, 2)
 
             # Store new key/weight data
-            imgenc_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.image_projection:
+        elif sam_module_type == SAM3ModuleType.image_projection:
 
             # Skip unused keys
             new_key = _convert_imgproj_keys(orig_key)
             if new_key is None:
                 continue
-            imgproj_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.coordinate_encoder:
+        elif sam_module_type == SAM3ModuleType.coordinate_encoder:
 
             # Skip unused keys
             new_key = _convert_coordencoder_keys(orig_key)
             if new_key is None:
                 continue
-            coordencoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.prompt_encoder:
+        elif sam_module_type == SAM3ModuleType.prompt_encoder:
 
             # Skip unused keys
             new_key = _convert_promptencoder_keys(orig_key)
             if new_key is None:
                 continue
-            promptencoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.mask_decoder:
+        elif sam_module_type == SAM3ModuleType.mask_decoder:
 
             # Skip unused keys
             new_key = _convert_maskdecoder_keys(orig_key)
@@ -126,9 +130,9 @@ def convert_state_dict_keys(
             layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.norm")
             new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
-            maskdecoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.memory_encoder:
+        elif sam_module_type == SAM3ModuleType.memory_encoder:
 
             # Skip unused keys
             new_key = _convert_memencoder_keys(orig_key)
@@ -152,17 +156,17 @@ def convert_state_dict_keys(
             if "per_channel_scale" in new_key:
                 new_data = new_data.reshape(1, -1, 1, 1)
 
-            memencoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.memory_image_fusion:
+        elif sam_module_type == SAM3ModuleType.memory_image_fusion:
 
             # Skip unused keys
             new_key = _convert_memimgfusion_keys(orig_key)
             if new_key is None:
                 continue
-            memimgfusion_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.text_encoder:
+        elif sam_module_type == SAM3ModuleType.text_encoder:
 
             # Skip unused keys
             new_key = _convert_txtencoder_keys(orig_key)
@@ -173,9 +177,9 @@ def convert_state_dict_keys(
             if new_key.startswith("NOT_USED"):
                 continue
 
-            txtencoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.sampling_encoder:
+        elif sam_module_type == SAM3ModuleType.sampling_encoder:
 
             # Skip unused keys
             new_key = _convert_samplingencoder_keys(orig_key)
@@ -185,9 +189,11 @@ def convert_state_dict_keys(
             # Split label embedding into separate fg/bg parameters with shape: 1x1xC (originally a 2xC 'nn.Embedding')
             if new_key.endswith("label_embed.weight"):
                 neg_label = new_key.replace("label_embed.weight", "negative_coord_label")
-                samplingencoder_sd[neg_label] = new_data[0].unsqueeze(0).unsqueeze(0)
+                # samplingencoder_sd[neg_label] = new_data[0].unsqueeze(0).unsqueeze(0)
+                _update_sd(sam_module_type, orig_key, neg_label, new_data[0].unsqueeze(0).unsqueeze(0))
                 pos_label = new_key.replace("label_embed.weight", "positive_coord_label")
-                samplingencoder_sd[pos_label] = new_data[1].unsqueeze(0).unsqueeze(0)
+                # samplingencoder_sd[pos_label] = new_data[1].unsqueeze(0).unsqueeze(0)
+                _update_sd(sam_module_type, orig_key, pos_label, new_data[1].unsqueeze(0).unsqueeze(0))
                 continue
 
             # Re-work cls token to be a parameter with shape: 1x1xC (originally a 1xC 'nn.Embedding')
@@ -195,18 +201,18 @@ def convert_state_dict_keys(
                 new_key = new_key.replace("cls_token.weight", "cls_token")
                 new_data = new_data.unsqueeze(0)
 
-            samplingencoder_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.image_exemplar_fusion:
+        elif sam_module_type == SAM3ModuleType.image_exemplar_fusion:
 
             # Skip unused keys
             new_key = _convert_imgexmfusion_keys(orig_key)
             if new_key is None:
                 continue
 
-            imgexmfusion_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.exemplar_detector:
+        elif sam_module_type == SAM3ModuleType.exemplar_detector:
 
             # Skip unused keys
             new_key = _convert_exmdetector_keys(orig_key)
@@ -224,9 +230,9 @@ def convert_state_dict_keys(
                 new_key = new_key.replace("presence_token.weight", "presence_token")
                 new_data = new_data.unsqueeze(0)
 
-            exmdetector_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.exemplar_segmentation:
+        elif sam_module_type == SAM3ModuleType.exemplar_segmentation:
 
             new_key = _convert_exmsegmentation_keys(orig_key)
             if new_key is None:
@@ -236,13 +242,13 @@ def convert_state_dict_keys(
             if new_key.startswith("NOT_USED"):
                 continue
 
-            exmsegmentation_sd[new_key] = new_data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_stage_type == SAM3StageType.not_used:
+        elif sam_module_type == SAM3ModuleType.not_used:
             if report_unused:
                 print("", f"Unused key: {orig_key}", f"     Shape: {tuple(orig_data.shape)}", sep="\n")
             pass
-        elif sam_stage_type == SAM3StageType.unknown:
+        elif sam_module_type == SAM3ModuleType.unknown:
             print(f"Unknown key: {orig_key}")
         elif warn_missing:
             # Warn about any missed weights
@@ -254,26 +260,10 @@ def convert_state_dict_keys(
                 sep="\n",
             )
 
-    # Bundle new state dict model components together for easier handling
-    new_state_dict = {
-        SAM3StageType.image_encoder: imgenc_sd,
-        SAM3StageType.image_projection: imgproj_sd,
-        SAM3StageType.coordinate_encoder: coordencoder_sd,
-        SAM3StageType.prompt_encoder: promptencoder_sd,
-        SAM3StageType.mask_decoder: maskdecoder_sd,
-        SAM3StageType.memory_encoder: memencoder_sd,
-        SAM3StageType.memory_image_fusion: memimgfusion_sd,
-        SAM3StageType.text_encoder: txtencoder_sd,
-        SAM3StageType.sampling_encoder: samplingencoder_sd,
-        SAM3StageType.image_exemplar_fusion: imgexmfusion_sd,
-        SAM3StageType.exemplar_detector: exmdetector_sd,
-        SAM3StageType.exemplar_segmentation: exmsegmentation_sd,
-    }
-
-    return new_state_dict
+    return new_state_dict, reverse_key_lut
 
 
-def get_stage_type(key: str) -> SAM3StageType:
+def get_module_type(key: str) -> SAM3ModuleType:
     """
     Function used to figure out which part of the (mugsam)
     model implementation a given weight key belongs to. This
@@ -285,57 +275,57 @@ def get_stage_type(key: str) -> SAM3StageType:
         if key.startswith("detector.backbone.vision"):
             # Re-direct certain backbone keys to image projection
             if "convs." in key:
-                return SAM3StageType.image_projection
-            return SAM3StageType.image_encoder
+                return SAM3ModuleType.image_projection
+            return SAM3ModuleType.image_encoder
         elif key.startswith("detector.backbone.language"):
-            return SAM3StageType.text_encoder
+            return SAM3ModuleType.text_encoder
         elif key.startswith("detector.geometry_encoder"):
-            return SAM3StageType.sampling_encoder
+            return SAM3ModuleType.sampling_encoder
         elif key.startswith("detector.transformer.encoder"):
-            return SAM3StageType.image_exemplar_fusion
+            return SAM3ModuleType.image_exemplar_fusion
         elif key.startswith("detector.transformer.decoder"):
-            return SAM3StageType.exemplar_detector
+            return SAM3ModuleType.exemplar_detector
         elif key.startswith("detector.dot_prod_scoring"):
-            return SAM3StageType.exemplar_detector
+            return SAM3ModuleType.exemplar_detector
         elif key.startswith("detector.segmentation_head"):
-            return SAM3StageType.exemplar_segmentation
+            return SAM3ModuleType.exemplar_segmentation
 
     # Handle 'old SAM2' components
     if key.startswith("tracker"):
         if key.startswith("tracker.transformer"):
-            return SAM3StageType.memory_image_fusion
+            return SAM3ModuleType.memory_image_fusion
         elif key.startswith("tracker.maskmem_backbone"):
-            return SAM3StageType.memory_encoder
+            return SAM3ModuleType.memory_encoder
         elif key.startswith("tracker.sam_prompt_encoder"):
             # Re-direct to subcomponents as needed
             if "pe_layer" in key:
-                return SAM3StageType.coordinate_encoder
+                return SAM3ModuleType.coordinate_encoder
             if "point" in key:
-                return SAM3StageType.prompt_encoder
-            return SAM3StageType.mask_decoder
+                return SAM3ModuleType.prompt_encoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.sam_mask_decoder"):
             # Re-direct certain mask decoder keys to image projection
             if key.startswith("tracker.sam_mask_decoder.conv"):
-                return SAM3StageType.image_projection
-            return SAM3StageType.mask_decoder
+                return SAM3ModuleType.image_projection
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.obj_ptr_proj"):
-            return SAM3StageType.mask_decoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.mask_downsample"):
-            return SAM3StageType.not_used
+            return SAM3ModuleType.not_used
         elif key.startswith("tracker.no_mem"):
             # Catches 'no_mem_embed', 'no_mem_pos_enc'
-            return SAM3StageType.memory_image_fusion
+            return SAM3ModuleType.memory_image_fusion
         elif key.startswith("tracker.no_obj"):
             # Catches 'no_obj_ptr' and 'no_obj_embed_spatial'
             if key == "tracker.no_obj_ptr":
-                return SAM3StageType.mask_decoder
-            return SAM3StageType.memory_encoder
+                return SAM3ModuleType.mask_decoder
+            return SAM3ModuleType.memory_encoder
         elif key.startswith("tracker.obj_ptr_tpos_proj"):
-            return SAM3StageType.memory_image_fusion
+            return SAM3ModuleType.memory_image_fusion
         elif key == "tracker.maskmem_tpos_enc":
-            return SAM3StageType.memory_image_fusion
+            return SAM3ModuleType.memory_image_fusion
 
-    return SAM3StageType.unknown
+    return SAM3ModuleType.unknown
 
 
 # ---------------------------------------------------------------------------------------------------------------------

@@ -24,7 +24,7 @@ from .exemplar_detector_model import SAMV3ExemplarDetector
 from .exemplar_segmentation_model import SAMV3ExemplarSegmentation
 
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
-from .state_dict_conversion.convert_original_state_dict_keys import SAM3StageType, convert_state_dict_keys
+from .state_dict_conversion.convert_original_state_dict_keys import SAM3ModuleType, convert_state_dict_keys
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -91,28 +91,28 @@ def make_samv3_from_original_state_dict(
 
     # Get model config from weights (i.e. sam large vs sam base) & convert to new keys/state dict
     model_config_dict = get_model_config_from_state_dict(original_state_dict)
-    new_state_dict = convert_state_dict_keys(model_config_dict, original_state_dict)
+    new_state_dict, _ = convert_state_dict_keys(model_config_dict, original_state_dict)
 
     # Load model & set model weights
     sam_model = make_sam_v3(**model_config_dict)
 
     # Image encoding & masking
-    sam_model.image_encoder.load_state_dict(new_state_dict[SAM3StageType.image_encoder], strict_load)
-    sam_model.image_projection.load_state_dict(new_state_dict[SAM3StageType.image_projection], strict_load)
-    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM3StageType.coordinate_encoder], strict_load)
-    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM3StageType.prompt_encoder], strict_load)
-    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM3StageType.mask_decoder], strict_load)
+    sam_model.image_encoder.load_state_dict(new_state_dict[SAM3ModuleType.image_encoder], strict_load)
+    sam_model.image_projection.load_state_dict(new_state_dict[SAM3ModuleType.image_projection], strict_load)
+    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM3ModuleType.coordinate_encoder], strict_load)
+    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM3ModuleType.prompt_encoder], strict_load)
+    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.mask_decoder], strict_load)
 
     # Video components
-    sam_model.memory_encoder.load_state_dict(new_state_dict[SAM3StageType.memory_encoder], strict_load)
-    sam_model.memory_image_fusion.load_state_dict(new_state_dict[SAM3StageType.memory_image_fusion], strict_load)
+    sam_model.memory_encoder.load_state_dict(new_state_dict[SAM3ModuleType.memory_encoder], strict_load)
+    sam_model.memory_image_fusion.load_state_dict(new_state_dict[SAM3ModuleType.memory_image_fusion], strict_load)
 
     # Detector components
-    sam_model.text_encoder.load_state_dict(new_state_dict[SAM3StageType.text_encoder], strict_load)
-    sam_model.sampling_encoder.load_state_dict(new_state_dict[SAM3StageType.sampling_encoder], strict_load)
-    sam_model.image_exemplar_fusion.load_state_dict(new_state_dict[SAM3StageType.image_exemplar_fusion], strict_load)
-    sam_model.exemplar_detector.load_state_dict(new_state_dict[SAM3StageType.exemplar_detector], strict_load)
-    sam_model.exemplar_segmentation.load_state_dict(new_state_dict[SAM3StageType.exemplar_segmentation], strict_load)
+    sam_model.text_encoder.load_state_dict(new_state_dict[SAM3ModuleType.text_encoder], strict_load)
+    sam_model.sampling_encoder.load_state_dict(new_state_dict[SAM3ModuleType.sampling_encoder], strict_load)
+    sam_model.image_exemplar_fusion.load_state_dict(new_state_dict[SAM3ModuleType.image_exemplar_fusion], strict_load)
+    sam_model.exemplar_detector.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_detector], strict_load)
+    sam_model.exemplar_segmentation.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_segmentation], strict_load)
 
     return model_config_dict, sam_model
 

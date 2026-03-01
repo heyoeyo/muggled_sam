@@ -16,7 +16,7 @@ from .prompt_encoder_model import SAMV1PromptEncoder
 from .mask_decoder_model import SAMV1MaskDecoder
 
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
-from .state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
+from .state_dict_conversion.convert_original_state_dict_keys import SAM1ModuleType, convert_state_dict_keys
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -63,14 +63,14 @@ def make_samv1_from_original_state_dict(
 
     # Get model config from weights (i.e. beit_large_512 vs beit_base_384) & convert to new keys/state dict
     model_config_dict = get_model_config_from_state_dict(original_state_dict)
-    new_state_dict = convert_state_dict_keys(model_config_dict, original_state_dict)
+    new_state_dict, _ = convert_state_dict_keys(model_config_dict, original_state_dict)
 
     # Load model & set model weights
     sam_model = make_sam_v1(**model_config_dict)
-    sam_model.image_encoder.load_state_dict(new_state_dict["imgencoder"], strict_load)
-    sam_model.coordinate_encoder.load_state_dict(new_state_dict["coordencoder"], strict_load)
-    sam_model.prompt_encoder.load_state_dict(new_state_dict["promptencoder"], strict_load)
-    sam_model.mask_decoder.load_state_dict(new_state_dict["maskdecoder"], strict_load)
+    sam_model.image_encoder.load_state_dict(new_state_dict[SAM1ModuleType.image_encoder], strict_load)
+    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM1ModuleType.coordinate_encoder], strict_load)
+    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM1ModuleType.prompt_encoder], strict_load)
+    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM1ModuleType.mask_decoder], strict_load)
 
     return model_config_dict, sam_model
 
