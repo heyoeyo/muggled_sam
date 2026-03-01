@@ -48,9 +48,9 @@ class SAMV3TextEncoder(nn.Module):
 
         # Set up model components
         self.tokenizer = TextTokenizer(tokenization_vocab_size, context_length)
-        self.text_token_embeddings = nn.Embedding(tokenization_vocab_size, features_per_text_embedding)
-        self.text_encoder = TextTransformer(features_per_text_embedding, num_layers, num_heads, context_length)
-        self.text_proj = nn.Linear(features_per_text_embedding, output_features_per_token)
+        self.vocab_embeddings = nn.Embedding(tokenization_vocab_size, features_per_text_embedding)
+        self.transformer = TextTransformer(features_per_text_embedding, num_layers, num_heads, context_length)
+        self.out_proj = nn.Linear(features_per_text_embedding, output_features_per_token)
 
         # Store for padding (for numerical compatibility with original code)
         self._max_context_length = context_length
@@ -88,9 +88,9 @@ class SAMV3TextEncoder(nn.Module):
             idx_tokens_bn = torch.cat((idx_tokens_bn, padding_tokens_bn), dim=1)
 
         # Convert vocab index (integers) to embeddings (floats) and further encode
-        encoded_text_bnc = self.text_token_embeddings(idx_tokens_bn)
-        encoded_text_bnc = self.text_encoder(encoded_text_bnc)
-        encoded_text_bnc = self.text_proj(encoded_text_bnc)
+        encoded_text_bnc = self.vocab_embeddings(idx_tokens_bn)
+        encoded_text_bnc = self.transformer(encoded_text_bnc)
+        encoded_text_bnc = self.out_proj(encoded_text_bnc)
 
         # Strip padding from tokens if used
         # -> For some reason, this has to be done after projection or we can get numerical differences...

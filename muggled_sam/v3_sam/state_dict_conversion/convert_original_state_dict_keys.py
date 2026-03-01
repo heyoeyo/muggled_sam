@@ -753,14 +753,14 @@ def _convert_memimgfusion_keys(key: str) -> None | str:
 
 def _convert_txtencoder_keys(key: str) -> None | str:
 
-    # Remove original prefix for simplicity & rename encoder
-    key = key.removeprefix("detector.backbone.language_backbone.").replace("encoder", "text_encoder")
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.backbone.language_backbone.")
 
-    # Handle transformer weights (significant bulk of the model)
-    if key.startswith("text_encoder.transformer"):
+    # Handle transformer block weights (bulk of the model)
+    if key.startswith("encoder.transformer"):
 
-        # Remove 'transformer' from structure
-        new_key = key.replace("transformer.resblocks", "blocks")
+        # Rename shared prefix
+        new_key = key.replace("encoder.transformer.resblocks", "transformer.blocks")
 
         # Rename block norm & mlp components
         find_and_replace_lut = {
@@ -775,14 +775,14 @@ def _convert_txtencoder_keys(key: str) -> None | str:
 
         return new_key
 
-    elif key.startswith("text_encoder."):
+    elif key.startswith("encoder."):
 
-        # Handle non-transformer weights
+        # Handle non-block weights
         find_and_replace_lut = {
-            "text_encoder.token_embedding": "text_token_embeddings",
-            "positional_embedding": "posenc",
-            "ln_final": "out_norm",
-            "text_encoder.text_projection": "NOT_USED",
+            "encoder.token_embedding": "vocab_embeddings",
+            "encoder.positional_embedding": "transformer.posenc",
+            "encoder.ln_final": "transformer.out_norm",
+            "encoder.text_projection": "NOT_USED",
         }
         has_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
         if has_match:
@@ -790,7 +790,7 @@ def _convert_txtencoder_keys(key: str) -> None | str:
 
     # Handle non-encoder keys
     if key.startswith("resizer"):
-        return key.replace("resizer", "text_proj")
+        return key.replace("resizer", "out_proj")
 
     return None
 

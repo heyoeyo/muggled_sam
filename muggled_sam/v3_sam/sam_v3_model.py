@@ -935,8 +935,8 @@ class SAMV3DetectorModel(nn.Module):
             self.image_projection.v3_projection = torch.compile(self.image_projection.v3_projection, **comp_kwargs)
 
         if compile_exemplar_encoding:
-            self.text_encoder.text_encoder.forward = torch.compile(
-                self.text_encoder.text_encoder.forward, **dyncomp_kwargs
+            self.text_encoder.transformer.forward = torch.compile(
+                self.text_encoder.transformer.forward, **dyncomp_kwargs
             )
             self.sampling_encoder.fusion_transformer.forward = torch.compile(
                 self.sampling_encoder.fusion_transformer.forward, **dyncomp_kwargs
