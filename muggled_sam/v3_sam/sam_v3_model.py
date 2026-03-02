@@ -831,36 +831,6 @@ class SAMV3DetectorModel(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, *args, **kwargs) -> None:
-        """
-        Placeholder to prevent users from trying to call this model using the forward function.
-        This model is meant to be called in stages, roughly as follows:
-
-            # Example procedure for generating detections
-            enc_image, _, _ = msam_det.encode_detection_image(image_bgr)
-            enc_exemplars = msam_det.encode_exemplars(enc_image, text="person")
-            mask_preds, box_preds, scores, presence = msam_det.generate_detections(enc_image, enc_exemplars)
-
-        Please see individual functions for more information
-        """
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, use functions (in order):",
-            "  model.encode_detection_image(...)",
-            "  model.encode_exemplars(...)",
-            "  model.generate_detections(...)",
-            "",
-            "In order to generate mask & bounding-box predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be used with .forward(...)")
-
-    # .................................................................................................................
-
     def enable_compilation(
         self,
         example_image_bgr: ndarray | None = None,
@@ -960,3 +930,90 @@ class SAMV3DetectorModel(nn.Module):
         return time_taken_ms
 
     # .................................................................................................................
+
+    def forward(self, *args, **kwargs) -> None:
+        """
+        Placeholder to prevent users from trying to call this model using the forward function.
+        This model is meant to be called in stages, roughly as follows:
+
+            # Example procedure for generating detections
+            enc_image, _, _ = msam_det.encode_detection_image(image_bgr)
+            enc_exemplars = msam_det.encode_exemplars(enc_image, text="person")
+            mask_preds, box_preds, scores, presence = msam_det.generate_detections(enc_image, enc_exemplars)
+
+        Please see individual functions for more information
+        """
+
+        name = self.__class__.__name__
+        print(
+            "",
+            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
+            "Instead, use functions (in order):",
+            "  model.encode_detection_image(...)",
+            "  model.encode_exemplars(...)",
+            "  model.generate_detections(...)",
+            "",
+            "In order to generate mask & bounding-box predictions",
+            sep="\n",
+        )
+
+        raise NotImplementedError("This model isn't meant to be used with .forward(...)")
+
+    # .................................................................................................................
+
+    @staticmethod
+    def make_exemplar_batch(*encoded_exemplars_bnc: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Function which takes in multiple encoded exemplars and produces
+        a single 'batched' set of exemplar tokens.
+        The encoded tokens are expected to come from calling:
+            model.encode_exemplars(...)
+
+        Note that exemplar tokens will generally be different sizes
+        and so will require a padding mask, which is also returned
+        by this function.
+
+        Returns:
+            batched_exemplar_tokens_bnc, exemplar_padding_mask_bn
+        """
+
+        # Get info about all tokens for batching
+        device_dtype_list = []
+        batch_size_list = []
+        num_tokens_list = []
+        channel_counts_list = []
+        for tokens_bnc in encoded_exemplars_bnc:
+            assert tokens_bnc.ndim == 3, f"Expecting exmplars to have shape: BxNxC, got: {tokens_bnc.shape}"
+            b, n, c = tokens_bnc.shape
+            batch_size_list.append(b)
+            num_tokens_list.append(n)
+            channel_counts_list.append(c)
+            device_dtype_list.append((tokens_bnc.device, tokens_bnc.dtype))
+
+        # Figure out data sizing/config
+        total_batch_size = sum(batch_size_list)
+        max_num_tokens = max(num_tokens_list)
+        num_channels = channel_counts_list[0]
+        device, dtype = device_dtype_list[0]
+
+        # Sanity checks
+        all_same_channel_count = all(c == num_channels for c in channel_counts_list)
+        all_same_device_and_dtype = all(d == device and t == dtype for d, t in device_dtype_list)
+        assert all_same_channel_count, f"Error, got different exemplar channel counts ({channel_counts_list})"
+        assert all_same_device_and_dtype, f"Error, got different exemplar device/dtypes ({device_dtype_list})"
+
+        # Create single batched tensor & corresponding padding mask
+        next_batch_idx = 0
+        batched_tokens_bnc = torch.zeros((total_batch_size, max_num_tokens, num_channels), device=device, dtype=dtype)
+        padding_mask_bn = torch.ones((total_batch_size, max_num_tokens), device=device, dtype=torch.bool)
+        for tokens_bnc in encoded_exemplars_bnc:
+            # Figure out batch indexing (doing it this way allows us to take in already-batched tokens!)
+            b, n, _ = tokens_bnc.shape
+            b_slice = slice(next_batch_idx, next_batch_idx + b)
+            next_batch_idx += b
+
+            # Fill in batched data & mask
+            batched_tokens_bnc[b_slice, :n, :] = tokens_bnc
+            padding_mask_bn[b_slice, :n] = False
+
+        return batched_tokens_bnc, padding_mask_bn
