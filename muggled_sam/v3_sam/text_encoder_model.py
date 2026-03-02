@@ -194,7 +194,7 @@ class TransformerBlock(nn.Module):
 
         # Attention components
         self.norm_preattn = nn.LayerNorm(features_per_token)
-        self.attn = nn.MultiheadAttention(features_per_token, num_heads, batch_first=True)
+        self.attn = AttentionBNC(features_per_token, num_heads)
 
         # MLP components
         num_hidden_features = int(round(features_per_token * mlp_ratio))
@@ -209,7 +209,7 @@ class TransformerBlock(nn.Module):
 
         # Attention
         tokens_normed = self.norm_preattn(tokens_bnc)
-        attn_result, _ = self.attn(tokens_normed, tokens_normed, tokens_normed, need_weights=False, attn_mask=attn_mask)
+        attn_result = self.attn(tokens_normed, attn_mask)
         attn_result = tokens_bnc + attn_result
 
         # MLP
@@ -220,3 +220,49 @@ class TransformerBlock(nn.Module):
         return output
 
     # .................................................................................................................
+
+
+class AttentionBNC(nn.Module):
+    """
+    Simple multiheaded attention implementation, specifically meant for
+    the text encoder transformer. It replaces an earlier implementation
+    that directly used a MultiheadAttention layer, see:
+    https://github.com/heyoeyo/muggled_sam/blob/b350f9c52c038bb49e5df4f0876170eb72613084/muggled_sam/v3_sam/text_encoder_model.py#L197
+
+    The only reason to use this (over the built-in attention module)
+    is that it's easier to train/fine-tune, due to it's simpler structure.
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token: int = 1024, num_heads: int = 16):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store config for use in forward pass
+        self.features_per_head = features_per_token // num_heads
+        self.num_heads = num_heads
+
+        # Set up q/k/v attention mapping
+        num_qkv_features = 3 * features_per_token
+        self.qkv = nn.Linear(features_per_token, num_qkv_features, bias=True)
+        self.proj = nn.Linear(features_per_token, features_per_token)
+
+    def forward(self, tokens_bnc: Tensor, attn_mask: Tensor | None) -> Tensor:
+
+        # For convenience
+        b, n, c = tokens_bnc.shape
+
+        # Compute QKV tokens, has shape: BxNx3C, then break into 'multi-headed'
+        # shape: BxNx3xDxf (N num tokens, D num heads, f features per head)
+        qkv = self.qkv(tokens_bnc)
+        qkv = qkv.reshape(b, n, 3, self.num_heads, self.features_per_head)
+
+        # Separate q/k/v with shape: BxDxNxf
+        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
+
+        # Compute attention, undo multi-headed shaping and apply final projection
+        attn = nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        attn = attn.permute(0, 2, 1, 3).reshape(b, n, c)
+        return self.proj(attn)

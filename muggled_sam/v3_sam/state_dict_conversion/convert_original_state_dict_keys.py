@@ -764,6 +764,9 @@ def _convert_txtencoder_keys(key: str) -> None | str:
 
         # Rename block norm & mlp components
         find_and_replace_lut = {
+            "in_proj_weight": "qkv.weight",
+            "in_proj_bias": "qkv.bias",
+            "out_proj": "proj",
             "ln_1": "norm_preattn",
             "ln_2": "norm_premlp",
             "c_fc": "0",
