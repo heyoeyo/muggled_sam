@@ -20,3 +20,5 @@ env/
 ignore/
 saved_images/
 
+# Ignore training config data
+training/*.json
