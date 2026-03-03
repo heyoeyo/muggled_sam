@@ -52,6 +52,8 @@ class SAMV1Model(nn.Module):
         self.mask_decoder = mask_decoder_model
 
         # Default to eval mode, expecting to use inference only
+        for param in self.parameters():
+            param.requires_grad_(False)
         self.eval()
 
     # .................................................................................................................

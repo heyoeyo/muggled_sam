@@ -90,6 +90,8 @@ class SAMV3Model(nn.Module):
         self.exemplar_segmentation = exemplar_segmentation_model
 
         # Default to eval mode, expecting to use inference only
+        for param in self.parameters():
+            param.requires_grad_(False)
         self.eval()
 
     # .................................................................................................................
