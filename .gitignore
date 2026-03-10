@@ -19,6 +19,13 @@ env/
 # Catch-all for local ignorables
 ignore/
 saved_images/
+saved_train_weights/
+
+# Allow file hiding using underscore prefix (useful for making custom script variants)
+simple_examples/_*
+experiments/_*
+training/_*
 
 # Ignore training config data
 training/*.json
+training/*.txt
