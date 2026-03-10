@@ -50,3 +50,24 @@ def read_user_text_input(
         pass
 
     return is_user_exit, is_user_float, user_txt_input
+
+
+# .....................................................................................................................
+
+
+def confirm_prompt(message: str, is_yes_by_default: bool = False, quit_on_keyboard_interupt: bool = True) -> bool:
+    """Helper used to provide a simple 'y/n' prompt where either option can be made the default"""
+
+    msg = f"{message} [Y/n]: " if is_yes_by_default else f"{message} [y/N]: "
+    if quit_on_keyboard_interupt:
+        try:
+            user_response = input(msg)
+        except KeyboardInterrupt:
+            quit()
+    else:
+        user_response = input(msg)
+
+    user_response = user_response.strip().lower()
+    if is_yes_by_default:
+        return user_response not in ("n", "no")
+    return user_response in ("y", "yes")

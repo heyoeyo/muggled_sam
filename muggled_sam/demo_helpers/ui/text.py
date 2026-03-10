@@ -20,7 +20,15 @@ class TitledTextBlock(BaseCallback):
 
     # .................................................................................................................
 
-    def __init__(self, title: str, default_value: str = "", block_height=80, bg_color=(64, 53, 52), text_scale=0.5):
+    def __init__(
+        self,
+        title: str,
+        default_value: str = "",
+        block_height=80,
+        bg_color=(64, 53, 52),
+        text_scale=0.5,
+        outline_color=(0, 0, 0),
+    ):
 
         # Set up text drawing config
         self._text_title = title
@@ -32,7 +40,7 @@ class TitledTextBlock(BaseCallback):
         self._bg_color = bg_color
         self._base_image = blank_image(1, 1, bg_color)
         self._image = self._base_image.copy()
-        self._outline_color = (0, 0, 0)
+        self._outline_color = outline_color
 
         # Set up sizing limits
         ref_txt = f"  {title}  "
@@ -76,7 +84,8 @@ class TitledTextBlock(BaseCallback):
         self._value_txtdraw.xy_norm(disp_img, self._text_value, (0.5, 0.5), offset_xy_px=(0, self._value_h))
 
         # Draw bounding box
-        disp_img = draw_box_outline(disp_img, color=self._outline_color)
+        if self._outline_color is not None:
+            disp_img = draw_box_outline(disp_img, color=self._outline_color)
         return disp_img
 
     # .................................................................................................................
@@ -84,7 +93,15 @@ class TitledTextBlock(BaseCallback):
 
 class TextBlock(BaseCallback):
 
-    def __init__(self, text: str = "", block_height=40, bg_color=(30, 25, 25), text_scale=0.35, max_characters=6):
+    def __init__(
+        self,
+        text: str = "",
+        block_height=40,
+        bg_color=(30, 25, 25),
+        text_scale=0.35,
+        max_characters=6,
+        outline_color=(0, 0, 0),
+    ):
 
         # Set up text drawing config
         text_str = str(text)
@@ -95,7 +112,7 @@ class TextBlock(BaseCallback):
         self._bg_color = bg_color
         self._base_image = blank_image(1, 1, bg_color)
         self._image = self._base_image.copy()
-        self._outline_color = (0, 0, 0)
+        self._outline_color = outline_color
 
         # Set up sizing limits
         max_characters_with_spacing = max(max_characters + 2, len(" {text_str} "))
@@ -130,7 +147,8 @@ class TextBlock(BaseCallback):
         self._value_txtdraw.xy_norm(disp_img, self._text_value, (0.5, 0.5))
 
         # Draw bounding box
-        disp_img = draw_box_outline(disp_img, color=self._outline_color)
+        if self._outline_color is not None:
+            disp_img = draw_box_outline(disp_img, color=self._outline_color)
         return disp_img
 
     # .................................................................................................................
@@ -147,6 +165,7 @@ class ValueBlock(TextBlock):
         bg_color=(30, 25, 25),
         text_scale=0.35,
         max_characters=4,
+        outline_color=(0, 0, 0),
     ):
 
         # Set up text drawing config
@@ -159,11 +178,11 @@ class ValueBlock(TextBlock):
         self._bg_color = bg_color
         self._base_image = blank_image(1, 1, bg_color)
         self._image = self._base_image.copy()
-        self._outline_color = (0, 0, 0)
+        self._outline_color = outline_color
 
         # Inherit from parent
         max_all_characters = len(self._prefix) + len(self._suffix) + max_characters
-        super().__init__(self._text_value, block_height, bg_color, text_scale, max_all_characters)
+        super().__init__(self._text_value, block_height, bg_color, text_scale, max_all_characters, outline_color)
 
     # .................................................................................................................
 
@@ -201,7 +220,8 @@ class ValueBlock(TextBlock):
         self._value_txtdraw.xy_norm(disp_img, self._text_value, (0.5, 0.5))
 
         # Draw bounding box
-        disp_img = draw_box_outline(disp_img, color=self._outline_color)
+        if self._outline_color is not None:
+            disp_img = draw_box_outline(disp_img, color=self._outline_color)
         return disp_img
 
     # .................................................................................................................

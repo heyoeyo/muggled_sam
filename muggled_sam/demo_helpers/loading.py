@@ -7,6 +7,7 @@
 
 import os
 import os.path as osp
+from pathlib import Path
 import json
 from time import sleep
 
@@ -25,6 +26,75 @@ def clean_path_str(path=None):
 
     path_str = "" if path is None else str(path)
     return osp.expanduser(path_str).strip().replace('"', "").replace("'", "")
+
+
+# .....................................................................................................................
+
+
+def ask_for_value_if_missing(
+    input_value=None,
+    message="Enter value: ",
+    default_value=None,
+    return_type=str,
+    allow_empty_input: bool = False,
+):
+    """
+    Function used to provide a cli-based prompt to ask for an input value
+    This is just a wrapper around the built-in 'input(...)' function,
+    but includes support for providing a default value and looping
+    on invalid input.
+    """
+
+    # Bail if we already have an input value
+    if input_value is not None:
+        return input_value
+
+    # Fix bad defaults
+    if default_value == "":
+        default_value = None
+
+    # Set up prompt text and default if needed
+    default_txt_prefix = "(default: "
+    max_msg_spacing = max(len(message), len(default_txt_prefix))
+    padded_default_str = default_txt_prefix.rjust(max_msg_spacing, " ")
+    default_msg = "" if default_value is None else f"{padded_default_str}{default_value})"
+    prompt_msg = message.rjust(max_msg_spacing, " ")
+
+    # Print empty line for spacing and default hint if available
+
+    # Ask user for missing input
+    while True:
+        try:
+            print("", flush=True)
+            if default_value is not None:
+                print(default_msg, flush=True)
+            user_input = input(prompt_msg).strip()
+
+        except KeyboardInterrupt:
+            quit()
+
+        # Handle 'use the default' inputs
+        is_empty = len(user_input) == 0
+        if is_empty and (default_value is not None):
+            user_input = default_value
+            break
+
+        # Reject missing inputs if needed
+        if is_empty and (not allow_empty_input) and (default_value is None):
+            print("", "", "Cannot leave input empty!", sep="\n", flush=True)
+            continue
+
+        try:
+            if return_type is not None:
+                user_input = return_type(user_input)
+        except ValueError:
+            print("", "", f"Invalid input, must be of type: {return_type}", sep="\n", flush=True)
+            continue
+
+        # If we get this far, the input passed checks so break from the loop
+        break
+
+    return user_input
 
 
 # .....................................................................................................................
@@ -75,7 +145,7 @@ def ask_for_path_if_missing(path=None, file_type="file", default_path=None):
 # .....................................................................................................................
 
 
-def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_path=None):
+def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_path=None, message="Select model file:"):
 
     # Bail if we get a good path
     path_was_given = model_path is not None
@@ -113,7 +183,7 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
         model_path = model_file_paths[0]
     else:
         # If more than 1 file is available, provide a menu to select from the models
-        model_path = ask_for_model_from_menu(model_file_paths, default_prompt_path)
+        model_path = ask_for_model_from_menu(model_file_paths, default_prompt_path, message=message)
 
     return model_path
 
@@ -121,7 +191,7 @@ def ask_for_model_path_if_missing(file_dunder, model_path=None, default_prompt_p
 # .....................................................................................................................
 
 
-def ask_for_model_from_menu(model_files_paths, default_path=None):
+def ask_for_model_from_menu(model_files_paths, default_path=None, message: str = "Select model file:"):
     """
     Function which provides a simple cli 'menu' for selecting which model to load.
     A 'default' can be provided, which will highlight a matching entry in the menu
@@ -173,7 +243,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None):
         while True:
 
             # Provide prompt to ask user to select from a list of model files
-            print("", "Select model file:", "", *menu_item_strs, "", sep="\n")
+            print("", message, "", *menu_item_strs, "", sep="\n")
             user_selection = clean_path_str(input("Enter selection: "))
 
             # User the default if the user didn't enter anything (and a default is available)
@@ -273,3 +343,117 @@ def load_init_prompts(path_to_json: str | None):
         print("", "Warning: Unable to load prompt json", f"@ {path_to_json}", "", str(err), sep="\n")
 
     return ok_prompts, prompts_dict
+
+
+# .....................................................................................................................
+
+
+def select_from_options(
+    options_list: list[str],
+    default_option: str | None = None,
+    response_list: list | None = None,
+    title_message: str = "Select option:",
+    input_message: str = "Enter selection: ",
+    allow_path_response: bool = False,
+    allow_direct_response: bool = False,
+    allow_text_match: bool = True,
+    sleep_on_error_duration: float = 1,
+) -> str:
+    """
+    Helper used to present a cli-based menu selector to user
+    If a default option is given, the user can enter nothing to auto-select the default.
+
+    A 'response_list' can be given, in which case when a user selects a menu item,
+    the corresponding item from the response list will be returned.
+    """
+
+    # For convenience, use options as response if not given
+    if response_list is None:
+        response_list = tuple(options_list)
+
+    # Sanity check, if a response list is given it must match the options
+    num_options = len(options_list)
+    if num_options != len(response_list):
+        num_responses = len(response_list)
+        raise ValueError(
+            f"Selection error! Must have matching number of options ({num_options}) and responses ({num_responses})"
+        )
+
+    # Handle non-sense cases
+    if num_options == 0:
+        raise ValueError("Error, no options!")
+    if num_options == 1:
+        return response_list[0]
+
+    # Sanity check, ignore defaults that don't appear in options
+    if (default_option is not None) and (default_option not in options_list):
+        default_option = None
+    default_idx = 0 if default_option is None else options_list.index(default_option)
+
+    # Build menu strings
+    menu_strs_to_print = ["", title_message, ""]
+    for idx, option_name in enumerate(options_list):
+        is_default = option_name == default_option if default_option is not None else False
+        menu_str = f"  {1+idx:>2}: {option_name}" if not is_default else f" *{1+idx:>2}: {option_name} (default)"
+        menu_strs_to_print.append(menu_str)
+    menu_strs_to_print.append("")
+
+    # Build spacer text in case we need to write out what the user selected (on implicit selections)
+    indicator_spacer_txt = "--> ".rjust(len(input_message))
+
+    # Repeatedly ask user for input until they give use something valid
+    out_response = "selection error"
+    while True:
+        # Provide menu prompt to user
+        print(*menu_strs_to_print, sep="\n", flush=True)
+        user_input_str = input(input_message).strip()
+
+        # Interpret blank input as 'choose the default' if we have a default
+        if user_input_str == "" and default_option is not None:
+            out_response = response_list[default_idx]
+            print(f"{indicator_spacer_txt}{default_option}", "", sep="\n", flush=True)
+            break
+
+        # Check if user entered a valid menu index
+        if user_input_str.isnumeric():
+            choice_idx = int(user_input_str) - 1
+            is_bad_index = (choice_idx < 1) or (choice_idx > num_options)
+            if is_bad_index:
+                print("", f"Bad index, must be between 1 and {num_options}", "", sep="\n", flush=True)
+                continue
+            choice_option = options_list[choice_idx]
+            out_response = response_list[choice_idx]
+            print(f"{indicator_spacer_txt}{choice_option}", "", sep="\n", flush=True)
+            break
+
+        # Check if user input matches 1 entry in the menu
+        if allow_text_match:
+            is_text_match = [user_input_str in option_str for option_str in options_list]
+            num_matches = sum(is_text_match)
+            if num_matches == 1:
+                match_idx = is_text_match.index(True)
+                match_option = options_list[match_idx]
+                out_response = response_list[match_idx]
+                print(f"{indicator_spacer_txt}{match_option}", "", sep="\n", flush=True)
+                break
+            elif num_matches > 1:
+                print("", f"Invalid entry! Multiple matches ({num_matches}) found...", "", sep="\n", flush=True)
+                sleep(sleep_on_error_duration)
+                continue
+            pass
+
+        # Allow direct string response
+        if allow_direct_response:
+            out_response = user_input_str
+            break
+
+        # If we get here, interpret user input as a file path if possible
+        if allow_path_response and Path(user_input_str).exists():
+            out_response = user_input_str
+            break
+
+        # If we can't interpret user input, warn and try continue looping
+        print("", "Invalid entry! Enter an index from the list above", "", sep="\n", flush=True)
+        sleep(sleep_on_error_duration)
+
+    return out_response

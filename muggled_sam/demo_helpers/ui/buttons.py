@@ -446,6 +446,9 @@ class RadioConstraint:
 
         pass
 
+    def __iter__(self):
+        return iter(self._items)
+
     # .................................................................................................................
 
     def _enforce_constraint(self, item_is_on=None) -> None:
@@ -474,6 +477,11 @@ class RadioConstraint:
         is_changed = self._is_changed
         self._is_changed = False
         return is_changed, self._select_idx, self._items[self._select_idx]
+
+    def set_is_changed(self, is_changed=True):
+        """Helper used to artificially set is_changed flag, useful for forcing read updates (e.g. on startup)"""
+        self._is_changed = is_changed
+        return self
 
     # .................................................................................................................
 

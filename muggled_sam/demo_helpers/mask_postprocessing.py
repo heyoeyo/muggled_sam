@@ -13,6 +13,7 @@ from .contours import MaskContourData
 
 # For type hints
 from numpy import ndarray
+from torch import Tensor
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -284,7 +285,45 @@ def get_box_nms_indexing(
     return box_idx_to_keep
 
 
-# %%
+def draw_combined_mask(
+    mask_predictions: Tensor,
+    display_hw=None,
+    mask_threshold: float = 0,
+    return_3ch: bool = True,
+    use_hires_resize: bool = False,
+):
+    """
+    Helper used to draw a single mask from multiple predictions.
+    The single mask is the logical 'OR' of all mask predictions.
+
+    Returns:
+        image_uint8
+    """
+    # Make sure we're dealing with NxHxW shaped masks
+    assert mask_predictions.ndim < 4, "Expecting mask with 3 dimensions (NxHxW)"
+    if mask_predictions.ndim == 2:
+        mask_predictions = mask_predictions.unsqueeze(0)
+
+    # Do hi-resolution scaling if needed
+    needs_scale = display_hw is not None
+    if needs_scale and use_hires_resize:
+        if mask_predictions.ndim == 3:
+            mask_predictions = mask_predictions.unsqueeze(0)
+        mask_predictions = torch.nn.functional.interpolate(mask_predictions, display_hw, mode="bilinear")
+        mask_predictions = mask_predictions[0]
+
+    # Get combined mask
+    combined_mask_tensor, _ = (mask_predictions > mask_threshold).max(dim=0)
+    mask_uint8 = (combined_mask_tensor.byte() * 255).cpu().numpy()
+
+    # Do low-resolution scaling if needed
+    if needs_scale and not use_hires_resize:
+        disp_h, disp_w = display_hw
+        mask_uint8 = cv2.resize(mask_uint8, (disp_w, disp_h), interpolation=cv2.INTER_NEAREST)
+
+    return cv2.cvtColor(mask_uint8, cv2.COLOR_GRAY2BGR) if return_3ch else mask_uint8
+
+
 def sample_points_from_mask(mask_image: ndarray, num_points_approx: int = 25) -> list[tuple[float, float]]:
     """
     Helper used to sample points from a mask.
