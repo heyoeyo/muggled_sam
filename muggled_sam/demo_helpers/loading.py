@@ -357,6 +357,7 @@ def select_from_options(
     allow_path_response: bool = False,
     allow_direct_response: bool = False,
     allow_text_match: bool = True,
+    quit_on_missing_respose: bool = True,
     sleep_on_error_duration: float = 1,
 ) -> str:
     """
@@ -370,6 +371,12 @@ def select_from_options(
     # For convenience, use options as response if not given
     if response_list is None:
         response_list = tuple(options_list)
+
+    # Force into indexable format (for example, in case we get dictionary keys or a generator)
+    if not isinstance(options_list, (tuple, list)):
+        options_list = tuple(options_list)
+    if not isinstance(response_list, (tuple, list)):
+        response_list = tuple(response_list)
 
     # Sanity check, if a response list is given it must match the options
     num_options = len(options_list)
@@ -409,15 +416,25 @@ def select_from_options(
         user_input_str = input(input_message).strip()
 
         # Interpret blank input as 'choose the default' if we have a default
-        if user_input_str == "" and default_option is not None:
+        is_blank_input = user_input_str == ""
+        if is_blank_input and default_option is not None:
             out_response = response_list[default_idx]
             print(f"{indicator_spacer_txt}{default_option}", "", sep="\n", flush=True)
             break
 
+        # Handle missing response
+        if is_blank_input and default_option is None:
+            if quit_on_missing_respose:
+                print("No response, quitting...")
+                quit()
+            else:
+                print("", "Missing response, please provide input...", "", sep="\n", flush=True)
+                continue
+
         # Check if user entered a valid menu index
         if user_input_str.isnumeric():
             choice_idx = int(user_input_str) - 1
-            is_bad_index = (choice_idx < 1) or (choice_idx > num_options)
+            is_bad_index = (choice_idx < 0) or (choice_idx > (num_options - 1))
             if is_bad_index:
                 print("", f"Bad index, must be between 1 and {num_options}", "", sep="\n", flush=True)
                 continue

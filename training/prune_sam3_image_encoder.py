@@ -25,7 +25,8 @@ import json
 import torch
 
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
-from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing
+from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, select_from_options
+from muggled_sam.demo_helpers.text_input import confirm_prompt
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -103,8 +104,12 @@ default_samv3_block_mapping_dict = {
     },
 }
 
-# Load mapping (create if missing)
+# Force relative path to be relative to this script
 mapping_path = Path(mapping_path)
+if mapping_path.parent == Path("."):
+    mapping_path = Path(__file__).parent / mapping_path
+
+# Load mapping (create if missing)
 if not mapping_path.exists():
     # Try to format json a bit nicer on save
     json_str = json.dumps(default_samv3_block_mapping_dict)
@@ -122,41 +127,13 @@ if block_mappings_dict is None:
     raise KeyError("Error, couldn't find 'samv3' key in block mapping")
 
 # Ask user for mapping if not given
-num_mapping_entries = len(block_mappings_dict)
-assert num_mapping_entries > 0, f"Error empty block mapping ({mapping_path.name})"
 if map_name is None:
-    map_name = list(block_mappings_dict.keys())[0] if num_mapping_entries == 1 else None
-    if num_mapping_entries > 1:
-        mapping_choices_list = list(block_mappings_dict.keys())
-        strs_to_print = []
-        for idx, choice_str in enumerate(mapping_choices_list):
-            strs_to_print.append(f"  {1+idx:>2}: {choice_str}")
-        print("", "Select index:", "", *strs_to_print, "", sep="\n", flush="")
-        map_name = input("Enter selection: ")
-        if map_name.isnumeric():
-            map_idx = int(map_name) - 1
-            assert 0 <= map_idx < num_mapping_entries, f"Bad index, must be between 1 and {num_mapping_entries}"
-            map_name = mapping_choices_list[map_idx]
-        pass
-        if map_name.strip() == "":
-            print("Selection cancelled...", "", sep="\n")
-            quit()
-    pass
-
-# If we get a name that isn't in the mappings, try to match to the start of the mapping names
-if map_name not in block_mappings_dict.keys():
-    for key in block_mappings_dict.keys():
-        if key.startswith(map_name):
-            map_name = key
-            break
+    map_name = select_from_options(block_mappings_dict.keys(), default_option=None, title_message="Select mapping:")
 
 # Try to load block index mapping
 idx_to_keep_per_stage_list = block_mappings_dict.get(map_name, None)
 if idx_to_keep_per_stage_list is None:
     raise ValueError(f"Invalid mapping name: {map_name}")
-
-# Provide feedback about selected option
-print(f"             --> {map_name}")
 
 # Make sure each stage has the same number of blocks
 num_new_blocks_per_stage = [len(idx_list) for idx_list in idx_to_keep_per_stage_list]
@@ -313,14 +290,8 @@ for rename_idx in range(2, 100):
     new_model_path = old_model_path.with_stem(f"{new_model_name}_v{rename_idx}")
 
 # Get user to confirm before saving (large) file
-user_confirm_save = False
-try:
-    print("", "Created new model:", new_model_path.name, "", sep="\n", flush=True)
-    user_confirm_str = input("Save model? [y/N] ")
-    user_confirm_save = user_confirm_str.lower().strip() == "y"
-
-except KeyboardInterrupt:
-    pass
+print("", "Created new model:", new_model_path.name, "", sep="\n", flush=True)
+user_confirm_save = confirm_prompt("Save model")
 
 # Only save when confirmed
 if user_confirm_save:
