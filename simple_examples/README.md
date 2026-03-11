@@ -60,15 +60,36 @@ This script runs each of the image segmentation components repeatedly while timi
 
 The SAMv3 results are shown for both 1024px and 1008px (it's native default), since the model takes a _significant_ performance hit at the v1/v2 default 1024px sizing. Strangely, it's also consistently slower at 504px vs. 512px.
 
-The script also prints out an estimate of VRAM usage (if using cuda):
+For reference, here's the VRAM usage (with bfloat16) of various models as reported by [nvidia-smi](https://docs.nvidia.com/deploy/nvidia-smi/index.html) when running this script. All values are in mebibytes (MiB):
 
 | Model | VRAM @ 1024px | VRAM @ 512px |
 | ----- | ------------- | ------------ |
-| V1-Base | 1.7 GB | 0.4 GB |
-| V1-Large | 2.6 GB | 0.9 GB |
-| V2-Tiny | 0.5 GB | 0.3 GB  |
-| V2-Large | 1.0 GB | 0.7 GB |
-| V3 | 1.5 GB | 1.2 GB |
+| V1-Base  | 1878 |  666 |
+| V1-Large | 2756 | 1142 |
+| V1-Huge  | 3506 | 1890 |
+| V2-Tiny  |  720 |  488 |
+| V2-Small |  724 |  508 |
+| V2-Base+ |  840 |  582 |
+| V2-Large | 1230 |  920 |
+| V3       | 2524 | 2156 |
+
+
+## Speed Benchmarking (Detections)
+
+_(Supports SAMv3)_
+
+This script repeatedly runs the components associated with SAMv3 object detection while timing the execution speed. The time taken for each of the major steps (image encoding, exemplar encoding and generating detections) is printed out as the script runs. For example, here are the results using an RTX 3090 on bfloat16 running at the default 1008px as well as 504px, with and without compilation for comparison. A single box, point and text prompt are being used in all cases (using more or fewer prompts will affect timing). All times are in milliseconds:
+
+
+| Component |  Time @ 1008px | -> Compiled (1008px) | Time @ 504px | -> Compiled (504px) |
+| --------- | -------------- | -------------------- | ------------ | ------------------- |
+| Image encoding      | 111  | 101 | 41   | 34  |
+| Exemplar encoding   | 4.4  | 3.1 | 4.4  | 3.1 |
+| Generate detections |  18  | 12  | 6.8  | 3.7 |
+
+As with the masking and video tracking tasks, the image encoder takes up the majority of the inference time when running object detection. Reducing the processing resolution by half gives a slightly better than 2x speed up in inference, and we see that compilation gives around a 10% speed up to the image encoder, with bigger benefits for smaller components.
+
+For reference, nvidia-smi reports VRAM usage as 2530MiB (@1008px, bfloat16) and 2164MiB (@504px, bfloat16). With compilation, this is slightly reduced to 2454MiB and 2140MiB, respectively.
 
 
 ## Video Segmentation

@@ -38,12 +38,6 @@ if device == "cpu":
     num_image_encoder_iterations = num_image_encoder_iterations // 10
     num_mask_generation_iterations = num_mask_generation_iterations // 10
 
-# Get initial VRAM usage
-initial_vram_mb = 0
-if "cuda" in device:
-    free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
-    initial_vram_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
-
 # Set up model
 print(f"Loading model ({os.path.basename(model_path)})")
 t1 = perf_counter()
@@ -96,7 +90,7 @@ print("-> Mask generation took", total_time_ms, "ms", f"({per_iter} ms / iter)")
 
 # Print VRAM usage if possible
 if "cuda" in device:
+    torch.cuda.empty_cache()
     free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
     curr_vram_mb = (total_vram_bytes - free_vram_bytes) // 1_000_000
-    vram_usage = curr_vram_mb - initial_vram_mb
-    print("", f"VRAM: {vram_usage} MB", sep="\n")
+    print("", f"Total VRAM usage: {curr_vram_mb} MB", sep="\n")
