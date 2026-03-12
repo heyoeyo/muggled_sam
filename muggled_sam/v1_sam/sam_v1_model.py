@@ -5,6 +5,8 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from contextlib import contextmanager
+
 import torch
 import torch.nn as nn
 
@@ -43,7 +45,7 @@ class SAMV1Model(nn.Module):
         super().__init__()
 
         # Store config data
-        self.config_muggled_samv1 = nn.Parameter(torch.tensor(config_bytes, dtype=torch.uint8), requires_grad=False)
+        self.register_buffer("config_muggled_samv1", torch.tensor(config_bytes, dtype=torch.uint8))
 
         # Store SAM model components
         self.image_encoder = image_encoder_model
@@ -55,6 +57,7 @@ class SAMV1Model(nn.Module):
         for param in self.parameters():
             param.requires_grad_(False)
         self.eval()
+        self._infmode = True
 
     # .................................................................................................................
 
@@ -125,7 +128,7 @@ class SAMV1Model(nn.Module):
             encoded_prompts (shape: 1 x N x F, where N is number of prompt points, F is features per prompt)
         """
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
             fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
             box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
@@ -142,7 +145,7 @@ class SAMV1Model(nn.Module):
         use_square_sizing=True,
     ) -> tuple[Tensor, tuple[int, int], tuple[int, int]]:
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image = self.image_encoder(image_rgb_normalized_bchw)
@@ -162,7 +165,7 @@ class SAMV1Model(nn.Module):
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             patch_grid_hw = encoded_image.shape[2:]
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds, _ = self.mask_decoder(
@@ -184,3 +187,39 @@ class SAMV1Model(nn.Module):
         return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     # .................................................................................................................
+
+    def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
+        """
+        Helper used to toggle internal 'with torch.inference_mode' on/off.
+        When training the model, inference mode can become problematic, so disabling it can be helpful.
+        If 'enable_inference_mode' is None, then the current state will be toggled.
+        Otherwise, the state can be explicitly set by providing a True or False argument.
+        Returns: is_inference_mode_enabled
+        """
+        self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
+        return self._infmode
+
+    # .................................................................................................................
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Helpers
+
+
+@contextmanager
+def _inference_mode(enable: bool = True):
+    """
+    Custom wrapper around 'torch.inference_mode' that can fully disable it, useful for training
+    Though the torch function has it's own 'mode=False', it isn't the same as disabling.
+    The follow example is a case where the built-in behavior is counter-intuitive:
+        with torch.no_grad():
+            with torch.inference_mode(False):
+                output_data = model(input_data)
+                # ^^^ output will have gradients tracked, even though it's inside a no_grad block
+    """
+    if enable:
+        with torch.inference_mode():
+            yield
+    else:
+        yield
+    return

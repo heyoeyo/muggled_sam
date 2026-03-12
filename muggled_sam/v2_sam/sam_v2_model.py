@@ -5,6 +5,8 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from contextlib import contextmanager
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -48,7 +50,7 @@ class SAMV2Model(nn.Module):
         super().__init__()
 
         # Store config data
-        self.config_muggled_samv2 = nn.Parameter(torch.tensor(config_bytes, dtype=torch.uint8), requires_grad=False)
+        self.register_buffer("config_muggled_samv2", torch.tensor(config_bytes, dtype=torch.uint8))
 
         # Store SAM model components
         self.image_encoder = image_encoder_model
@@ -62,6 +64,7 @@ class SAMV2Model(nn.Module):
         for param in self.parameters():
             param.requires_grad_(False)
         self.eval()
+        self._infmode = True
 
     # .................................................................................................................
 
@@ -131,7 +134,7 @@ class SAMV2Model(nn.Module):
             encoded_prompts (shape: 1 x N x F, where N is number of prompt points, F is features per prompt)
         """
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
             fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
             box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
@@ -166,7 +169,7 @@ class SAMV2Model(nn.Module):
                by default it would be 1024x1024
         """
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image_features_list = self.image_encoder(image_rgb_normalized_bchw)
@@ -209,7 +212,7 @@ class SAMV2Model(nn.Module):
         # Get sizing of the lowest-resolution image encoding
         patch_grid_hw = encoded_image_features_list[0].shape[2:]
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
                 encoded_image_features_list, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
@@ -247,7 +250,7 @@ class SAMV2Model(nn.Module):
         # Encode initial prompts
         encoded_prompts = self.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
 
             # For convenience
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
@@ -305,7 +308,7 @@ class SAMV2Model(nn.Module):
             memory_encoding
         """
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
 
             # For convenience
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
@@ -379,7 +382,7 @@ class SAMV2Model(nn.Module):
             The memory & pointer features F & F' are model configs (64, 256 respectively, by default)
         """
 
-        with torch.inference_mode():
+        with _inference_mode(self._infmode):
 
             # Encode image features with previous memory encodings & object pointer data
             # Called '_prepare_memory_conditioned_features' in original code
@@ -436,3 +439,39 @@ class SAMV2Model(nn.Module):
         return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     # .................................................................................................................
+
+    def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
+        """
+        Helper used to toggle internal 'with torch.inference_mode' on/off.
+        When training the model, inference mode can become problematic, so disabling it can be helpful.
+        If 'enable_inference_mode' is None, then the current state will be toggled.
+        Otherwise, the state can be explicitly set by providing a True or False argument.
+        Returns: is_inference_mode_enabled
+        """
+        self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
+        return self._infmode
+
+    # .................................................................................................................
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Helpers
+
+
+@contextmanager
+def _inference_mode(enable: bool = True):
+    """
+    Custom wrapper around 'torch.inference_mode' that can fully disable it, useful for training
+    Though the torch function has it's own 'mode=False', it isn't the same as disabling.
+    The follow example is a case where the built-in behavior is counter-intuitive:
+        with torch.no_grad():
+            with torch.inference_mode(False):
+                output_data = model(input_data)
+                # ^^^ output will have gradients tracked, even though it's inside a no_grad block
+    """
+    if enable:
+        with torch.inference_mode():
+            yield
+    else:
+        yield
+    return
