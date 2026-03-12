@@ -375,7 +375,7 @@ class OffsetLayernorm(nn.Module):
     # .................................................................................................................
 
     def reset_weights(self):
-        nn.init.ones_(self.offset.weight)
+        nn.init.zeros_(self.offset.weight)
         if self._has_bias:
             nn.init.zeros_(self.offset.bias)
         return

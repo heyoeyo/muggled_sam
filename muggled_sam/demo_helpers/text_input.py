@@ -12,7 +12,7 @@
 
 def read_user_text_input(
     prompt: str = "Enter text prompt: ",
-    prompt_for_exiting: str = "",
+    prompt_for_exiting: str | None = "",
     allow_numeric_inputs: bool = True,
 ) -> tuple[bool, bool, str]:
     """
@@ -28,7 +28,7 @@ def read_user_text_input(
     # Initialize outputs
     is_user_exit = False
     is_user_float = False
-    user_txt_input = prompt_for_exiting
+    user_txt_input = prompt_for_exiting if prompt_for_exiting is not None else ""
 
     # Ask user for text input from the terminal
     print("", flush=True)
@@ -38,16 +38,17 @@ def read_user_text_input(
         pass
 
     # Bail if user inputs exit text
-    is_user_exit = user_txt_input == prompt_for_exiting
+    is_user_exit = (user_txt_input == prompt_for_exiting) or (prompt_for_exiting is None)
     if is_user_exit:
         return is_user_exit, is_user_float, user_txt_input
 
     # See if we can interpret input as a number
-    try:
-        _ = float(user_txt_input)
-        is_user_float = True
-    except ValueError:
-        pass
+    if allow_numeric_inputs:
+        try:
+            _ = float(user_txt_input)
+            is_user_float = True
+        except ValueError:
+            pass
 
     return is_user_exit, is_user_float, user_txt_input
 

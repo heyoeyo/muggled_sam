@@ -27,6 +27,7 @@ import torch
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, select_from_options
 from muggled_sam.demo_helpers.text_input import confirm_prompt
+from muggled_sam.demo_helpers.training.default_data import make_default_text_encoder_block_mapping, save_unnested_json
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -87,21 +88,12 @@ _, history_modelpath = history.read("model_path")
 # Get pathing to resources, if not provided already
 model_path = ask_for_model_path_if_missing(root_path, arg_model_path, history_modelpath)
 
+# Store history for use on repeat pruning
+history.store(model_path=model_path)
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Get block mapping
-
-# Set up a default mapping for saving (user can then modify file)
-default_textenc_block_mapping_dict = {
-    "samv3": {
-        "4_layers": tuple(range(4)),
-        "8_layers": tuple(range(8)),
-        "12_layers": tuple(range(12)),
-        "16_layers": tuple(range(16)),
-        "20_layers": tuple(range(20)),
-        "reference": tuple(range(24)),
-    }
-}
 
 # Force relative path to be relative to this script
 mapping_path = Path(mapping_path)
@@ -110,11 +102,8 @@ if mapping_path.parent == Path("."):
 
 # Load mapping (create if missing)
 if not mapping_path.exists():
-    # Try to format json a bit nicer on save
-    json_str = json.dumps(default_textenc_block_mapping_dict)
-    json_str = json_str.replace(' "', '\n "').replace("{", "{\n ").replace("}", "\n}")
-    with open(mapping_path, "w") as outfile:
-        outfile.write(json_str)
+    default_textenc_block_mapping_dict = make_default_text_encoder_block_mapping()
+    save_unnested_json(mapping_path, default_textenc_block_mapping_dict)
 assert mapping_path.exists(), f"Error! Couldn't load mapping file: {mapping_path}"
 with open(mapping_path, "r") as infile:
     block_mappings_dict = json.load(infile)

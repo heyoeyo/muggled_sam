@@ -47,6 +47,7 @@ from muggled_sam.demo_helpers.loading import (
     ask_for_model_path_if_missing,
     ask_for_value_if_missing,
 )
+from muggled_sam.demo_helpers.text_input import read_user_text_input, confirm_prompt
 from muggled_sam.demo_helpers.mask_postprocessing import draw_combined_mask
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
@@ -55,6 +56,7 @@ from muggled_sam.demo_helpers.misc import (
 )
 
 import muggled_sam.demo_helpers.training.loss_functions as loss_funcs
+from muggled_sam.demo_helpers.training.default_data import make_default_training_text_list, save_unnested_json
 from muggled_sam.demo_helpers.training.io import (
     TrainModulesDict,
     load_prior_weights,
@@ -267,13 +269,18 @@ _, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_
 num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
 use_top_n = num_true_detections if num_true_detections > 0 else 5
 
-# Delete image encoder from models to save some VRAM
+# Delete unusued components save memory
+del base_model_student
+del base_model_teacher
 del model_teacher.image_encoder
 del model_teacher.image_projection
 del model_student.image_encoder
 del model_student.image_projection
 if is_using_cuda:
     torch.cuda.empty_cache()
+
+# Helps avoid issues mixing inf-mode tensors with training tensors
+model_student.toggle_inference_mode(False)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -290,9 +297,8 @@ if not arg_train_text_path.exists() and arg_train_text_path.with_suffix(".txt").
 
 # Create training text file if we don't find one
 if not arg_train_text_path.exists():
-    default_train_text = ["visual", "person", "human", "vehicle", "airplane", "train", "boat", "traffic light", "sky"]
-    with open(arg_train_text_path, "w") as outfile:
-        json.dump(default_train_text, outfile, indent=2)
+    default_train_text = make_default_training_text_list()
+    save_unnested_json(arg_train_text_path, default_train_text)
     print(
         "",
         "Training text file not found! Creating default file:",
@@ -474,6 +480,7 @@ render_limit_dict = {"h": display_size_px}
 min_display_size_px = disp_layout._rdr.limits.min_h
 
 # Create hidden controls (easier to bind to keypresses this way)
+hidden_text_input = ImmediateButton("Enter prompt")
 hidden_show_mask_btn = ToggleButton("Show masks")
 hidden_list_scores_btn = ImmediateButton("Blame")
 hidden_optim_btn = ImmediateButton("Reset optimizer")
@@ -491,6 +498,24 @@ def run_full(model: nn.Module, idx_tokens_bn: torch.Tensor) -> torch.Tensor:
     return encoded_text_bnc
 
 
+def save_weights(
+    save_folder_path: Path,
+    modules_to_save: TrainModulesDict,
+    name_teacher: str,
+    name_student: str,
+    config_student: dict,
+    total_iterations: int,
+):
+    """Helper used to save training weights"""
+    save_weights_dict = modules_to_save.record_state_dict(layer_name_prefix="text_encoder")
+    save_data_dict = {"weights": save_weights_dict}
+    save_data_dict["teacher_name"] = name_teacher
+    save_data_dict["student_name"] = name_student
+    save_data_dict["student_config"] = config_student
+    save_path, save_size_mb = save_training_weights(save_folder_path, save_data_dict, total_iterations)
+    print("", f"Saved training weights: ({save_size_mb:.1f} MB)", f"@ {save_path}", "", sep="\n", flush=True)
+
+
 # Set up display
 target_fps = 30
 frame_delay_sec_target = (1.0 / target_fps) * 0.75
@@ -499,6 +524,7 @@ window = DisplayWindow("Display - q to quit", display_fps=target_fps).attach_mou
 window.move(200, 50)
 
 # Keypress controls
+window.attach_keypress_callback(KEY.ENTER, hidden_text_input.click)
 window.attach_keypress_callback(KEY.SPACEBAR, train_btn.toggle)
 window.attach_keypress_callback(KEY.LEFT_ARROW, radio_loss.previous)
 window.attach_keypress_callback(KEY.RIGHT_ARROW, radio_loss.next)
@@ -526,6 +552,7 @@ print(
     "- Try adjusting the learning rate to see how it affects the loss",
     "- Use backup/restore to keep copies of weights before making extreme changes to settings",
     "- Use reset to wipe out training progress",
+    "- Press enter to return to the terminal to enter a new text prompt",
     "",
     "Keypress controls:",
     "Left/right arrows: Change selected loss function",
@@ -546,7 +573,6 @@ print(
 # Initialize training loop data/state
 remake_optimizer = lambda lr: torch.optim.AdamW((p for p in model_student.parameters() if p.requires_grad), lr=lr)
 need_optim_reset = True
-request_display_only_update = False
 is_nan_loss = False
 time_train_start_sec = 0
 total_iters = 0
@@ -555,6 +581,8 @@ avg_loss = None
 loss_name, loss_func = loss_functions_list[0]
 plot_loss_list = []
 optim = remake_optimizer(0)
+request_display_only_update = True
+need_save_on_crash = False
 
 # Load true prediction scores for plotting comparison
 plot_scores_elem.set_true_data(true_score_preds.squeeze(0).float().cpu().numpy())
@@ -567,6 +595,7 @@ lr_slider.set_is_changed(True)
 try:
     while True:
         # Read buttons
+        need_new_prompt = hidden_text_input.read()
         need_reset_weights = reset_btn.read()
         need_restore_weights = restore_btn.read()
         need_backup_weights = backup_btn.read()
@@ -582,16 +611,30 @@ try:
         is_accum_changed, accum_after_n = accum_slider.read()
         is_disprate_changed, display_every_n = disp_n_slider.read()
 
+        # Switch to terminal to enter new text prompt
+        if need_new_prompt:
+            _, _, new_prompt = read_user_text_input(prompt_for_exiting=None, allow_numeric_inputs=False)
+            exemplar_prompt = {"text": new_prompt}
+
+            # Update 'true' predictions for comparisons
+            true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
+            _, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
+            num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
+            use_top_n = num_true_detections if num_true_detections > 0 else 5
+            plot_scores_elem.set_true_data(true_score_preds.squeeze(0).float().cpu().numpy())
+
+            request_display_only_update |= not is_training
+
         # Force display update to switch mask vs. image display
         if is_show_masks_changed:
-            request_display_only_update = not is_training
+            request_display_only_update |= not is_training
 
         # Switch loss functions if needed and force display update to show new loss
         if is_loss_changed:
             avg_loss = None
-            request_display_only_update = True
             loss_name, loss_func = loss_functions_list[loss_select_idx]
             plot_loss_list = []
+            request_display_only_update = True
 
         # Clear all training weights
         if need_reset_weights:
@@ -790,16 +833,28 @@ try:
 
         # Save current training weights
         if need_save_to_disk:
-            save_weights_dict = training_modules.record_state_dict(layer_name_prefix="text_encoder")
-            save_data_dict = {"weights": save_weights_dict}
-            save_data_dict["teacher_name"] = name_teacher
-            save_data_dict["student_name"] = name_student
-            save_data_dict["student_config"] = config_student
-            save_path, save_size_mb = save_training_weights(save_folder_path, save_data_dict, total_iters)
-            print("", f"Saved training weights: ({save_size_mb:.1f} MB)", f"@ {save_path}", "", sep="\n", flush=True)
+            save_weights(save_folder_path, training_modules, name_teacher, name_student, config_student, total_iters)
+
+        pass
 
 except KeyboardInterrupt:
     print("")
 
+except torch.OutOfMemoryError as err:
+    need_save_on_crash = True
+    print("", "Error - Out of memory!", "", sep="\n")
+    sleep(1)
+    raise err
+
+except Exception as err:
+    need_save_on_crash = True
+    print("", "An unexpected error occurred!", "", sep="\n", flush=True)
+    raise err
+
 finally:
     cv2.destroyAllWindows()
+
+    if need_save_on_crash:
+        user_confirm = confirm_prompt("Save current training weights?", is_yes_by_default=True)
+        if user_confirm:
+            save_weights(save_folder_path, training_modules, name_teacher, name_student, config_student, total_iters)
