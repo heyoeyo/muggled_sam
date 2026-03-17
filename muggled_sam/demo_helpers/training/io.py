@@ -12,6 +12,7 @@ import json
 import torch
 import torch.nn as nn
 import numpy as np
+import cv2
 
 # For type hints
 from typing import Any
@@ -210,6 +211,43 @@ class ShuffleList:
         np.random.shuffle(self._idx_list)
         self._curr_item_idx = -1
         return
+
+    # .................................................................................................................
+
+
+class ImageLoader:
+    """
+    Simple helper used to load image data from a list of paths.
+    Automatically removes non-image paths as it goes and
+    has support for repeating images (without repeat loading)
+    """
+
+    def __init__(self, image_paths_list: list[str | Path]):
+
+        self._image_paths = ShuffleList(image_paths_list)
+        self._prev_img = None
+
+    def get_next_image(self, repeat_last_image: bool = False):
+
+        if repeat_last_image and self._prev_img is not None:
+            return self._prev_img
+
+        while True:
+
+            # Read image if possible (otherwise remove from loading list)
+            _, img_path = self._image_paths.get_next()
+            img_uint8 = cv2.imread(img_path)
+            if img_uint8 is not None:
+                break
+
+            # If we get here, the image failed to load, so remove it from our list and try to load another image
+            self._image_paths.remove_previous()
+            print("Removed bad image path: ", img_path)
+            assert len(self._image_paths) > 0, "Error, no valid image paths for training!"
+
+        # Store image for repeats
+        self._prev_img = img_uint8
+        return img_uint8
 
     # .................................................................................................................
 

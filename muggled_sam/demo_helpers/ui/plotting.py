@@ -166,6 +166,7 @@ class ScoresPlot(BaseCallback):
         true_color=(250, 10, 110),
         axis_color=(255, 255, 255),
         axis_width: int = 2,
+        bar_width_pct: tuple[int, int] = (100, 100),
         xy_margin=(8, 10),
         text_scale: float = 0.5,
         use_log_scale: bool = False,
@@ -195,6 +196,9 @@ class ScoresPlot(BaseCallback):
         self._txtdraw = TextDrawer(scale=text_scale, color=axis_color)
 
         # Positioning config
+        true_w_pct, test_w_pct = bar_width_pct
+        self._true_w_norm = true_w_pct / 100
+        self._test_w_norm = test_w_pct / 100
         self._title_y_margin = 8
         self._xy_margin = xy_margin
         self._plot_xy1 = (0, 0)
@@ -226,9 +230,17 @@ class ScoresPlot(BaseCallback):
 
             x_px_f32 = plot_x1 + (plot_w - 1.0) * self._true_xbounds_norm
             y_px = plot_y1 + plot_h - np.round((plot_h - 1.0) * self._true_data).astype(np.int32)
-            for y_idx, (x1_px, x2_px) in enumerate(zip(x_px_f32[:-1], x_px_f32[1:])):
-                xy1 = (round(x1_px), y_px[y_idx])
-                xy2 = (round(x2_px), plot_y2)
+
+            # Average x-bounds towards center point to shrink bar width
+            x1x2_px = np.column_stack((x_px_f32[:-1], x_px_f32[1:]))
+            if self._test_w_norm < 1:
+                x1x2_px = (x1x2_px * self._true_w_norm) + x1x2_px.mean(-1, keepdims=True) * (1.0 - self._true_w_norm)
+
+            # Draw each score bar
+            x1x2_px_list = np.round(x1x2_px).astype(np.int32).tolist()
+            for y_idx, (x1_px, x2_px) in enumerate(x1x2_px_list):  # zip(x_px_f32[:-1], x_px_f32[1:])):
+                xy1 = (x1_px, y_px[y_idx])
+                xy2 = (x2_px, plot_y2)
                 cv2.rectangle(new_base, xy1, xy2, self._true_data_color, -1, cv2.LINE_4)
 
             self._base_image = new_base
@@ -244,10 +256,17 @@ class ScoresPlot(BaseCallback):
             x_px_f32 = x1 + (plot_w - 1.0) * self._test_xbounds_norm
             y_px = y1 + plot_h - np.round((plot_h - 1.0) * self._test_data).astype(np.int32)
 
+            # Average x-bounds towards center point to shrink bar width
+            x1x2_px = np.column_stack((x_px_f32[:-1], x_px_f32[1:]))
+            if self._test_w_norm < 1:
+                x1x2_px = (x1x2_px * self._test_w_norm) + x1x2_px.mean(-1, keepdims=True) * (1.0 - self._test_w_norm)
+
+            # Draw each score bar
+            x1x2_px_list = np.round(x1x2_px).astype(np.int32).tolist()
             img = self._base_image.copy()
-            for y_idx, (x1_px, x2_px) in enumerate(zip(x_px_f32[:-1], x_px_f32[1:])):
-                xy1 = (round(x1_px), y_px[y_idx])
-                xy2 = (round(x2_px), y2)
+            for y_idx, (x1_px, x2_px) in enumerate(x1x2_px_list):  # zip(x_px_f32[:-1], x_px_f32[1:])):
+                xy1 = (x1_px, y_px[y_idx])
+                xy2 = (x2_px, y2)
                 cv2.rectangle(img, xy1, xy2, self._test_data_color, -1, cv2.LINE_4)
 
             # Draw x/y axis

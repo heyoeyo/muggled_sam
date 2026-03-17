@@ -300,9 +300,11 @@ def draw_combined_mask(
         image_uint8
     """
     # Make sure we're dealing with NxHxW shaped masks
-    assert mask_predictions.ndim < 4, "Expecting mask with 3 dimensions (NxHxW)"
-    if mask_predictions.ndim == 2:
+    if mask_predictions.ndim == 4:
+        mask_predictions = mask_predictions.squeeze(0)
+    elif mask_predictions.ndim == 2:
         mask_predictions = mask_predictions.unsqueeze(0)
+    assert mask_predictions.ndim == 3, "Expecting mask with 3 dimensions (NxHxW)"
 
     # Do hi-resolution scaling if needed
     needs_scale = display_hw is not None
@@ -320,6 +322,85 @@ def draw_combined_mask(
     if needs_scale and not use_hires_resize:
         disp_h, disp_w = display_hw
         mask_uint8 = cv2.resize(mask_uint8, (disp_w, disp_h), interpolation=cv2.INTER_NEAREST)
+
+    return cv2.cvtColor(mask_uint8, cv2.COLOR_GRAY2BGR) if return_3ch else mask_uint8
+
+
+def make_stacked_masks(mask_predictions: Tensor, rows_columns: tuple[int, int] = (4, 1)):
+    """
+    Helper used to stack together SAM mask predictions into, typically, either a
+    single row or column of images, or otherwise as a 2x2 grid.
+    Returns: stack_mask_predictions (shape HxW)
+    """
+
+    # Make sure we're dealing with NxHxW shaped masks
+    if mask_predictions.ndim == 4:
+        mask_predictions = mask_predictions.squeeze(0)
+    elif mask_predictions.ndim == 2:
+        mask_predictions = mask_predictions.unsqueeze(0)
+    assert mask_predictions.ndim == 3, "Expecting mask with 3 dimensions (NxHxW)"
+
+    # Pad masks to form tile set, if needed
+    num_masks, mask_h, mask_w = mask_predictions.shape
+    num_rows, num_cols = rows_columns
+    num_tiles = num_rows * num_cols
+    assert num_tiles >= num_masks, f"Cannot use row/column count that is less than the number of masks ({num_masks})"
+    num_pad = max(num_tiles - num_masks, 0)
+    if num_pad > 0:
+        pad_masks = torch.full(
+            (num_pad, mask_h, mask_w),
+            -10.0,
+            device=mask_predictions.device,
+            dtype=mask_predictions.dtype,
+        )
+        mask_predictions = torch.concat((mask_predictions, pad_masks), dim=0)
+
+    # Create stacked masks and figure out display scaling, if needed
+    mask_grid = mask_predictions.reshape(num_rows, num_cols, mask_h, mask_w)
+    stacked_masks = torch.hstack(torch.hstack(mask_grid.unbind(0)).unbind(0))
+
+    return stacked_masks
+
+
+def draw_stacked_mask_image(
+    mask_predictions: Tensor,
+    mask_threshold: float = 0,
+    rows_columns: tuple[int, int] = (4, 1),
+    match_hw: tuple[int | None, int | None] | None = (None, None),
+    return_3ch: bool = True,
+    use_hires_resize: bool = False,
+) -> np.ndarray:
+    """
+    Helper used to draw multiple masks as a single 'stacked' image.
+
+    The image can be scaled to match a target height and/or width.
+    If only a match height is given, then the width will be scaled
+    to maintain the aspect ratio to achieve the target height,
+    and vice versa if only a match width is given. The idea is
+    to allow for stacking horizontally/vertically with another image.
+
+    Returns:
+        image_uint8
+    """
+
+    # Stack masks together at their original sizing
+    stacked_masks = make_stacked_masks(mask_predictions, rows_columns)
+
+    # Do hi-res scaling if needed
+    match_h, match_w = match_hw
+    needs_h_match, needs_w_match = (match_h is not None), (match_w is not None)
+    needs_scale = needs_h_match or needs_w_match
+    if needs_scale:
+        stack_h, stack_w = stacked_masks.shape[0:2]
+        scale_h = match_h if needs_h_match else round(stack_h * match_w / stack_w)
+        scale_w = match_w if needs_w_match else round(stack_w * match_h / stack_h)
+
+    # Make binary mask with pre-scaling (high-res) or post-scaling (low-res) as needed
+    if needs_scale and use_hires_resize:
+        stacked_masks = torch.nn.functional.interpolate(stacked_masks[None, None], (scale_h, scale_w))[0, 0]
+    mask_uint8 = ((stacked_masks > mask_threshold).byte() * 255).cpu().numpy()
+    if needs_scale and not use_hires_resize:
+        mask_uint8 = cv2.resize(mask_uint8, (scale_w, scale_h), interpolation=cv2.INTER_NEAREST)
 
     return cv2.cvtColor(mask_uint8, cv2.COLOR_GRAY2BGR) if return_3ch else mask_uint8
 

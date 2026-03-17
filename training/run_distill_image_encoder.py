@@ -32,7 +32,7 @@ from muggled_sam.make_sam import make_sam_from_state_dict
 from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
 from muggled_sam.demo_helpers.ui.layout import HStack, VStack, OverlayStack
 from muggled_sam.demo_helpers.ui.images import ExpandingImage
-from muggled_sam.demo_helpers.ui.overlays import DrawBoxOverlay
+from muggled_sam.demo_helpers.ui.overlays import PointSelectOverlay, BoxSelectOverlay
 from muggled_sam.demo_helpers.ui.buttons import ToggleButton, ImmediateButton, RadioConstraint
 from muggled_sam.demo_helpers.ui.sliders import HSlider
 from muggled_sam.demo_helpers.ui.text import ValueBlock, TextBlock
@@ -41,13 +41,10 @@ from muggled_sam.demo_helpers.ui.plotting import LossPlot, ScoresPlot
 from muggled_sam.demo_helpers.ui.base import force_same_min_width
 
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
-from muggled_sam.demo_helpers.loading import (
-    ask_for_path_if_missing,
-    ask_for_model_path_if_missing,
-    ask_for_value_if_missing,
-)
-from muggled_sam.demo_helpers.text_input import read_user_text_input, confirm_prompt
-from muggled_sam.demo_helpers.mask_postprocessing import draw_combined_mask
+from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
+from muggled_sam.demo_helpers.text_input import confirm_prompt
+from muggled_sam.demo_helpers.mask_postprocessing import make_stacked_masks
+from muggled_sam.demo_helpers.ui.helpers.images import get_image_hw_for_max_side_length
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -55,10 +52,9 @@ from muggled_sam.demo_helpers.misc import (
 )
 
 import muggled_sam.demo_helpers.training.loss_functions as loss_funcs
-from muggled_sam.demo_helpers.training.default_data import make_default_training_text_list, save_unnested_json
 from muggled_sam.demo_helpers.training.io import (
     TrainModulesDict,
-    ShuffleList,
+    ImageLoader,
     load_prior_weights,
     make_save_folder,
     save_training_weights,
@@ -66,9 +62,11 @@ from muggled_sam.demo_helpers.training.io import (
 )
 from muggled_sam.demo_helpers.training.layer_replacement import (
     LoraLinear,
-    LoraEmbedding,
+    LoraConv2D,
+    LoraConvTranspose2D,
     OffsetLayernorm,
     replace_target_modules,
+    checkpoint_image_encoder_stages,
 )
 
 
@@ -78,34 +76,41 @@ from muggled_sam.demo_helpers.training.layer_replacement import (
 # Set argparse defaults
 default_device = get_default_device_string()
 default_image_path = None
-default_text_prompt = None
+default_prompts_path = None
 default_teacher_path = None
 default_student_path = None
 default_continue_path = None
-default_train_text_path = "distill_training_text.json"
+default_train_images_path = None
 default_display_size = 800
+default_base_size = 504
 default_threshold = 0.5
-default_lora_rank = 32
+default_lora_rank = 24
 default_lr_low = 1e-7
-default_lr_init = 2.5e-5
+default_lr_init = 1e-4
 default_lr_high = 1e-1
-default_max_duration = 60
-default_loss_samples = 600
+default_max_duration = 120
+default_loss_samples = 300
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 text encoder")
+parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 image encoder")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to test image")
-parser.add_argument("-t", "--text_prompt", default=default_text_prompt, help="Text prompt for testing")
+parser.add_argument(
+    "-p",
+    "--prompts_path",
+    default=default_prompts_path,
+    type=str,
+    help="Path to a json file containing prompts to use on start-up (format is: {'boxes': ..., 'fg_points': ...})",
+)
 parser.add_argument("--teacher_path", default=default_teacher_path, type=str, help="Path to teacher model weights")
 parser.add_argument("--student_path", default=default_student_path, type=str, help="Path to student model weights")
 parser.add_argument(
-    "--continue_path", default=default_continue_path, type=str, help="Path to re-load prior training weights"
+    "--training_images_path",
+    default=default_train_images_path,
+    type=str,
+    help="Path to folder containing images for training",
 )
 parser.add_argument(
-    "--training_text_path",
-    default=default_train_text_path,
-    type=str,
-    help="Path to file containing text prompts for training",
+    "--continue_path", default=default_continue_path, type=str, help="Path to re-load prior training weights"
 )
 parser.add_argument(
     "-y",
@@ -136,13 +141,22 @@ parser.add_argument(
     help="Use 32-bit floating point model weights. Note: this doubles VRAM usage",
 )
 parser.add_argument(
-    "--detection_threshold",
-    default=default_threshold,
-    type=float,
-    help=f"Detection threshold used for reporting results (default: {default_threshold})",
+    "-ar",
+    "--use_aspect_ratio",
+    default=False,
+    action="store_true",
+    help="Process images at their original aspect ratio",
 )
 parser.add_argument(
-    "--no_embedding", default=False, action="store_true", help="Disable training of the text embeddings"
+    "-b",
+    "--base_size_px",
+    default=default_base_size,
+    type=int,
+    help="Initial image processing size",
+)
+parser.add_argument("--stack_vertical", default=False, action="store_true", help="Stack displayed masks vertically")
+parser.add_argument(
+    "--no_convolution", default=False, action="store_true", help="Disable training of the convolution layers"
 )
 parser.add_argument("--no_linear", default=False, action="store_true", help="Disable training of linear layers")
 parser.add_argument("--enable_layernorm", default=False, action="store_true", help="Enable training of layernorms")
@@ -174,21 +188,26 @@ parser.add_argument(
     type=int,
     help=f"Max number of loss plot values to show (default: {default_loss_samples})",
 )
+parser.add_argument(
+    "--low_memory", default=False, action="store_true", help="Enable activation checkpointing to reduce memory usage"
+)
 
 # For convenience
 args = parser.parse_args()
 arg_image_path = args.image_path
-arg_text_prompt = args.text_prompt
+init_prompts_path = args.prompts_path
 arg_teacher_path = args.teacher_path
 arg_student_path = args.student_path
+arg_train_images_path = args.training_images_path
 arg_continue_path = args.continue_path
-arg_train_text_path = args.training_text_path
 arg_skip_cli = args.skip_cli
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
-detection_threshold = args.detection_threshold
-enable_embedding_training = not args.no_embedding
+use_square_sizing = not args.use_aspect_ratio
+imgenc_init_size = args.base_size_px
+is_masks_vert_stack = args.stack_vertical
+enable_convolution_training = not args.no_convolution
 enable_linear_training = not args.no_linear
 enable_layernorm_training = args.enable_layernorm
 lora_rank = max(args.lora_rank, 1)
@@ -197,29 +216,38 @@ lr_high = args.lr_high
 lr_init = args.lr_init
 duration_max_sec = max(1, int(args.max_duration))
 num_loss_samples = max(5, args.num_loss_samples)
+enable_checkpointing = args.low_memory
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
 is_using_cuda = "cuda" in device_config_dict["device"]
 
+# Force checkpointing if we're likely to run out of VRAM
+if is_using_cuda and not enable_checkpointing:
+    _, total_mem_bytes = torch.cuda.mem_get_info()
+    total_mem_gb = total_mem_bytes / 1e9
+    if total_mem_gb < (24 if use_float32 else 12):
+        enable_checkpointing = True
+        print("", "Low-memory mode has been auto-enabled to reduce VRAM usage", sep="\n")
+
 # Create history to re-use selected inputs
 root_path = Path(__file__).parent.parent
 history = HistoryKeeper(root_path)
 _, history_imgpath = history.read("image_path")
-_, history_txtprompt = history.read("distill_txt_prompt")
+_, history_trainpath = history.read("train_image_folder_path")
 _, history_studentpath = history.read("distill_student_path")
 _, history_teacherpath = history.read("distill_teacher_path")
 
-# Use history values to fill in cli prompts
+# Skip prompts with history if possible
 if arg_skip_cli:
     arg_image_path = history_imgpath if arg_image_path is None else arg_image_path
-    arg_text_prompt = history_txtprompt if arg_text_prompt is None else arg_text_prompt
+    arg_train_images_path = history_trainpath if arg_train_images_path is None else arg_train_images_path
     arg_student_path = history_studentpath if arg_student_path is None else arg_student_path
     arg_teacher_path = history_teacherpath if arg_teacher_path is None else arg_teacher_path
 
 # Get pathing to resources, if not provided already
 image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
-text_prompt = ask_for_value_if_missing(arg_text_prompt, "Enter text prompt: ", history_txtprompt)
+path_train_images = ask_for_path_if_missing(arg_train_images_path, "training images", history_trainpath)
 path_student_model = ask_for_model_path_if_missing(
     root_path, arg_student_path, history_studentpath, message="Select student model:"
 )
@@ -236,7 +264,7 @@ if path_student_model == path_teacher_model:
 # Store history for use on reload
 history.store(
     image_path=image_path,
-    distill_txt_prompt=text_prompt,
+    train_image_folder_path=path_train_images,
     distill_student_path=path_student_model,
     distill_teacher_path=path_teacher_model,
 )
@@ -248,16 +276,22 @@ history.store(
 # Load student model
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
-config_student, base_model_student = make_sam_from_state_dict(path_student_model)
-assert base_model_student.name == "samv3", "Only SAMv3 is supported for fine tuning"
-model_student = base_model_student.make_detector_model()
+config_student, model_student = make_sam_from_state_dict(path_student_model)
+assert model_student.name == "samv3", "Only SAMv3 is supported for fine tuning"
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
-model_teacher = base_model_teacher.make_detector_model()
+config_teacher, model_teacher = make_sam_from_state_dict(path_teacher_model)
+assert model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
+
+# Remove unused components to save some memory
+to_delete = ["sampling_encoder", "image_exemplar_fusion", "text_encoder", "exemplar_detector", "exemplar_segmentation"]
+for component_name in to_delete:
+    if hasattr(model_student, component_name):
+        delattr(model_student, component_name)
+    if hasattr(model_teacher, component_name):
+        delattr(model_teacher, component_name)
 
 # Make sure all weights are un-trainable to begin
 for p in model_teacher.parameters():
@@ -270,36 +304,11 @@ model_student.train()
 # Move models to target devices & report sizing
 model_teacher.to(**device_config_dict)
 model_student.to(**device_config_dict)
-
-# Set up save pathing
-save_folder_path = make_save_folder(root_path, path_student_model, "distill_txtenc")
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# %% Load test image
-
-# Load test image
-loaded_image_bgr = cv2.imread(image_path)
-
-# Run 'true' image encoding & mask generation for reporting
-exemplar_prompt = {"text": text_prompt}
-true_encimg, _, _ = model_teacher.encode_detection_image(loaded_image_bgr)
-true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
-_, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
-
-# Figure out how many detections to display based on 'true' result
-num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
-use_top_n = num_true_detections if num_true_detections > 0 else 5
-
-# Delete unusued components save memory
-del base_model_student
-del base_model_teacher
-del model_teacher.image_encoder
-del model_teacher.image_projection
-del model_student.image_encoder
-del model_student.image_projection
 if is_using_cuda:
     torch.cuda.empty_cache()
+
+# Set up save pathing
+save_folder_path = make_save_folder(root_path, path_student_model, "distill_imgenc")
 
 # Helps avoid issues mixing inf-mode tensors with training tensors
 model_student.toggle_inference_mode(False)
@@ -309,41 +318,36 @@ model_student.toggle_inference_mode(False)
 # %% Load training data
 
 # Force relative path to be relative to this script
-arg_train_text_path = Path(arg_train_text_path)
-if arg_train_text_path.parent == Path("."):
-    arg_train_text_path = Path(__file__).parent / arg_train_text_path
+path_train_images = Path(path_train_images)
+if path_train_images.parent == Path("."):
+    path_train_images = Path(__file__).parent / path_train_images
 
-# For convenience, check for a .txt version of the given training text file
-if not arg_train_text_path.exists() and arg_train_text_path.with_suffix(".txt").exists():
-    arg_train_text_path = arg_train_text_path.with_suffix(".txt")
+print("", "Loading image paths for training...", f"@ {path_train_images}", sep="\n")
+if path_train_images.is_dir():
+    # If given a folder, assume all file paths inside are training images
+    all_train_image_paths_list = []
+    for parent_folder_path, _, files_list in path_train_images.walk():
+        for file in files_list:
+            if file.endswith("txt") or file.endswith("json"):
+                continue
+            all_train_image_paths_list.append(parent_folder_path / file)
+    assert len(all_train_image_paths_list) > 0, f"Error, no images found in folder: {path_train_images}"
+else:
+    # Assume we got a path to a text file listing image paths directly
+    all_train_image_paths_list = []
+    for img_path in load_text_list_file(path_train_images):
+        img_path = Path(img_path.removeprefix("'").removeprefix('"').removesuffix("'").removesuffix('"'))
+        if not img_path.exists():
+            continue
+        all_train_image_paths_list.append(img_path)
+print(f"  -> Found {len(all_train_image_paths_list)} files")
+assert len(all_train_image_paths_list) > 0, "No image paths found, nothing to train on!"
+img_loader = ImageLoader(all_train_image_paths_list)
 
-# Create training text file if we don't find one
-if not arg_train_text_path.exists():
-    default_train_text = make_default_training_text_list()
-    save_unnested_json(arg_train_text_path, default_train_text)
-    print(
-        "",
-        "Training text file not found! Creating default file:",
-        f"@ {arg_train_text_path}",
-        "Add/remove text prompts from this file to guide the model distillation!",
-        "Including more training prompts will lead to better generalization, but will be harder to train.",
-        sep="\n",
-    )
-
-# Load training text data
-print("", "Loading text for training...", f"@ {arg_train_text_path.name}", sep="\n")
-all_train_text_list = load_text_list_file(arg_train_text_path)
-all_train_text_list = ShuffleList(all_train_text_list, shuffle_on_init=True)
-
-# Convert all input text to vocabulary indexing ahead-of-time
-with torch.no_grad():
-    teacher_tokenizer = model_teacher.text_encoder.tokenizer
-    txt_to_idx_cache = {txt: teacher_tokenizer.text_to_vocab_index(txt) for txt in all_train_text_list}
-    num_unique_txt = len(txt_to_idx_cache)
-    example_txt = ", ".join(list(txt_to_idx_cache.keys())[0:5])
-    txt_cache_kb = 8 * sum(idx_tensor.shape[-1] for idx_tensor in txt_to_idx_cache.values()) / 1000
-print(f"  -> Found {num_unique_txt} unique text entries (cached {txt_cache_kb:.1f} KB of token indices)")
-print("  -> Examples:", example_txt, "...")
+# Also load Load test image and get smaller version for display (reduce resizing burden during updates)
+loaded_image_bgr = cv2.imread(image_path)
+scale_hw = get_image_hw_for_max_side_length(loaded_image_bgr)
+scaled_img_bgr = cv2.resize(loaded_image_bgr, dsize=(scale_hw[1], scale_hw[0]))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -352,34 +356,40 @@ print("  -> Examples:", example_txt, "...")
 # Initialize references to trainable parameters
 training_modules = TrainModulesDict()
 num_linear_params = 0
-num_embedding_params = 0
 num_layernorm_params = 0
-TXTENC_SUBMOD_STR = "text_encoder"
+num_conv2d_params = 0
+num_proj_conv2d_params = 0
+num_convtranspose_params = 0
+IMGENC_SUBMOD_STR = "image_encoder"
+IMGPRJ_SUBMOD_STR = "image_projection"
 
 # Train linear layers
 if enable_linear_training:
     linear_refs, num_linear_params = replace_target_modules(
-        model_student,
-        TXTENC_SUBMOD_STR,
-        nn.Linear,
-        lambda layer: LoraLinear(layer, lora_rank),
+        model_student, IMGENC_SUBMOD_STR, nn.Linear, lambda layer: LoraLinear(layer, lora_rank)
     )
     training_modules.store_training_modules("lora_linear", linear_refs)
 
-# Train text embedding
-if enable_embedding_training:
-    embedding_refs, num_embedding_params = replace_target_modules(
-        model_student,
-        TXTENC_SUBMOD_STR,
-        nn.Embedding,
-        lambda layer: LoraEmbedding(layer, lora_rank),
+# Train convolution layers (these exist on both the encoder and projection components!)
+if enable_convolution_training:
+    enc_conv2d_refs, num_conv2d_params = replace_target_modules(
+        model_student, IMGENC_SUBMOD_STR, nn.Conv2d, lambda layer: LoraConv2D(layer, lora_rank)
     )
-    training_modules.store_training_modules("lora_embedding", embedding_refs)
+    proj_conv2d_refs, num_proj_conv2d_params = replace_target_modules(
+        model_student, IMGPRJ_SUBMOD_STR, nn.Conv2d, lambda layer: LoraConv2D(layer, lora_rank)
+    )
+    proj_convtranspose_refs, num_convtranspose_params = replace_target_modules(
+        model_student, IMGPRJ_SUBMOD_STR, nn.ConvTranspose2d, lambda layer: LoraConvTranspose2D(layer, lora_rank)
+    )
+
+    training_modules.store_training_modules("lora_conv2d", enc_conv2d_refs)
+    training_modules.store_training_modules("lora_conv2d", proj_conv2d_refs, replace=False)
+    training_modules.store_training_modules("lora_convtranspose2d", proj_convtranspose_refs, replace=False)
 
 # Train layernorms
 if enable_layernorm_training:
     layernorm_refs, num_layernorm_params = replace_target_modules(
-        model_student, TXTENC_SUBMOD_STR, nn.LayerNorm, OffsetLayernorm
+        model_student, IMGENC_SUBMOD_STR, nn.LayerNorm, OffsetLayernorm
     )
     training_modules.store_training_modules("offset_layernorm", layernorm_refs)
 
@@ -398,24 +408,25 @@ if need_load_weights:
     prior_weights_dict = training_modules.record_state_dict()
 
 # Get block mappings
-num_layers_student = config_student["txtencoder_num_blocks"]
-num_layers_teacher = config_teacher["txtencoder_num_blocks"]
+num_blocks_student = config_student["imgencoder_num_blocks"]
+num_blocks_teacher = config_teacher["imgencoder_num_blocks"]
 
 # Report training parameter count
-num_student_params = sum(p.numel() for p in model_student.text_encoder.parameters() if p.requires_grad)
-num_teacher_params = sum(p.numel() for p in model_teacher.text_encoder.parameters())
+num_student_params = sum(p.numel() for p in model_student.image_encoder.parameters() if p.requires_grad)
+num_teacher_params = sum(p.numel() for p in model_teacher.image_encoder.parameters())
 pct_train_param = round(100 * num_student_params / num_teacher_params, 1)
-report_lora_rank = f"{lora_rank if (num_embedding_params + num_linear_params) > 0 else 'not used'}"
+report_lora_rank = f"{lora_rank if (num_conv2d_params + num_linear_params) > 0 else 'not used'}"
 if need_load_weights:
     report_lora_rank = f"{report_lora_rank} (may be altered by loaded weights)"
 print(
     "",
     "Training stats:",
     f" Total param count: {num_student_params} from {num_teacher_params} ({pct_train_param}%)",
-    f"  Embedding params: {num_embedding_params}",
     f"     Linear params: {num_linear_params}",
+    f"     Conv2D params: {num_conv2d_params + num_proj_conv2d_params}",
+    f"   Conv2D.T params: {num_convtranspose_params}",
     f"  Layernorm params: {num_layernorm_params}",
-    f"       Layer count: {num_layers_student} from {num_layers_teacher}",
+    f"       Block count: {num_blocks_student} from {num_blocks_teacher}",
     f"         Lora rank: {report_lora_rank}",
     sep="\n",
     flush=True,
@@ -423,7 +434,7 @@ print(
 sleep(0.5)
 
 # Warn if student is same/bigger than teacher
-if num_layers_student >= num_layers_teacher:
+if num_blocks_student >= num_blocks_teacher:
     print(
         "",
         "WARNING:",
@@ -433,6 +444,11 @@ if num_layers_student >= num_layers_teacher:
         flush=True,
     )
     sleep(5)
+
+# Set up checkpointing if needed
+if enable_checkpointing:
+    print("", "Checkpointing model to reduce memory usage...", sep="\n")
+    checkpoint_image_encoder_stages(model_student)
 
 # Set up initial 'backup' weights, just so we don't get errors if user tries to restore
 backup_weights_dict = {ltype: {} for ltype in training_modules.get_layer_types()}
@@ -446,16 +462,22 @@ make_backup_name = lambda loss, name, iters: f"{loss:.2e} ({name}) : {iters}"
 # Set up message bars to communicate config info
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-layers_str = f"{num_layers_teacher} -> {num_layers_student} layers"
+blocks_str = f"{num_blocks_teacher} -> {num_blocks_student} blocks"
 device_dtype_str = f"{model_device}/{model_dtype}"
-header_msgbar = StaticMessageBar(layers_str, device_dtype_str, space_equally=True)
+header_msgbar = StaticMessageBar(blocks_str, device_dtype_str, space_equally=True)
 
 # Set up main displays
 main_img_elem = ExpandingImage(loaded_image_bgr)
-bounding_box_olay = DrawBoxOverlay()
-olay_elem = OverlayStack(main_img_elem, bounding_box_olay)
+mask_img_elem = ExpandingImage(np.zeros_like(loaded_image_bgr))
+point_select_olay = PointSelectOverlay(color=(0, 255, 0))
+box_select_olay = BoxSelectOverlay(thickness=2)
+olay_elem = OverlayStack(main_img_elem, point_select_olay, box_select_olay)
 plot_loss_elem = LossPlot("Loss", min_side_length=256)
-plot_scores_elem = ScoresPlot("Detection Scores", use_log_scale=True, min_side_length=256)
+plot_scores_elem = ScoresPlot("IoU Scores", bar_width_pct=(90, 60), use_log_scale=True, min_side_length=256)
+
+# Disable box input on start up
+point_select_olay.enable(True)
+box_select_olay.enable(False)
 
 # Set backup controls
 backup_btn = ImmediateButton("Backup", (60, 120, 150), button_height=30, text_scale=0.35)
@@ -478,6 +500,7 @@ loss_functions_list = [
 ]
 loss_btns_list = ToggleButton.many(*[name for name, _ in loss_functions_list], button_height=35, text_scale=0.5)
 radio_loss = RadioConstraint(*loss_btns_list)
+radio_loss.change_to(2)
 
 # Elements used to report training state
 vram_text_block = ValueBlock("VRAM: ", "-", "MB", max_characters=5, outline_color=None)
@@ -492,19 +515,25 @@ lr_init_pct = float(round(100 * (lr_init_log10 - lr_low_log10) / (lr_high_log10 
 update_lr_from_pct = lambda lr_pct: float(10 ** (((lr_pct / 100.0) * (lr_high_log10 - lr_low_log10)) + lr_low_log10))
 
 # Set up slider controls
+duration_max_sec = 120
 train_btn = ToggleButton("Train", on_color=(0, 80, 220), off_color=(60, 75, 100))
-duration_slider = HSlider("Train duration (s)", 10, 0, duration_max_sec, step_size=1, marker_steps=10)
+duration_slider = HSlider("Train duration (s)", 20, 0, duration_max_sec, step_size=1, marker_steps=15)
 lr_slider = HSlider("Learning rate", lr_init_pct, 0, 100, step_size=1, marker_steps=10)
-accum_slider = HSlider("Gradient accumulation", 32, 1, 128, step_size=1, marker_steps=16)
+accum_slider = HSlider("Gradient accumulation", 8, 1, 128, step_size=1, marker_steps=16)
 disp_n_slider = HSlider("Display updates (every N)", 1, 0, 8, step_size=1, marker_steps=2)
-force_same_min_width(duration_slider, train_btn, disp_n_slider)
+imgsize_slider = HSlider(
+    "Process Resolution (px)", imgenc_init_size, 336, 1176, step_size=24, marker_steps=7, bar_bg_color=(55, 50, 55)
+)
+force_same_min_width(duration_slider, train_btn, disp_n_slider, min_w=100)
 
 # Set up full display layout
 disp_layout = VStack(
     header_msgbar,
     HStack(*radio_loss),
+    imgsize_slider,
     HStack(
-        olay_elem, VStack(plot_loss_elem, plot_scores_elem, HStack(backup_btn, restore_btn), last_backup_name_block)
+        VStack(olay_elem, mask_img_elem) if is_masks_vert_stack else HStack(olay_elem, mask_img_elem),
+        VStack(plot_loss_elem, plot_scores_elem, HStack(backup_btn, restore_btn), last_backup_name_block),
     ),
     HStack(iters_txt_block, vram_text_block if is_using_cuda else None, lr_txt_block, loss_txt_block),
     HStack(duration_slider, train_btn, disp_n_slider),
@@ -516,29 +545,44 @@ disp_layout = VStack(
 # Render out an image with a target size, to figure out which side we should limit when rendering
 display_image = disp_layout.render(h=display_size_px, w=display_size_px)
 render_limit_dict = {"h": display_size_px}
-min_display_size_px = disp_layout._rdr.limits.min_h
+min_display_size_px = min(600, disp_layout._rdr.limits.min_h)
 
 # Create hidden controls (easier to bind to keypresses this way)
-hidden_text_input = ImmediateButton("Enter prompt")
-hidden_show_mask_btn = ToggleButton("Show masks")
-hidden_list_scores_btn = ImmediateButton("Blame")
+hidden_box_prompt_mode_btn = ToggleButton("Box prompt mode", default_state=False)
 hidden_optim_btn = ImmediateButton("Reset optimizer")
+hidden_mask_stack_btn = ToggleButton("Use vertical masks", default_state=False)
+mask_rc_list = [(1, 4), (2, 2)] if is_masks_vert_stack else [(4, 1), (2, 2)]
+num_mask_rowcol = mask_rc_list[0]
+
+# Load initial prompts if provided
+have_init_prompts, init_prompts_dict = load_init_prompts(init_prompts_path)
+if have_init_prompts:
+    box_select_olay.add_boxes(*init_prompts_dict.get("boxes", []))
+    point_select_olay.add_points(*init_prompts_dict.get("fg_points", []))
+    if len(init_prompts_dict.get("bg_points", [])) > 0:
+        print(
+            "",
+            "Warning:",
+            "  Loaded prompt contains background points, which are not supported in this script",
+            "These will be ignored...",
+            sep="\n",
+        )
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% *** Display loop ***
 
 
-def run_full(model: nn.Module, idx_tokens_bn: torch.Tensor) -> torch.Tensor:
-    """Helper used to run full text encoding for training"""
-    encoded_text_bnc = model.text_encoder.vocab_embeddings(idx_tokens_bn)
-    encoded_text_bnc = model.text_encoder.transformer(encoded_text_bnc)
-    encoded_text_bnc = model.text_encoder.out_proj(encoded_text_bnc)
-    return encoded_text_bnc
+def run_full(model: nn.Module, image_tensor_bchw: torch.Tensor):
+    """Helper used to run full image encoding for training"""
+    encoded_img = model.image_encoder(image_tensor_bchw)
+    v3_features_list = model.image_projection.v2_projection(encoded_img)
+    v2_features_list = model.image_projection.v3_projection(encoded_img)
+    return [*v2_features_list, *v3_features_list]
 
 
 def save_weights(
-    save_folder_path: Path,
+    save_folder_path: str | Path,
     modules_to_save: TrainModulesDict,
     name_teacher: str,
     name_student: str,
@@ -556,14 +600,11 @@ def save_weights(
 
 
 # Set up display
-target_fps = 30
-frame_delay_sec_target = (1.0 / target_fps) * 0.75
 cv2.destroyAllWindows()
-window = DisplayWindow("Display - q to quit", display_fps=target_fps).attach_mouse_callbacks(disp_layout)
+window = DisplayWindow("Display - q to quit", display_fps=30).attach_mouse_callbacks(disp_layout)
 window.move(200, 50)
 
 # Keypress controls
-window.attach_keypress_callback(KEY.ENTER, hidden_text_input.click)
 window.attach_keypress_callback(KEY.SPACEBAR, train_btn.toggle)
 window.attach_keypress_callback(KEY.LEFT_ARROW, radio_loss.previous)
 window.attach_keypress_callback(KEY.RIGHT_ARROW, radio_loss.next)
@@ -571,9 +612,9 @@ window.attach_keypress_callback("[", lr_slider.decrement)
 window.attach_keypress_callback("]", lr_slider.increment)
 window.attach_keypress_callback("b", backup_btn.click)
 window.attach_keypress_callback("s", save_to_disk_btn.click)
-window.attach_keypress_callback("m", hidden_show_mask_btn.toggle)
+window.attach_keypress_callback("m", hidden_mask_stack_btn.toggle)
 window.attach_keypress_callback("r", hidden_optim_btn.click)
-window.attach_keypress_callback("l", hidden_list_scores_btn.click)
+window.attach_keypress_callback(KEY.TAB, hidden_box_prompt_mode_btn.toggle)
 
 # For clarity, some additional keypress codes
 KEY_ZOOM_IN = ord("=")
@@ -583,24 +624,29 @@ KEY_ZOOM_OUT = ord("-")
 print(
     "",
     "Note:",
-    "  The training objective is to match the encoded tokens of the student to the teacher model.",
-    "  The box, mask and score predictions are not directly optimized and can even degrade as loss improves!",
+    "  The training objective is to match the encoded image tokens of the student to the teacher model.",
+    "  The mask and IoU predictions are not directly optimized and can even degrade as loss improves!",
     "",
     "- Use spacebar to start/stop training",
     "- Try different loss functions from the top bar",
     "- Try adjusting the learning rate to see how it affects the loss",
     "- Use backup/restore to keep copies of weights before making extreme changes to settings",
     "- Use reset to wipe out training progress",
-    "- Press enter to return to the terminal to enter a new text prompt",
+    "- Click on the image to adjust the point prompt used for testing",
+    "",
+    "Mask prediction coloring:",
+    "- Purple areas are false negatives (predicted by teacher, not by student)",
+    "- Red areas are false positives (predicted by student, not by teacher)",
+    "- Green areas are true positives (predicted by teacher and student",
     "",
     "Keypress controls:",
     "Left/right arrows: Change selected loss function",
     "[ or ]: Adjust learning rate",
     "b: Create a backup",
     "s: Save the current training weights to disk",
-    "m: Toggle mask prediction view",
+    "m: Toggle mask stacking",
     "r: Manually reset optimizer state",
-    "l: Print out top-20 worst scoring text prompts",
+    "TAB: Toggle between point/box prompting (use right-click to delete prompts before switching)",
     "",
     "Use -/+ keys to change display sizing",
     "Press q or esc to close the window",
@@ -622,58 +668,75 @@ plot_loss_list = []
 optim = remake_optimizer(0)
 request_display_only_update = True
 need_save_on_crash = False
-
-# Load true prediction scores for plotting comparison
-plot_scores_elem.set_true_data(true_score_preds.squeeze(0).float().cpu().numpy())
+loss_scaling = [1.0, (1 / 2), (1 / 2), 1.0, (1 / 2), (1 / 2)]
+imgenc_config_dict = {"max_side_length": imgenc_init_size, "use_square_sizing": use_square_sizing}
+prompts_dict = {"box_tlbr_norm_list": [], "fg_xy_norm_list": [], "bg_xy_norm_list": []}
 
 # Force ui updates on start
 radio_loss.set_is_changed(True)
 lr_slider.set_is_changed(True)
+imgsize_slider.set_is_changed(True)
+
+# Add an initial prompt if needed
+_, point_xy_norm_list = point_select_olay.read()
+_, box_xy1xy2_norm_list = box_select_olay.read()
+if len(point_xy_norm_list) == 0 and len(box_xy1xy2_norm_list) == 0:
+    point_select_olay.add_points((0.5, 0.5))
 
 # *** Main display loop ***
 try:
     while True:
         # Read buttons
-        need_new_prompt = hidden_text_input.read()
         need_reset_weights = reset_btn.read()
         need_restore_weights = restore_btn.read()
         need_backup_weights = backup_btn.read()
         need_save_to_disk = save_to_disk_btn.read()
         need_manual_optim_reset = hidden_optim_btn.read()
+        is_prompt_mode_changed, use_box_prompt = hidden_box_prompt_mode_btn.read()
         is_train_changed, is_training = train_btn.read()
         is_loss_changed, loss_select_idx, loss_func_btn = radio_loss.read()
-        is_show_masks_changed, show_masks = hidden_show_mask_btn.read()
+        is_mask_stacking_changed, is_stack_vertical = hidden_mask_stack_btn.read()
 
         # Read sliders
+        is_imgsize_changed, imgsize_px = imgsize_slider.read()
         is_duration_changed, duration_sec = duration_slider.read()
         is_lr_changed, learning_rate_pct = lr_slider.read()
         is_accum_changed, accum_after_n = accum_slider.read()
         is_disprate_changed, display_every_n = disp_n_slider.read()
 
-        # Switch to terminal to enter new text prompt
-        if need_new_prompt:
-            _, _, new_prompt = read_user_text_input(prompt_for_exiting=None, allow_numeric_inputs=False)
-            exemplar_prompt = {"text": new_prompt}
+        # Read prompt inputs
+        if is_prompt_mode_changed:
+            print(f"Enabling {'box' if use_box_prompt else 'point'} prompts")
+            point_select_olay.enable(not use_box_prompt)
+            box_select_olay.enable(use_box_prompt)
+        is_point_prompt_changed, point_xy_norm_list = point_select_olay.read()
+        is_box_prompt_changed, box_xy1xy2_norm_list = box_select_olay.read()
 
-            # Update 'true' predictions for comparisons
-            true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
-            _, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
-            num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
-            use_top_n = num_true_detections if num_true_detections > 0 else 5
-            plot_scores_elem.set_true_data(true_score_preds.squeeze(0).float().cpu().numpy())
+        # Force re-prediction from teacher, so we have new data for comparisons
+        is_prompt_changed = is_point_prompt_changed or is_box_prompt_changed
+        if is_imgsize_changed or is_prompt_changed:
+            imgenc_config_dict = {"max_side_length": imgsize_px, "use_square_sizing": use_square_sizing}
+            prompts_dict["fg_xy_norm_list"] = point_xy_norm_list
+            prompts_dict["box_tlbr_norm_list"] = box_xy1xy2_norm_list
 
-            request_display_only_update |= not is_training
+            # Re-predict teacher results
+            true_encimg, _, _ = model_teacher.encode_image(loaded_image_bgr, **imgenc_config_dict)
+            true_encpmt = model_teacher.encode_prompts(**prompts_dict)
+            true_mask_preds, true_iou_scores = model_teacher.generate_masks(true_encimg, true_encpmt)
+            plot_scores_elem.set_true_data(true_iou_scores.squeeze(0).float().cpu().numpy())
+            request_display_only_update = not is_training
 
-        # Force display update to switch mask vs. image display
-        if is_show_masks_changed:
+        # Force display update when switching mask stacking
+        if is_mask_stacking_changed:
+            num_mask_rowcol = mask_rc_list[int(is_stack_vertical)]
             request_display_only_update |= not is_training
 
         # Switch loss functions if needed and force display update to show new loss
         if is_loss_changed:
             avg_loss = None
+            request_display_only_update = True
             loss_name, loss_func = loss_functions_list[loss_select_idx]
             plot_loss_list = []
-            request_display_only_update = True
 
         # Clear all training weights
         if need_reset_weights:
@@ -726,108 +789,80 @@ try:
         # Running training updates
         if is_training or request_display_only_update:
 
-            # On start of training, re-sample data
+            # Check if we should stop training by elapsed time
             if is_train_changed:
                 time_train_start_sec = perf_counter() if duration_sec < duration_max_sec else 1e9
+            elapsed_time = perf_counter() - time_train_start_sec
+            is_last_example = elapsed_time > duration_sec
 
-            # Run a 'inter-display' loop. This allows for multiple model runs in-between display updates
-            # -> Useful for when the model can run much faster than the display update rate
-            iter_start_time = perf_counter()
-            for inter_idx in range(1 if request_display_only_update else 50):
+            # Run example through teacher & student model (or re-use teacher cache)
+            next_img_uint8 = img_loader.get_next_image(request_display_only_update)
+            with torch.no_grad():
+                img_tensor = model_teacher.image_encoder.prepare_image(next_img_uint8, **imgenc_config_dict)
+                out_target = run_full(model_teacher, img_tensor)
+            out_pred = run_full(model_student, img_tensor)
 
-                # Stop inter-display updates if next display update is ready
-                iter_time = perf_counter()
-                if (iter_time - iter_start_time) > frame_delay_sec_target:
-                    break
+            # Calculate loss (prediction have shape: BxNxC -> B batch, N num tokens, C channels)
+            all_losses = [loss_func(targ, pred, channel_dim=1) for targ, pred in zip(out_target, out_pred)]
+            loss_train = sum(scale * lval for scale, lval in zip(loss_scaling, all_losses))
+            loss_item = loss_train.item()
+            avg_loss = loss_item if avg_loss is None else (avg_loss * 0.9 + loss_item * 0.1)
+            plot_loss_list.append(avg_loss)
+            is_nan_loss = np.isnan(loss_item)
+            if is_nan_loss:
+                plot_loss_list = []
+                train_btn.toggle(False)
+                print("Got NaN loss! Reset weights to continue...")
 
-                # Check if we should stop training by elapsed time
-                elapsed_time = iter_time - time_train_start_sec
-                is_last_example = elapsed_time > duration_sec
+            # Run training updates
+            if not request_display_only_update:
+                (loss_train / accum_after_n).backward()
+                optim.step()
+                total_iters += 1
+                optim_step_count += 1
 
-                # Run example through teacher & student model
-                _, next_txt_prompt = all_train_text_list.get_next(request_display_only_update)
-                with torch.no_grad():
-                    input_vocab_index = txt_to_idx_cache.get(next_txt_prompt, None)
-                    if input_vocab_index is None:
-                        input_vocab_index = teacher_tokenizer.text_to_vocab_index(next_txt_prompt)
-                    out_target = run_full(model_teacher, input_vocab_index)
-                out_pred = run_full(model_student, input_vocab_index)
-
-                # Calculate loss (prediction have shape: BxNxC -> B batch, N num tokens, C channels)
-                loss_train = loss_func(out_target, out_pred, channel_dim=-1)
-                loss_item = loss_train.item()
-                avg_loss = loss_item if avg_loss is None else (avg_loss * 0.9 + loss_item * 0.1)
-                plot_loss_list.append(avg_loss)
-                is_nan_loss = np.isnan(loss_item)
-                if is_nan_loss:
-                    plot_loss_list = []
-                    train_btn.toggle(False)
-                    print("Got NaN loss! Reset weights to continue...")
-                    break
-
-                # Run training updates
-                if not request_display_only_update:
-                    (loss_train / accum_after_n).backward()
-                    optim.step()
-                    total_iters += 1
-                    optim_step_count += 1
-
-                    # Stop accumulating gradients
-                    if is_last_example or optim_step_count >= accum_after_n:
-                        optim.zero_grad()
-                        optim_step_count = 0
-
-                # Stop inter-display loop if we hit our last example
-                if is_last_example:
-                    break
+                # Stop accumulating gradients
+                if is_last_example or optim_step_count >= accum_after_n:
+                    optim.zero_grad()
+                    optim_step_count = 0
 
             # Update display
             need_display_update = (display_every_n > 0) and (total_iters % display_every_n) == 0
             if need_display_update or is_last_example or request_display_only_update:
 
+                # Get mask predictions using updated image encoder
+                with torch.no_grad():
+                    # This no_grad block is needed because we disabled the built-in inference_mode earlier
+                    # The reason for disabling inference_mode is because we may need to re-gen cached
+                    # internal data (e.g. position encodings) as user changes inference settings, but
+                    # we get an error if the cache is re-generated inside of inference_mode, hence no_grad!
+                    # (mainly a problem due to image size/aspect ratio changes)
+                    test_encimg, _, _ = model_student.encode_image(loaded_image_bgr, **imgenc_config_dict)
+                    test_encpmt = model_student.encode_prompts(**prompts_dict)
+                    test_mask_preds, test_iou_preds = model_student.generate_masks(test_encimg, test_encpmt)
+
+                    # Draw mask predictions showing matching pixels and false positives/negatives
+                    test_mask_img = make_stacked_masks(test_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                    true_mask_img = make_stacked_masks(true_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                    mask_img = np.zeros((*true_mask_img.shape, 3), dtype=np.uint8)
+                    match_mask_img = np.bitwise_and(test_mask_img, true_mask_img)
+                    false_pos_img = np.bitwise_and(test_mask_img, ~true_mask_img)
+                    false_neg_img = np.bitwise_and(~test_mask_img, true_mask_img)
+                    mask_img[false_neg_img > 0] = (250, 10, 110)
+                    mask_img[false_pos_img > 0] = (70, 40, 255)
+                    mask_img[match_mask_img > 0] = (80, 255, 0)
+
+                    # Get plottable IoU scores
+                    test_iou_np = test_iou_preds[0].float().cpu().numpy()
+
+                # Update displayed image & plot data
+                mask_img_elem.set_image(mask_img)
+                plot_loss_elem.set_plot_data(plot_loss_list[-num_loss_samples:], 0)
+                plot_scores_elem.set_test_data(test_iou_np)
+
                 # Report loss & iterations
                 loss_txt_block.set_value(f"{avg_loss:.2e}")
                 iters_txt_block.set_value(total_iters)
-
-                with torch.no_grad():
-
-                    # Get detections from student model
-                    test_encexm = model_student.encode_exemplars(true_encimg, **exemplar_prompt)
-                    test_mask_preds, test_box_preds, test_score_preds, _ = model_student.generate_detections(
-                        true_encimg, test_encexm
-                    )
-
-                    # Figure out how many valid detections we have for display
-                    test_score_preds = test_score_preds[0].float().cpu()
-                    is_valid_detection = (test_score_preds > detection_threshold).cpu()
-                    num_valid_detections = is_valid_detection.count_nonzero()
-
-                    # Set up display filtering + special handling for NaN states
-                    has_detections = num_valid_detections > 0
-                    test_sorted_idx = None if has_detections else test_score_preds.sort(descending=True)[-1]
-                    filter_idx = is_valid_detection if has_detections else test_sorted_idx[0:use_top_n]
-                    if is_nan_loss:
-                        filter_idx = torch.zeros_like(is_valid_detection)
-                        test_score_preds = torch.zeros_like(test_score_preds)
-                        num_valid_detections = 0
-
-                    # Generate mask or image + box display
-                    disp_img = loaded_image_bgr
-                    if show_masks:
-                        test_mask_preds = test_mask_preds[0].float().cpu()
-                        filtered_masks = test_mask_preds[filter_idx]
-                        disp_img = draw_combined_mask(filtered_masks, main_img_elem.get_render_hw())
-                        bounding_box_olay.clear()
-                    else:
-                        test_box_preds = test_box_preds[0].float().cpu()
-                        filtered_boxes = test_box_preds[filter_idx]
-                        bounding_box_olay.style(color=(0, 255, 0) if num_valid_detections > 0 else (0, 200, 255))
-                        bounding_box_olay.set_boxes(filtered_boxes.float().cpu().numpy())
-
-                    # Update displayed image & plot data
-                    main_img_elem.set_image(disp_img)
-                    plot_loss_elem.set_plot_data(plot_loss_list[-num_loss_samples:], 0)
-                    plot_scores_elem.set_test_data(test_score_preds.numpy())
 
             # Stop training
             if is_last_example or request_display_only_update:
@@ -849,24 +884,16 @@ try:
             display_size_px = max(display_size_px - 50, min_display_size_px)
             render_limit_dict = {"h": display_size_px}
 
-        # Print out scores for every text entry to see what's causing the model the most trouble
-        if hidden_list_scores_btn.read():
-            print("", f"Computing scores... ({loss_name})", sep="\n", flush=True)
-            all_scores_list = []
-            with torch.no_grad():
-                for txt in all_train_text_list:
-                    input_vocab_index = txt_to_idx_cache[txt]
-                    out_target = run_full(model_teacher, input_vocab_index)
-                    out_pred = run_full(model_student, input_vocab_index)
-                    loss_score = loss_func(out_target, out_pred, channel_dim=-1).item()
-                    all_scores_list.append((loss_score, txt))
-            for blame_score, txt in sorted(all_scores_list, reverse=True)[:20]:
-                print(f"{blame_score:.2e} - {txt}")
-            print("")
-
         # Save current training weights
         if need_save_to_disk:
-            save_weights(save_folder_path, training_modules, name_teacher, name_student, config_student, total_iters)
+            save_weights(
+                save_folder_path,
+                training_modules,
+                name_teacher,
+                name_student,
+                config_student,
+                total_iters,
+            )
 
         pass
 
@@ -875,7 +902,7 @@ except KeyboardInterrupt:
 
 except torch.OutOfMemoryError as err:
     need_save_on_crash = True
-    print("", "Error - Out of memory!", "", sep="\n")
+    print("", "Error - Out of memory!", "Consider enabling low memory mode (see script flags)...", "", sep="\n")
     sleep(1)
     raise err
 
@@ -890,4 +917,11 @@ finally:
     if need_save_on_crash:
         user_confirm = confirm_prompt("Save current training weights?", is_yes_by_default=True)
         if user_confirm:
-            save_weights(save_folder_path, training_modules, name_teacher, name_student, config_student, total_iters)
+            save_weights(
+                save_folder_path,
+                training_modules,
+                name_teacher,
+                name_student,
+                config_student,
+                total_iters,
+            )

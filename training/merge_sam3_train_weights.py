@@ -261,6 +261,76 @@ if num_layernorms > 0 and enable_confirm_prompt:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# %% Handle lora-conv2d
+
+lora_conv2d_weights_dict = {}
+lora_conv2d_bias_dict = {}
+for layer_name, lora_state_dict in sd_weights.get("lora_conv2d", {}).items():
+
+    # Get original weight name corresponding to saved lora weights
+    layer_weight_name = f"{layer_name}.weight"
+    orig_weight_name = new_to_old_key_lut.get(layer_weight_name, None)
+    assert orig_weight_name, "Error, couldn't find conv2d weight key: {orig_key_weight}"
+
+    # Store lora weights
+    a_weight = lora_state_dict["A.weight"]
+    b_weight = lora_state_dict["B.weight"]
+    lora_conv2d_weights_dict[orig_weight_name] = torch.einsum("OrHW,rIHW->OIHW", b_weight, a_weight)
+
+    # Store bias if present
+    b_bias = lora_state_dict.get("B.bias", None)
+    if b_bias is not None:
+        layer_bias_name = f"{layer_name}.bias"
+        orig_bias_name = new_to_old_key_lut.get(layer_bias_name, None)
+        assert orig_bias_name is not None, f"Error, missing original bias values for layer: {layer_bias_name}"
+        lora_conv2d_bias_dict[orig_bias_name] = b_bias
+
+num_conv2ds = len(lora_conv2d_weights_dict)
+print("", f"Found {num_conv2ds} conv2d layers", sep="\n")
+if num_conv2ds > 0 and enable_confirm_prompt:
+    user_confirm = confirm_prompt("Merge conv2d")
+    if not user_confirm:
+        lora_conv2d_weights_dict = {}
+        lora_conv2d_bias_dict = {}
+        print("Ignoring conv2d layers...")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Handle lora-convtranspose2d
+
+lora_convtranspose2d_weights_dict = {}
+lora_convtranspose2d_bias_dict = {}
+for layer_name, lora_state_dict in sd_weights.get("lora_convtranspose2d", {}).items():
+
+    # Get original weight name corresponding to saved lora weights
+    layer_weight_name = f"{layer_name}.weight"
+    orig_weight_name = new_to_old_key_lut.get(layer_weight_name, None)
+    assert orig_weight_name, "Error, couldn't find convtranspose2d weight key: {orig_key_weight}"
+
+    # Store lora weights
+    a_weight = lora_state_dict["A.weight"]
+    b_weight = lora_state_dict["B.weight"]
+    lora_convtranspose2d_weights_dict[orig_weight_name] = torch.einsum("Oryx,IrHW->IOHW", b_weight, a_weight)
+
+    # Store bias if present
+    b_bias = lora_state_dict.get("B.bias", None)
+    if b_bias is not None:
+        layer_bias_name = f"{layer_name}.bias"
+        orig_bias_name = new_to_old_key_lut.get(layer_bias_name, None)
+        assert orig_bias_name is not None, f"Error, missing original bias values for layer: {layer_bias_name}"
+        lora_convtranspose2d_bias_dict[orig_bias_name] = b_bias
+
+num_convtranspose2ds = len(lora_convtranspose2d_weights_dict)
+print("", f"Found {num_convtranspose2ds} convtranspose2d layers", sep="\n")
+if num_conv2ds > 0 and enable_confirm_prompt:
+    user_confirm = confirm_prompt("Merge convtranspose2d")
+    if not user_confirm:
+        lora_convtranspose2d_weights_dict = {}
+        lora_convtranspose2d_bias_dict = {}
+        print("Ignoring convtranspose2d layers...")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # %% *** Save model***
 
 # Copy original weights
@@ -272,6 +342,10 @@ for additive_weights_dict in (
     lora_linear_bias_dict,
     offset_layernorm_weights_dict,
     offset_layernorm_bias_dict,
+    lora_conv2d_weights_dict,
+    lora_conv2d_bias_dict,
+    lora_convtranspose2d_weights_dict,
+    lora_convtranspose2d_bias_dict,
 ):
     for weight_key, additive_weight in additive_weights_dict.items():
         new_sd[weight_key] += additive_weight

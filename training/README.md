@@ -21,6 +21,6 @@ Distilling the text encoder may also be worthwhile for curiosity sake, as it's r
 
 ## Image Encoder distillation
 
-A distillation script is not pubically available at the moment, this is still a work-in-progress...
+This is the same as distilling the text encoder (see above), though it requires providing a set of images for training. A simple starting set of images (if not using your own) would be [COCO128](https://cocodataset.org/#home) which is a small dataset that can be downloaded from places like [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0), [roboflow](https://universe.roboflow.com/team-roboflow/coco-128/dataset/1) or [kaggle](https://www.kaggle.com/datasets/ultralytics/coco128).
 
-
+Shrinking the image encoder has a more noticable impact on inference time, especially if used with video tracking. However it also trains much slower than the text encoder, so using reduced resolutions (at least initially) can help to speed things up.

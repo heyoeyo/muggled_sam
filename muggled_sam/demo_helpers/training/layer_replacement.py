@@ -13,7 +13,7 @@ from torch import Tensor
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# %% Classes
+# %% Loras
 
 
 class LoraLinear(nn.Module):
@@ -86,12 +86,17 @@ class LoraLinear(nn.Module):
 
     # .................................................................................................................
 
-    def reset_weights(self) -> None:
+    def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
         has_bias = self.base.bias is not None
-        nn.init.kaiming_uniform_(self.lora[0].weight, nonlinearity="linear")
-        nn.init.zeros_(self.lora[1].weight)
+        nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="linear")
+        nn.init.zeros_(self.lora.B.weight)
         if has_bias:
-            nn.init.zeros_(self.lora[1].bias)
+            nn.init.zeros_(self.lora.B.bias)
+
+        if not use_zeroed_state:
+            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
+            if has_bias:
+                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
@@ -130,7 +135,7 @@ class LoraLinear(nn.Module):
 
                 # Make sure loaded weights match the base weight sizing
                 base_out_feats, base_in_feats = self.base.weight.shape
-                assert in_feats == base_in_feats, f"In feature mistmatch ({in_feats} vs. {base_in_feats})"
+                assert in_feats == base_in_feats, f"In feature mismatch ({in_feats} vs. {base_in_feats})"
                 assert out_feats == base_out_feats, f"Out feature mismatch ({out_feats} vs. {base_out_feats})"
 
                 # Replace with lora sized to loaded weights
@@ -138,7 +143,7 @@ class LoraLinear(nn.Module):
                 self.lora = self._make_lora(in_feats, out_feats, has_bias, a_rank, a_device, a_dtype)
                 self.lora.load_state_dict(state_dict)
 
-            # Make sure device/dtpye of lora matches base layer
+            # Make sure device/dtype of lora matches base layer
             device, dtype = self.base.weight.device, self.base.weight.dtype
             self.lora.to(device=device, dtype=dtype)
 
@@ -150,6 +155,278 @@ class LoraLinear(nn.Module):
 
     @property
     def bias(self) -> Tensor or None:
+        if self.base.bias is not None:
+            return self.base.bias + self.lora.B.bias
+        return self.base.bias
+
+    # .................................................................................................................
+
+
+class LoraConv2D(nn.Module):
+    """
+    Layer used for training 2D convolutional layers.
+    Like the linear case, the idea is to think of updating conv weights as:
+        W' = W + ΔW
+
+    However, the way this works with convolution is to do a 'normal' 2D convolution,
+    but with far fewer output channels (the number of channels is the lora 'rank'),
+    and then follow this with a 1x1 convolution (which is the same as a linear layer)
+    acting on the low-rank channels as input to reproduce the original output channel count,
+    and then finally add this to the original convolution layer result to get the additive update effect.
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        base_conv_layer: nn.Conv2d,
+        rank: int = 1,
+        force_no_grad: bool = True,
+    ):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Make sure base layer isn't trainable
+        if force_no_grad:
+            base_conv_layer.requires_grad_(False)
+
+        # Store components for forward calls
+        self.base = base_conv_layer
+        self.lora = self._make_lora(base_conv_layer, rank)
+        self.reset_weights()
+
+    # .................................................................................................................
+
+    @staticmethod
+    def _make_lora(
+        base_conv_layer: nn.Conv2d,
+        rank: int,
+    ):
+        # Figure out config of input layer
+        device, dtype = base_conv_layer.weight.device, base_conv_layer.weight.dtype
+        out_features, in_features, _, _ = base_conv_layer.weight.shape
+        conv_attrs_list = ["kernel_size", "stride", "padding", "dilation", "groups", "padding_mode"]
+        conv_config = {attr: getattr(base_conv_layer, attr) for attr in conv_attrs_list}
+        has_bias = base_conv_layer.bias is not None
+
+        # Set up lora component
+        lora_layers = nn.Sequential()
+        lora_layers.add_module("A", nn.Conv2d(in_features, rank, bias=False, **conv_config))
+        lora_layers.add_module("B", nn.Conv2d(rank, out_features, kernel_size=(1, 1), bias=has_bias))
+        lora_layers.to(device=device, dtype=dtype)
+        return lora_layers
+
+    # .................................................................................................................
+
+    def forward(self, imagelike_tokens: Tensor) -> Tensor:
+        return self.base(imagelike_tokens) + self.lora(imagelike_tokens)
+
+    # .................................................................................................................
+
+    def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
+        has_bias = self.base.bias is not None
+        nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="conv2d")
+        nn.init.zeros_(self.lora.B.weight)
+        if has_bias:
+            nn.init.zeros_(self.lora.B.bias)
+
+        if not use_zeroed_state:
+            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
+            if has_bias:
+                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        return
+
+    def load_weights(self, state_dict) -> bool:
+
+        # Wipe out any training gradients, since they shouldn't apply to loaded weights
+        need_resize_layers = False
+        self.lora.zero_grad()
+
+        with torch.no_grad():
+
+            try:
+                # Try to load weights directly (this works if weights were originally saved from this module)
+                self.lora.load_state_dict(state_dict)
+            except RuntimeError:
+                # -> Error happens if the loaded weights don't match the sizing (e.g. rank) of the existing module
+                need_resize_layers = True
+
+                # Try to read out the weights we expect to be loading
+                a_weight = state_dict.get("A.weight", None)
+                b_weight = state_dict.get("B.weight", None)
+                assert a_weight is not None, f"Unable to load target 'A.weight' (Got: {state_dict.keys()})"
+                assert b_weight is not None, f"Unable to load target 'B.weight' (Got: {state_dict.keys()})"
+
+                # Sanity checks. Try to make sure weights are sized correctly
+                a_rank, a_in_feats, kh, kw = a_weight.shape
+                b_out_feats, b_rank, _, _ = b_weight.shape
+                base_out_feats, base_in_feats, base_kh, base_kw = self.base.weight.shape
+                assert a_rank == b_rank, f"Bad A/B rank ({a_rank} vs. {b_rank})"
+                assert a_in_feats == base_in_feats, f"Bad in-feature counts ({a_in_feats} vs. {base_in_feats})"
+                assert b_out_feats == base_out_feats, f"Bad out-feature counts ({b_out_feats} vs. {base_out_feats})"
+                assert (kh == base_kh) and (kw == base_kw), f"Bad kernel sizing ({kh},{kw}) vs. ({base_kh},{base_kw})"
+
+                # Replace with lora sized to loaded rank
+                del self.lora
+                self.lora = self._make_lora(self.base, a_rank)
+                self.lora.load_state_dict(state_dict)
+
+            # Make sure device/dtype of lora matches base layer
+            device, dtype = self.base.weight.device, self.base.weight.dtype
+            self.lora.to(device=device, dtype=dtype)
+
+        return need_resize_layers
+
+    def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
+        if move_to_cpu:
+            return {name: weight.clone().float().cpu() for name, weight in self.lora.state_dict().items()}
+        return {name: weight.clone() for name, weight in self.lora.state_dict().items()}
+
+    # .................................................................................................................
+
+    @property
+    def weight(self):
+        additive_weight = torch.einsum("OrHW,rIHW->OIHW", self.lora.B.weight, self.lora.A.weight)
+        return self.base.weight + additive_weight
+
+    @property
+    def bias(self):
+        if self.base.bias is not None:
+            return self.base.bias + self.lora.B.bias
+        return self.base.bias
+
+    # .................................................................................................................
+
+
+class LoraConvTranspose2D(nn.Module):
+    """
+    Layer used for training 2D convolution-transpose layers.
+
+    ConvTranspose2d is meant to be the 'reverse' of a Conv2d, so the idea
+    here is similar to the conv2D lora implementation.
+    A 'low-rank' conv-transpose is done first, followed by a 1x1 conv2D (not transpose)
+    to get back to the original channel count.
+    This result is added to the output from running the original layer.
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        base_convtranspose_layer: nn.ConvTranspose2d,
+        rank: int = 1,
+        force_no_grad: bool = True,
+    ):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Make sure base layer isn't trainable
+        if force_no_grad:
+            base_convtranspose_layer.requires_grad_(False)
+
+        # Store components for forward calls
+        self.base = base_convtranspose_layer
+        self.lora = self._make_lora(base_convtranspose_layer, rank)
+        self.reset_weights()
+
+    # .................................................................................................................
+
+    @staticmethod
+    def _make_lora(
+        base_convtranspose_layer: nn.ConvTranspose2d,
+        rank: int,
+    ):
+        # Figure out config of input layer
+        device, dtype = base_convtranspose_layer.weight.device, base_convtranspose_layer.weight.dtype
+        in_features, out_features, _, _ = base_convtranspose_layer.weight.shape
+        ct_attrs_list = ["kernel_size", "stride", "padding", "output_padding", "groups", "dilation", "padding_mode"]
+        ct_config = {attr: getattr(base_convtranspose_layer, attr) for attr in ct_attrs_list}
+        has_bias = base_convtranspose_layer.bias is not None
+
+        # Set up lora component
+        lora_layers = nn.Sequential()
+        lora_layers.add_module("A", nn.ConvTranspose2d(in_features, rank, bias=False, **ct_config))
+        lora_layers.add_module("B", nn.Conv2d(rank, out_features, kernel_size=(1, 1), bias=has_bias))
+        lora_layers.to(device=device, dtype=dtype)
+        return lora_layers
+
+    # .................................................................................................................
+
+    def forward(self, imagelike_tokens: Tensor) -> Tensor:
+        return self.base(imagelike_tokens) + self.lora(imagelike_tokens)
+
+    # .................................................................................................................
+
+    def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
+        has_bias = self.base.bias is not None
+        nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="conv_transpose2d")
+        nn.init.zeros_(self.lora.B.weight)
+        if has_bias:
+            nn.init.zeros_(self.lora.B.bias)
+
+        if not use_zeroed_state:
+            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
+            if has_bias:
+                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        return
+
+    def load_weights(self, state_dict) -> bool:
+
+        # Wipe out any training gradients, since they shouldn't apply to loaded weights
+        need_resize_layers = False
+        self.lora.zero_grad()
+
+        with torch.no_grad():
+
+            try:
+                # Try to load weights directly (this works if weights were originally saved from this module)
+                self.lora.load_state_dict(state_dict)
+            except RuntimeError:
+                # -> Error happens if the loaded weights don't match the sizing (e.g. rank) of the existing module
+                need_resize_layers = True
+
+                # Try to read out the weights we expect to be loading
+                a_weight = state_dict.get("A.weight", None)
+                b_weight = state_dict.get("B.weight", None)
+                assert a_weight is not None, f"Unable to load target 'A.weight' (Got: {state_dict.keys()})"
+                assert b_weight is not None, f"Unable to load target 'B.weight' (Got: {state_dict.keys()})"
+
+                # Sanity checks. Try to make sure weights are sized correctly
+                a_in_feats, a_rank, kh, kw = a_weight.shape
+                b_out_feats, b_rank, _, _ = b_weight.shape
+                base_in_feats, base_out_feats, base_kh, base_kw = self.base.weight.shape
+                assert a_rank == b_rank, f"Bad A/B rank ({a_rank} vs. {b_rank})"
+                assert a_in_feats == base_in_feats, f"Bad in-feature counts ({a_in_feats} vs. {base_in_feats})"
+                assert b_out_feats == base_out_feats, f"Bad out-feature counts ({b_out_feats} vs. {base_out_feats})"
+                assert (kh == base_kh) and (kw == base_kw), f"Bad kernel sizing ({kh},{kw}) vs. ({base_kh},{base_kw})"
+
+                # Replace with lora sized to loaded rank
+                del self.lora
+                self.lora = self._make_lora(self.base, a_rank)
+                self.lora.load_state_dict(state_dict)
+
+            # Make sure device/dtype of lora matches base layer
+            device, dtype = self.base.weight.device, self.base.weight.dtype
+            self.lora.to(device=device, dtype=dtype)
+
+        return need_resize_layers
+
+    def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
+        if move_to_cpu:
+            return {name: weight.clone().float().cpu() for name, weight in self.lora.state_dict().items()}
+        return {name: weight.clone() for name, weight in self.lora.state_dict().items()}
+
+    # .................................................................................................................
+
+    @property
+    def weight(self):
+        additive_weight = torch.einsum("Oryx,IrHW->IOHW", self.lora.B.weight, self.lora.A.weight)
+        return self.base.weight + additive_weight
+
+    @property
+    def bias(self):
         if self.base.bias is not None:
             return self.base.bias + self.lora.B.bias
         return self.base.bias
@@ -226,10 +503,14 @@ class LoraEmbedding(nn.Module):
 
     # .................................................................................................................
 
-    def reset_weights(self) -> None:
+    def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
         nn.init.kaiming_uniform_(self.lora.A, nonlinearity="linear")
         nn.init.zeros_(self.lora.B)
         nn.init.zeros_(self.lora.bias)
+
+        if not use_zeroed_state:
+            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
+            nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
@@ -272,7 +553,7 @@ class LoraEmbedding(nn.Module):
 
                 # Make sure loaded weights match the base weight sizing
                 _, num_base_feats = self.base.weight.shape
-                assert num_a_feats == num_base_feats, f"Base feature mistmatch ({num_a_feats} vs. {num_base_feats})"
+                assert num_a_feats == num_base_feats, f"Base feature mismatch ({num_a_feats} vs. {num_base_feats})"
 
                 # Replace with lora sized to loaded weights
                 new_lora, lora_eye = self._make_lora(num_a_feats, a_rank, a_device, a_dtype)
@@ -374,10 +655,15 @@ class OffsetLayernorm(nn.Module):
 
     # .................................................................................................................
 
-    def reset_weights(self):
+    def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
         nn.init.zeros_(self.offset.weight)
         if self._has_bias:
             nn.init.zeros_(self.offset.bias)
+
+        if not use_zeroed_state:
+            nn.init.uniform_(self.offset.weight, -non_zero_scale, non_zero_scale)
+            if self._has_bias:
+                nn.init.uniform_(self.offset.bias, -non_zero_scale, non_zero_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
@@ -438,6 +724,21 @@ class OffsetLayernorm(nn.Module):
         return self.base.bias
 
     # .................................................................................................................
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Checkpointing
+
+
+class CheckpointModule(nn.Module):
+    """Helper used to 'checkpoint' a model component, which helps reduce memory use during training"""
+
+    def __init__(self, original_module: nn.Module):
+        super().__init__()
+        self.original_module = original_module
+
+    def forward(self, *args, **kwargs):
+        return torch.utils.checkpoint.checkpoint(self.original_module, *args, use_reentrant=False, **kwargs)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -554,3 +855,22 @@ def replace_target_modules(
     param_count = sum(param_counts_list)
 
     return new_modules_dict, param_count
+
+
+# .....................................................................................................................
+
+
+def checkpoint_image_encoder_stages(model: nn.Module):
+    """Helper used to apply activation checkpointing to the SAM image encoder stages"""
+
+    # Sanity check
+    is_trainable_model = any(param.requires_grad for param in model.image_encoder.parameters())
+    if not is_trainable_model:
+        raise AttributeError("Checkpointing failed! Model does not contain trainable parameters...")
+
+    # Apply checkpointing to each stage of the image encoder
+    num_stages = len(model.image_encoder.stages)
+    for idx in range(num_stages):
+        model.image_encoder.stages[idx] = CheckpointModule(model.image_encoder.stages[idx])
+
+    return
