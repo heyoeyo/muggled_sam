@@ -21,7 +21,6 @@ except ModuleNotFoundError:
 import argparse
 from pathlib import Path
 from time import perf_counter, sleep
-import json
 
 import torch
 import torch.nn as nn
@@ -59,9 +58,11 @@ import muggled_sam.demo_helpers.training.loss_functions as loss_funcs
 from muggled_sam.demo_helpers.training.default_data import make_default_training_text_list, save_unnested_json
 from muggled_sam.demo_helpers.training.io import (
     TrainModulesDict,
+    ShuffleList,
     load_prior_weights,
     make_save_folder,
     save_training_weights,
+    load_text_list_file,
 )
 from muggled_sam.demo_helpers.training.layer_replacement import (
     LoraLinear,
@@ -107,6 +108,13 @@ parser.add_argument(
     help="Path to file containing text prompts for training",
 )
 parser.add_argument(
+    "-y",
+    "--skip_cli",
+    default=False,
+    action="store_true",
+    help="If set, cli prompts that have valid defaults will be used without prompting on start-up",
+)
+parser.add_argument(
     "-s",
     "--display_size",
     default=default_display_size,
@@ -137,7 +145,7 @@ parser.add_argument(
     "--no_embedding", default=False, action="store_true", help="Disable training of the text embeddings"
 )
 parser.add_argument("--no_linear", default=False, action="store_true", help="Disable training of linear layers")
-parser.add_argument("--no_layernorm", default=False, action="store_true", help="Disable training of layernorms")
+parser.add_argument("--enable_layernorm", default=False, action="store_true", help="Enable training of layernorms")
 parser.add_argument(
     "-r",
     "--lora_rank",
@@ -175,13 +183,14 @@ arg_teacher_path = args.teacher_path
 arg_student_path = args.student_path
 arg_continue_path = args.continue_path
 arg_train_text_path = args.training_text_path
+arg_skip_cli = args.skip_cli
 display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
 detection_threshold = args.detection_threshold
 enable_embedding_training = not args.no_embedding
 enable_linear_training = not args.no_linear
-enable_layernorm_training = not args.no_layernorm
+enable_layernorm_training = args.enable_layernorm
 lora_rank = max(args.lora_rank, 1)
 lr_low = args.lr_low
 lr_high = args.lr_high
@@ -198,37 +207,43 @@ root_path = Path(__file__).parent.parent
 history = HistoryKeeper(root_path)
 _, history_imgpath = history.read("image_path")
 _, history_txtprompt = history.read("distill_txt_prompt")
-_, history_teacherpath = history.read("distill_teacher_path")
 _, history_studentpath = history.read("distill_student_path")
+_, history_teacherpath = history.read("distill_teacher_path")
+
+# Use history values to fill in cli prompts
+if arg_skip_cli:
+    arg_image_path = history_imgpath if arg_image_path is None else arg_image_path
+    arg_text_prompt = history_txtprompt if arg_text_prompt is None else arg_text_prompt
+    arg_student_path = history_studentpath if arg_student_path is None else arg_student_path
+    arg_teacher_path = history_teacherpath if arg_teacher_path is None else arg_teacher_path
 
 # Get pathing to resources, if not provided already
 image_path = ask_for_path_if_missing(arg_image_path, "image", history_imgpath)
 text_prompt = ask_for_value_if_missing(arg_text_prompt, "Enter text prompt: ", history_txtprompt)
-path_teacher_model = ask_for_model_path_if_missing(
-    root_path, arg_teacher_path, history_teacherpath, message="Select teacher model:"
-)
 path_student_model = ask_for_model_path_if_missing(
     root_path, arg_student_path, history_studentpath, message="Select student model:"
 )
+path_teacher_model = ask_for_model_path_if_missing(
+    root_path, arg_teacher_path, history_teacherpath, message="Select teacher model:"
+)
+
+# Sanity check. Make sure we're not using the same model for student and teacher
+if path_student_model == path_teacher_model:
+    raise NameError(
+        "Cannot use the same model as both the teacher and student! Please create a pruned model to use as the student"
+    )
 
 # Store history for use on reload
 history.store(
     image_path=image_path,
     distill_txt_prompt=text_prompt,
-    distill_teacher_path=path_teacher_model,
     distill_student_path=path_student_model,
+    distill_teacher_path=path_teacher_model,
 )
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Load model resources
-
-# Load up teacher model
-name_teacher = Path(path_teacher_model).name
-print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
-model_teacher = base_model_teacher.make_detector_model()
 
 # Load student model
 name_student = Path(path_student_model).name
@@ -236,6 +251,13 @@ print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
 config_student, base_model_student = make_sam_from_state_dict(path_student_model)
 assert base_model_student.name == "samv3", "Only SAMv3 is supported for fine tuning"
 model_student = base_model_student.make_detector_model()
+
+# Load up teacher model
+name_teacher = Path(path_teacher_model).name
+print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
+config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model)
+assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
+model_teacher = base_model_teacher.make_detector_model()
 
 # Make sure all weights are un-trainable to begin
 for p in model_teacher.parameters():
@@ -310,12 +332,8 @@ if not arg_train_text_path.exists():
 
 # Load training text data
 print("", "Loading text for training...", f"@ {arg_train_text_path.name}", sep="\n")
-is_json_file = arg_train_text_path.suffix.lower() == ".json"
-with open(arg_train_text_path, "r") as infile:
-    all_train_text_list = json.load(infile) if is_json_file else infile.read().splitlines()
-
-# Shuffle training data, so we don't get the same results everytime
-np.random.shuffle(all_train_text_list)
+all_train_text_list = load_text_list_file(arg_train_text_path)
+all_train_text_list = ShuffleList(all_train_text_list, shuffle_on_init=True)
 
 # Convert all input text to vocabulary indexing ahead-of-time
 with torch.no_grad():
@@ -372,6 +390,10 @@ if need_load_weights:
         print("Resizing needed to load layer data (likely a lora rank mismatch)")
     prior_weights_dict = training_modules.record_state_dict()
 
+# Get block mappings
+num_layers_student = config_student["txtencoder_num_blocks"]
+num_layers_teacher = config_teacher["txtencoder_num_blocks"]
+
 # Report training parameter count
 num_student_params = sum(p.numel() for p in txtenc_student.parameters() if p.requires_grad)
 num_teacher_params = sum(p.numel() for p in txtenc_teacher.parameters())
@@ -386,12 +408,24 @@ print(
     f"  Embedding params: {num_embedding_params}",
     f"     Linear params: {num_linear_params}",
     f"  Layernorm params: {num_layernorm_params}",
-    f"       Layer count: {config_student['txtencoder_num_blocks']} from {config_teacher['txtencoder_num_blocks']}",
+    f"       Layer count: {num_layers_student} from {num_layers_teacher}",
     f"         Lora rank: {report_lora_rank}",
     sep="\n",
     flush=True,
 )
 sleep(0.5)
+
+# Warn if student is same/bigger than teacher
+if num_layers_student >= num_layers_teacher:
+    print(
+        "",
+        "WARNING:",
+        "  The student model is not smaller than the teacher model!",
+        "  Training may not work properly...",
+        sep="\n",
+        flush=True,
+    )
+    sleep(5)
 
 # Set up initial 'backup' weights, just so we don't get errors if user tries to restore
 backup_weights_dict = {ltype: {} for ltype in training_modules.get_layer_types()}
@@ -405,11 +439,9 @@ make_backup_name = lambda loss, name, iters: f"{loss:.2e} ({name}) : {iters}"
 # Set up message bars to communicate config info
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-distill_models_str = f"{name_teacher} -to-> {name_student}"
+layers_str = f"{num_layers_teacher} -> {num_layers_student} layers"
 device_dtype_str = f"{model_device}/{model_dtype}"
-if len(distill_models_str) > 38:
-    distill_models_str = name_student if len(name_student) < 38 else f"...{name_student[-38:]}"
-header_msgbar = StaticMessageBar(distill_models_str, device_dtype_str, space_equally=True)
+header_msgbar = StaticMessageBar(layers_str, device_dtype_str, space_equally=True)
 
 # Set up main displays
 main_img_elem = ExpandingImage(loaded_image_bgr)
@@ -576,7 +608,7 @@ need_optim_reset = True
 is_nan_loss = False
 time_train_start_sec = 0
 total_iters = 0
-idx_train = 0
+optim_step_count = 0
 avg_loss = None
 loss_name, loss_func = loss_functions_list[0]
 plot_loss_list = []
@@ -705,15 +737,8 @@ try:
                 elapsed_time = iter_time - time_train_start_sec
                 is_last_example = elapsed_time > duration_sec
 
-                # Re-shuffle the training data if we're indexing out-of-bounds
-                need_reshuffle = idx_train >= len(all_train_text_list)
-                if need_reshuffle:
-                    np.random.shuffle(all_train_text_list)
-                    idx_train = 0
-                need_zero_grad = ((1 + idx_train) % accum_after_n) == 0
-
                 # Run example through teacher & student model
-                next_txt_prompt = all_train_text_list[idx_train]
+                _, next_txt_prompt = all_train_text_list.get_next(request_display_only_update)
                 with torch.no_grad():
                     input_vocab_index = txt_to_idx_cache.get(next_txt_prompt, None)
                     if input_vocab_index is None:
@@ -738,11 +763,12 @@ try:
                     (loss_train / accum_after_n).backward()
                     optim.step()
                     total_iters += 1
-                    idx_train += 1
+                    optim_step_count += 1
 
                     # Stop accumulating gradients
-                    if need_zero_grad or is_last_example:
+                    if is_last_example or optim_step_count >= accum_after_n:
                         optim.zero_grad()
+                        optim_step_count = 0
 
                 # Stop inter-display loop if we hit our last example
                 if is_last_example:

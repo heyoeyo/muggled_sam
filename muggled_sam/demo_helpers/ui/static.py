@@ -82,7 +82,9 @@ class StaticMessageBar(BaseCallback):
 
     # .................................................................................................................
 
-    def __init__(self, *messages, bar_height=40, bar_bg_color=(64, 53, 52), text_scale=0.5, space_equally=False):
+    def __init__(
+        self, *messages, bar_height=40, bar_bg_color=(64, 53, 52), text_scale=0.5, space_equally=False, min_width=None
+    ):
 
         # Store messages with front/back padding for nicer spacing on display (and skip 'None' entries)
         self._msgs_list = [f" {msg}  " for msg in messages if msg is not None]
@@ -114,8 +116,9 @@ class StaticMessageBar(BaseCallback):
         self._space_equal = space_equally
 
         # Inherit from parent & render initial image to cache results
-        super().__init__(bar_height, total_msg_w)
-        self.render(bar_height, total_msg_w)
+        bar_width = total_msg_w if min_width is None else max(total_msg_w, min_width)
+        super().__init__(bar_height, bar_width)
+        self.render(bar_height, bar_width)
 
     # .................................................................................................................
 

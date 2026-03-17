@@ -7,11 +7,14 @@
 
 from pathlib import Path
 from datetime import datetime as dt
+import json
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 # For type hints
+from typing import Any
 from torch import Tensor
 
 
@@ -45,17 +48,23 @@ class TrainModulesDict:
                 yield layer_type, layer_name, module_ref
         return
 
+    def __getitem__(self, index):
+        return self._data_dict[index]
+
+    def get_dict(self, key, default=None):
+        return self._data_dict.get(key, default)
+
     def get_layer_types(self):
         return self._data_dict.keys()
 
     def get_layer_names(self, layer_type: str):
         return self._data_dict[layer_type].keys()
 
-    def get_module(self, layer_type: str, layer_name: str) -> tuple[bool, nn.Module]:
+    def get_module(self, layer_type: str, layer_name: str) -> tuple[bool, nn.Module | None]:
         """Get a module by layer type/name, if it exists. Returns: module_exists, module"""
         module_ref = self._data_dict.get(layer_type, {}).get(layer_name, None)
         is_ok = module_ref is not None
-        return is_ok, self._data_dict[layer_type][layer_name]
+        return is_ok, self._data_dict[layer_type][layer_name] if is_ok else None
 
     # .................................................................................................................
 
@@ -100,9 +109,106 @@ class TrainModulesDict:
         if layer_type not in self._data_dict:
             self._data_dict[layer_type] = {}
         if replace:
-            self._data_dict[layer_type] = layer_module_dict
+            self._data_dict[layer_type] = {**layer_module_dict}
         else:
             self._data_dict[layer_type].update(layer_module_dict)
+        return
+
+    # .................................................................................................................
+
+
+class ShuffleList:
+    """
+    Helper class which implements a list that is read sequentially,
+    when all entries in the list have been read, the list is shuffled
+    and reading resets to the beginning of the list.
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, initial_data: list[Any] | None = None, shuffle_on_init: bool = True):
+
+        # Handle input options
+        if initial_data is None:
+            initial_data = []
+        if not isinstance(initial_data, list):
+            initial_data = list(initial_data)
+
+        self._data = initial_data
+        self._curr_item_idx = -1
+        self._idx_list = list(range(len(initial_data)))
+        if shuffle_on_init and len(initial_data) > 0:
+            self.force_shuffle()
+        pass
+
+    # .................................................................................................................
+
+    def __str__(self) -> str:
+        return [self._data[idx] for idx in self._idx_list].__str__()
+
+    def __repr__(self) -> str:
+        return [self._data[idx] for idx in self._idx_list].__repr__()
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        while True:
+            is_reshuffle, data = self.get_next()
+            yield data
+            if is_reshuffle:
+                break
+        return
+
+    def __getitem__(self, index: int):
+        data_idx = self._idx_list[index]
+        return self._data[data_idx]
+
+    # .................................................................................................................
+
+    def append(self, new_data) -> None:
+        self._data.append(new_data)
+        num_items = len(self._data)
+        min_idx = max(0, self._curr_item_idx + 1)
+        max_idx = max(num_items, min_idx + 1)
+        new_rand_idx = np.random.randint(min_idx, max_idx)
+        self._idx_list.insert(new_rand_idx, num_items - 1)
+
+    def clear(self) -> None:
+        self._data = []
+        self._idx_list = []
+
+    # .................................................................................................................
+
+    def get_next(self, repeat: bool = False) -> tuple[bool, Any]:
+
+        # Don't update item indexing if we're repeating an entry
+        if not repeat:
+            self._curr_item_idx += 1
+
+        data_idx = self._idx_list[self._curr_item_idx]
+        result = self._data[data_idx]
+        is_reshuffle = False
+
+        is_reshuffle = self._curr_item_idx >= len(self._idx_list) - 1
+        if is_reshuffle:
+            self.force_shuffle()
+
+        return is_reshuffle, result
+
+    def remove_previous(self) -> Any:
+        if len(self._idx_list) == 0:
+            return None
+
+        data_idx = self._idx_list.pop()
+        result = self._data.pop(data_idx)
+        assert len(self._idx_list) == len(self._data), "Error, mismatch data/indexing length!"
+        self._curr_item_idx = min(self._curr_item_idx, len(self._data) - 1)
+        return result
+
+    def force_shuffle(self) -> None:
+        np.random.shuffle(self._idx_list)
+        self._curr_item_idx = -1
         return
 
     # .................................................................................................................
@@ -263,3 +369,21 @@ def load_prior_weights(
         print(f"  -> {layer_type}: Loaded {num_loaded_modules} modules")
 
     return need_module_resizing
+
+
+# .....................................................................................................................
+
+
+def load_text_list_file(file_path: str | Path) -> list[str]:
+    """
+    Simple helper used to a list of text data from a plain text
+    file, assuming each line is a unique entry. Also supports
+    loading from a json file (expecting a lsit of strings).
+    Returns:
+        list_of_text_entries
+    """
+    is_json_file = Path(file_path).suffix.lower() == ".json"
+    with open(file_path, "r") as infile:
+        all_text_list = json.load(infile) if is_json_file else infile.read().splitlines()
+
+    return all_text_list
