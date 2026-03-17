@@ -498,6 +498,7 @@ def replace_submodule(
 
 def replace_target_modules(
     model: nn.Module,
+    submodule_prefix: str | None,
     module_to_replace: nn.Module,
     replacement_module: nn.Module,
     exclude_names_func: callable | None = None,
@@ -508,11 +509,24 @@ def replace_target_modules(
     the module it replaces as it's only argument.
     See the 'replace_submodule' function for more details.
 
+    A 'submodule_prefix' can be given which allows for specifying replacement of
+    a specific submodule of the model. For example, submodule_prefix='image_encoder'
+    would mean that only modules inside the image encoder component are replaced.
+    This is equivalent to calling the function using:
+        replace_target_modules(model.image_encoder, ....)
+    However, by using a submodule string instead of directly providing the submodule,
+    the returned weights will have the proper submodule pathing/weight keys!
+
     Returns:
         new_modules_dict, trainable_parameter_count
         -> The new_modules_dict has keys which represent the submodule string of every
            module that has been replaced and values which are the corresponding replacement modules
     """
+
+    # Index into the model if we're given a prefix
+    # (useful to limit replacement to be within certain submodules)
+    if submodule_prefix is not None:
+        model = model.get_submodule(submodule_prefix)
 
     # Record full submodule names of target layers to replace (e.g. model.layer.component.mlp.0...)
     submod_strs_to_replace = []
@@ -528,6 +542,10 @@ def replace_target_modules(
     new_modules_dict = {
         mod_str: replace_submodule(model, mod_str, replacement_module) for mod_str in submod_strs_to_replace
     }
+
+    # Re-add the submodule string to the key for storage (so that it's correct relative to the original input model)
+    if submodule_prefix is not None:
+        new_modules_dict = {f"{submodule_prefix}.{key}": val for key, val in new_modules_dict.items()}
 
     # Count number of new trainable parameters
     param_counts_list = []

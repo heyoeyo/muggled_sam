@@ -349,33 +349,38 @@ print("  -> Examples:", example_txt, "...")
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Attach training layers
 
-# For convenience
-txtenc_student = model_student.text_encoder
-txtenc_teacher = model_teacher.text_encoder
-
 # Initialize references to trainable parameters
 training_modules = TrainModulesDict()
 num_linear_params = 0
 num_embedding_params = 0
 num_layernorm_params = 0
+TXTENC_SUBMOD_STR = "text_encoder"
 
 # Train linear layers
 if enable_linear_training:
     linear_refs, num_linear_params = replace_target_modules(
-        txtenc_student, nn.Linear, lambda layer: LoraLinear(layer, lora_rank)
+        model_student,
+        TXTENC_SUBMOD_STR,
+        nn.Linear,
+        lambda layer: LoraLinear(layer, lora_rank),
     )
     training_modules.store_training_modules("lora_linear", linear_refs)
 
 # Train text embedding
 if enable_embedding_training:
     embedding_refs, num_embedding_params = replace_target_modules(
-        txtenc_student, nn.Embedding, lambda layer: LoraEmbedding(layer, lora_rank)
+        model_student,
+        TXTENC_SUBMOD_STR,
+        nn.Embedding,
+        lambda layer: LoraEmbedding(layer, lora_rank),
     )
     training_modules.store_training_modules("lora_embedding", embedding_refs)
 
 # Train layernorms
 if enable_layernorm_training:
-    layernorm_refs, num_layernorm_params = replace_target_modules(txtenc_student, nn.LayerNorm, OffsetLayernorm)
+    layernorm_refs, num_layernorm_params = replace_target_modules(
+        model_student, TXTENC_SUBMOD_STR, nn.LayerNorm, OffsetLayernorm
+    )
     training_modules.store_training_modules("offset_layernorm", layernorm_refs)
 
 # Load existing weights, if needed
@@ -384,7 +389,9 @@ need_load_weights = arg_continue_path is not None
 if need_load_weights:
     print("", "Loading prior training weights...", f"@ {arg_continue_path}", sep="\n")
     need_module_resizing = load_prior_weights(
-        arg_continue_path, name_student, training_modules, prefix_to_remove="text_encoder."
+        arg_continue_path,
+        name_student,
+        training_modules,
     )
     if need_module_resizing:
         print("Resizing needed to load layer data (likely a lora rank mismatch)")
@@ -395,8 +402,8 @@ num_layers_student = config_student["txtencoder_num_blocks"]
 num_layers_teacher = config_teacher["txtencoder_num_blocks"]
 
 # Report training parameter count
-num_student_params = sum(p.numel() for p in txtenc_student.parameters() if p.requires_grad)
-num_teacher_params = sum(p.numel() for p in txtenc_teacher.parameters())
+num_student_params = sum(p.numel() for p in model_student.text_encoder.parameters() if p.requires_grad)
+num_teacher_params = sum(p.numel() for p in model_teacher.text_encoder.parameters())
 pct_train_param = round(100 * num_student_params / num_teacher_params, 1)
 report_lora_rank = f"{lora_rank if (num_embedding_params + num_linear_params) > 0 else 'not used'}"
 if need_load_weights:
@@ -539,7 +546,7 @@ def save_weights(
     total_iterations: int,
 ):
     """Helper used to save training weights"""
-    save_weights_dict = modules_to_save.record_state_dict(layer_name_prefix="text_encoder")
+    save_weights_dict = modules_to_save.record_state_dict()
     save_data_dict = {"weights": save_weights_dict}
     save_data_dict["teacher_name"] = name_teacher
     save_data_dict["student_name"] = name_student
