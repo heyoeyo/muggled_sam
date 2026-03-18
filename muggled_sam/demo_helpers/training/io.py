@@ -151,7 +151,7 @@ class ShuffleList:
         return [self._data[idx] for idx in self._idx_list].__repr__()
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._idx_list)
 
     def __iter__(self):
         while True:
@@ -178,6 +178,7 @@ class ShuffleList:
     def clear(self) -> None:
         self._data = []
         self._idx_list = []
+        self._curr_item_idx = -1
 
     # .................................................................................................................
 
@@ -198,13 +199,24 @@ class ShuffleList:
         return is_reshuffle, result
 
     def remove_previous(self) -> Any:
+
+        # Nothing to remove
         if len(self._idx_list) == 0:
             return None
 
-        data_idx = self._idx_list.pop()
-        result = self._data.pop(data_idx)
-        assert len(self._idx_list) == len(self._data), "Error, mismatch data/indexing length!"
-        self._curr_item_idx = min(self._curr_item_idx, len(self._data) - 1)
+        # If we just did a reshuffle, we can't figure out the previous entry...
+        if self._curr_item_idx == -1:
+            return None
+
+        # Remove index from listing, so we don't access it anymore
+        # (it remains in the original data however!)
+        data_idx = self._idx_list.pop(self._curr_item_idx)
+        result = self._data[data_idx]
+
+        # Correct next index if needed (avoid problems when removing from end of list)
+        max_next_idx = max(0, len(self._idx_list) - 2)
+        self._curr_item_idx = min(self._curr_item_idx, max_next_idx)
+
         return result
 
     def force_shuffle(self) -> None:
@@ -215,39 +227,53 @@ class ShuffleList:
     # .................................................................................................................
 
 
-class ImageLoader:
-    """
-    Simple helper used to load image data from a list of paths.
-    Automatically removes non-image paths as it goes and
-    has support for repeating images (without repeat loading)
-    """
+class ResultCache:
+    """Helper used for caching data up to some max length or number of bytes"""
 
-    def __init__(self, image_paths_list: list[str | Path]):
+    # .................................................................................................................
 
-        self._image_paths = ShuffleList(image_paths_list)
-        self._prev_img = None
+    def __init__(self, max_cache_mb: int, max_length: int | None = None):
+        self._cache = {}
+        self._stored_bytes = 0
+        self._max_size_bytes = int(max_cache_mb * 1e6)
+        self._max_length = max_length if max_length is not None else 0
+        if self._max_size_bytes > 0 and max_length is None:
+            self._max_length = int(1e9)
+        self._is_full = self._max_size_bytes == 0 or self._max_length == 0
 
-    def get_next_image(self, repeat_last_image: bool = False):
+    def __len__(self):
+        return len(self._cache)
 
-        if repeat_last_image and self._prev_img is not None:
-            return self._prev_img
+    # .................................................................................................................
 
-        while True:
+    def store(self, data_nbytes: int, storage_key: Any, data: Any) -> bool:
+        """
+        Store an entry in cache using a key for look-up.
+        Must also provide data size (in bytes), which is used
+        to determine how much data is in the cache, for limiting storage
+        Returns True if data was stored in cache, false otherwise.
+        """
 
-            # Read image if possible (otherwise remove from loading list)
-            _, img_path = self._image_paths.get_next()
-            img_uint8 = cv2.imread(img_path)
-            if img_uint8 is not None:
-                break
+        # Disable storage when full
+        if self._is_full:
+            return False
 
-            # If we get here, the image failed to load, so remove it from our list and try to load another image
-            self._image_paths.remove_previous()
-            print("Removed bad image path: ", img_path)
-            assert len(self._image_paths) > 0, "Error, no valid image paths for training!"
+        self._cache[storage_key] = data
+        self._stored_bytes += data_nbytes
+        self._is_full = (self._stored_bytes >= self._max_size_bytes) or (len(self._cache) >= self._max_length)
 
-        # Store image for repeats
-        self._prev_img = img_uint8
-        return img_uint8
+        return True
+
+    def get(self, key: Any) -> tuple[bool, Any]:
+        """Get an entry (by key) from the cache if possible. Returns: is_in_cache, data"""
+        result = self._cache.get(key, None)
+        is_ok = result is not None
+        return is_ok, result
+
+    def clear(self):
+        self._cache.clear()
+        self._stored_bytes = 0
+        return
 
     # .................................................................................................................
 

@@ -54,7 +54,8 @@ from muggled_sam.demo_helpers.misc import (
 import muggled_sam.demo_helpers.training.loss_functions as loss_funcs
 from muggled_sam.demo_helpers.training.io import (
     TrainModulesDict,
-    ImageLoader,
+    ShuffleList,
+    ResultCache,
     load_prior_weights,
     make_save_folder,
     save_training_weights,
@@ -90,6 +91,7 @@ default_lr_init = 1e-4
 default_lr_high = 1e-1
 default_max_duration = 120
 default_loss_samples = 300
+default_teacher_cache_mb = 0
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 image encoder")
@@ -189,6 +191,12 @@ parser.add_argument(
     help=f"Max number of loss plot values to show (default: {default_loss_samples})",
 )
 parser.add_argument(
+    "--teacher_cache",
+    default=default_teacher_cache_mb,
+    type=int,
+    help=f"Size of cache for storing/re-using teacher results (default: {default_teacher_cache_mb})",
+)
+parser.add_argument(
     "--low_memory", default=False, action="store_true", help="Enable activation checkpointing to reduce memory usage"
 )
 
@@ -216,6 +224,7 @@ lr_high = args.lr_high
 lr_init = args.lr_init
 duration_max_sec = max(1, int(args.max_duration))
 num_loss_samples = max(5, args.num_loss_samples)
+size_teacher_cache_mb = args.teacher_cache
 enable_checkpointing = args.low_memory
 
 # Set up device config
@@ -341,12 +350,16 @@ else:
         all_train_image_paths_list.append(img_path)
 print(f"  -> Found {len(all_train_image_paths_list)} files")
 assert len(all_train_image_paths_list) > 0, "No image paths found, nothing to train on!"
-img_loader = ImageLoader(all_train_image_paths_list)
 
 # Also load Load test image and get smaller version for display (reduce resizing burden during updates)
 loaded_image_bgr = cv2.imread(image_path)
 scale_hw = get_image_hw_for_max_side_length(loaded_image_bgr)
 scaled_img_bgr = cv2.resize(loaded_image_bgr, dsize=(scale_hw[1], scale_hw[0]))
+
+# Set up data read/cache helpers
+img_path_list = ShuffleList(all_train_image_paths_list)
+teacher_cache = ResultCache(max_cache_mb=size_teacher_cache_mb)
+count_data_bytes = lambda in_data, out_data: in_data.nbytes + sum(entry.nbytes for entry in out_data)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -467,7 +480,7 @@ header_msgbar = StaticMessageBar(blocks_str, device_dtype_str, space_equally=Tru
 
 # Set up main displays
 main_img_elem = ExpandingImage(loaded_image_bgr)
-mask_img_elem = ExpandingImage(np.zeros_like(loaded_image_bgr))
+mask_img_elem = ExpandingImage(np.zeros_like(loaded_image_bgr), cv2.INTER_NEAREST)
 point_select_olay = PointSelectOverlay(color=(0, 255, 0))
 box_select_olay = BoxSelectOverlay(thickness=2)
 olay_elem = OverlayStack(main_img_elem, point_select_olay, box_select_olay)
@@ -516,7 +529,7 @@ update_lr_from_pct = lambda lr_pct: float(10 ** (((lr_pct / 100.0) * (lr_high_lo
 # Set up slider controls
 duration_max_sec = 120
 train_btn = ToggleButton("Train", on_color=(0, 80, 220), off_color=(60, 75, 100))
-duration_slider = HSlider("Train duration (s)", 20, 0, duration_max_sec, step_size=1, marker_steps=15)
+duration_slider = HSlider("Train duration (s)", 30, 0, duration_max_sec, step_size=1, marker_steps=15)
 lr_slider = HSlider("Learning rate", lr_init_pct, 0, 100, step_size=1, marker_steps=10)
 accum_slider = HSlider("Gradient accumulation", 8, 1, 128, step_size=1, marker_steps=16)
 disp_n_slider = HSlider("Display updates (every N)", 1, 0, 8, step_size=1, marker_steps=2)
@@ -551,8 +564,11 @@ min_display_size_px = min(400, disp_layout._rdr.limits.min_h, arg_display_size_p
 hidden_box_prompt_mode_btn = ToggleButton("Box prompt mode", default_state=False)
 hidden_optim_btn = ImmediateButton("Reset optimizer")
 hidden_mask_stack_btn = ToggleButton("Use vertical masks", default_state=False)
+hidden_mask_idx_btn = ImmediateButton("Change mask index")
+hidden_mask_idx_btns_list = ImmediateButton.many("Mask1", "Mask2", "Mask3", "Mask4")
 mask_rc_list = [(1, 4), (2, 2)] if is_masks_vert_stack else [(4, 1), (2, 2)]
 num_mask_rowcol = mask_rc_list[0]
+
 
 # Load initial prompts if provided
 have_init_prompts, init_prompts_dict = load_init_prompts(init_prompts_path)
@@ -614,6 +630,10 @@ window.attach_keypress_callback("b", backup_btn.click)
 window.attach_keypress_callback("s", save_to_disk_btn.click)
 window.attach_keypress_callback("m", hidden_mask_stack_btn.toggle)
 window.attach_keypress_callback("r", hidden_optim_btn.click)
+window.attach_keypress_callback("1", hidden_mask_idx_btns_list[0].click)
+window.attach_keypress_callback("2", hidden_mask_idx_btns_list[1].click)
+window.attach_keypress_callback("3", hidden_mask_idx_btns_list[2].click)
+window.attach_keypress_callback("4", hidden_mask_idx_btns_list[3].click)
 window.attach_keypress_callback(KEY.TAB, hidden_box_prompt_mode_btn.toggle)
 
 # For clarity, some additional keypress codes
@@ -647,7 +667,7 @@ print(
     "m: Toggle mask stacking",
     "r: Manually reset optimizer state",
     "TAB: Toggle between point/box prompting (use right-click to delete prompts before switching)",
-    "",
+    "1-4: Use number keys to display a single mask prediction. Press the number again to toggle to all masks" "",
     "Use -/+ keys to change display sizing",
     "Press q or esc to close the window",
     "",
@@ -671,6 +691,7 @@ need_save_on_crash = False
 loss_scaling = [1.0, (1 / 2), (1 / 2), 1.0, (1 / 2), (1 / 2)]
 imgenc_config_dict = {"max_side_length": imgenc_init_size, "use_square_sizing": use_square_sizing}
 prompts_dict = {"box_tlbr_norm_list": [], "fg_xy_norm_list": [], "bg_xy_norm_list": []}
+mask_idx_select = None
 
 # Force ui updates on start
 radio_loss.set_is_changed(True)
@@ -692,10 +713,12 @@ try:
         need_backup_weights = backup_btn.read()
         need_save_to_disk = save_to_disk_btn.read()
         need_manual_optim_reset = hidden_optim_btn.read()
+        need_change_mask_idx = hidden_mask_idx_btn.read()
         is_prompt_mode_changed, use_box_prompt = hidden_box_prompt_mode_btn.read()
         is_train_changed, is_training = train_btn.read()
         is_loss_changed, loss_select_idx, loss_func_btn = radio_loss.read()
         is_mask_stacking_changed, is_stack_vertical = hidden_mask_stack_btn.read()
+        is_mask_idx_changed_list = [btn.read() for btn in hidden_mask_idx_btns_list]
 
         # Read sliders
         is_imgsize_changed, imgsize_px = imgsize_slider.read()
@@ -718,13 +741,21 @@ try:
             imgenc_config_dict = {"max_side_length": imgsize_px, "use_square_sizing": use_square_sizing}
             prompts_dict["fg_xy_norm_list"] = point_xy_norm_list
             prompts_dict["box_tlbr_norm_list"] = box_xy1xy2_norm_list
+            if is_imgsize_changed:
+                teacher_cache.clear()
 
             # Re-predict teacher results
             true_encimg, _, _ = model_teacher.encode_image(loaded_image_bgr, **imgenc_config_dict)
             true_encpmt = model_teacher.encode_prompts(**prompts_dict)
             true_mask_preds, true_iou_scores = model_teacher.generate_masks(true_encimg, true_encpmt)
             plot_scores_elem.set_true_data(true_iou_scores.squeeze(0).float().cpu().numpy())
-            request_display_only_update = not is_training
+            request_display_only_update |= not is_training
+
+        # Switch to displaying only 1 mask
+        if any(is_mask_idx_changed_list):
+            mask_btn_idx = is_mask_idx_changed_list.index(True)
+            mask_idx_select = mask_btn_idx if mask_idx_select != mask_btn_idx else None
+            request_display_only_update |= not is_training
 
         # Force display update when switching mask stacking
         if is_mask_stacking_changed:
@@ -795,11 +826,26 @@ try:
             elapsed_time = perf_counter() - time_train_start_sec
             is_last_example = elapsed_time > duration_sec
 
-            # Run example through teacher & student model (or re-use teacher cache)
-            next_img_uint8 = img_loader.get_next_image(request_display_only_update)
-            with torch.no_grad():
-                img_tensor = model_teacher.image_encoder.prepare_image(next_img_uint8, **imgenc_config_dict)
-                out_target = run_full(model_teacher, img_tensor)
+            # Run example through teacher (or re-use from cache) & student model
+            _, next_img_path = img_path_list.get_next(request_display_only_update)
+            is_cached_result, result = teacher_cache.get(next_img_path)
+            img_tensor, out_target = result if is_cached_result else (None, None)
+            if not is_cached_result:
+
+                # Try to read next image (and skip iteration if path is bad)
+                next_img_uint8 = cv2.imread(next_img_path)
+                is_ok_img = next_img_uint8 is not None
+                if not is_ok_img:
+                    img_path_list.remove_previous()
+                    print("Removing bad path:", next_img_path)
+                    continue
+
+                # Compute teacher result (and potentially cache for re-use)
+                with torch.no_grad():
+                    img_tensor = model_teacher.image_encoder.prepare_image(next_img_uint8, **imgenc_config_dict)
+                    out_target = run_full(model_teacher, img_tensor)
+                    nbytes = count_data_bytes(img_tensor, out_target)
+                    teacher_cache.store(nbytes, next_img_path, (img_tensor, out_target))
             out_pred = run_full(model_student, img_tensor)
 
             # Calculate loss (prediction have shape: BxNxC -> B batch, N num tokens, C channels)
@@ -842,8 +888,12 @@ try:
                     test_mask_preds, test_iou_preds = model_student.generate_masks(test_encimg, test_encpmt)
 
                     # Draw mask predictions showing matching pixels and false positives/negatives
-                    test_mask_img = make_stacked_masks(test_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
-                    true_mask_img = make_stacked_masks(true_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                    if mask_idx_select is None:
+                        test_mask_img = make_stacked_masks(test_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                        true_mask_img = make_stacked_masks(true_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                    else:
+                        test_mask_img = (test_mask_preds[0, mask_idx_select] > 0).cpu().numpy()
+                        true_mask_img = (true_mask_preds[0, mask_idx_select] > 0).cpu().numpy()
                     mask_img = np.zeros((*true_mask_img.shape, 3), dtype=np.uint8)
                     match_mask_img = np.bitwise_and(test_mask_img, true_mask_img)
                     false_pos_img = np.bitwise_and(test_mask_img, ~true_mask_img)

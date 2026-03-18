@@ -19,14 +19,14 @@ class ExpandingImage(BaseImageCallback):
 
     # .................................................................................................................
 
-    def __init__(self, image, min_side_length=32, max_side_length=4096):
+    def __init__(self, image, interpolation=None, min_side_length=32, max_side_length=4096):
 
         # Store sizing constraints
         self._min_side_length = min_side_length
         self._max_side_length = max_side_length
 
         # Inherit from parent, then override sizing using own internal implementation!
-        super().__init__(blank_image(1, 1), expand_h=True, expand_w=True)
+        super().__init__(blank_image(1, 1), interpolation, expand_h=True, expand_w=True)
         self.set_image(image)
 
     # .................................................................................................................

@@ -406,7 +406,7 @@ class BaseImageCallback(BaseCallback):
 
     # .................................................................................................................
 
-    def __init__(self, image, expand_h=False, expand_w=False):
+    def __init__(self, image, interpolation=None, expand_h=False, expand_w=False):
 
         # Store image for re-use when rendering
         image_3ch = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -414,6 +414,7 @@ class BaseImageCallback(BaseCallback):
         self._render_image = image_3ch
         self._targ_h = -1
         self._targ_w = -1
+        self._interp = interpolation
 
         # Set up sizing limits
         img_hw = image.shape[0:2]
@@ -437,7 +438,7 @@ class BaseImageCallback(BaseCallback):
             img_h, img_w = self._full_image.shape[0:2]
             scale = min(h / img_h, w / img_w)
             fill_wh = (round(scale * img_w), round(scale * img_h))
-            self._render_image = cv2.resize(self._full_image, dsize=fill_wh)
+            self._render_image = cv2.resize(self._full_image, dsize=fill_wh, interpolation=self._interp)
             self._targ_h = h
             self._targ_w = w
 

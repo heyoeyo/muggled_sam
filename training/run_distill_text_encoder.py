@@ -451,7 +451,7 @@ device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(layers_str, device_dtype_str, space_equally=True)
 
 # Set up main displays
-main_img_elem = ExpandingImage(loaded_image_bgr)
+main_img_elem = ExpandingImage(loaded_image_bgr, interpolation=cv2.INTER_NEAREST)
 bounding_box_olay = DrawBoxOverlay()
 olay_elem = OverlayStack(main_img_elem, bounding_box_olay)
 
