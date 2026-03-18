@@ -201,7 +201,7 @@ arg_student_path = args.student_path
 arg_train_images_path = args.training_images_path
 arg_continue_path = args.continue_path
 arg_skip_cli = args.skip_cli
-display_size_px = args.display_size
+arg_display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
 use_square_sizing = not args.use_aspect_ratio
@@ -324,13 +324,12 @@ if path_train_images.parent == Path("."):
 
 print("", "Loading image paths for training...", f"@ {path_train_images}", sep="\n")
 if path_train_images.is_dir():
-    # If given a folder, assume all file paths inside are training images
+    # If given a folder, assume all files inside are training images (except common text formats)
     all_train_image_paths_list = []
-    for parent_folder_path, _, files_list in path_train_images.walk():
-        for file in files_list:
-            if file.endswith("txt") or file.endswith("json"):
-                continue
-            all_train_image_paths_list.append(parent_folder_path / file)
+    for img_path in path_train_images.iterdir():
+        if not img_path.is_file() or (img_path.suffix in (".txt", ".json", ".yaml")):
+            continue
+        all_train_image_paths_list.append(img_path)
     assert len(all_train_image_paths_list) > 0, f"Error, no images found in folder: {path_train_images}"
 else:
     # Assume we got a path to a text file listing image paths directly
@@ -472,18 +471,18 @@ mask_img_elem = ExpandingImage(np.zeros_like(loaded_image_bgr))
 point_select_olay = PointSelectOverlay(color=(0, 255, 0))
 box_select_olay = BoxSelectOverlay(thickness=2)
 olay_elem = OverlayStack(main_img_elem, point_select_olay, box_select_olay)
-plot_loss_elem = LossPlot("Loss", min_side_length=256)
-plot_scores_elem = ScoresPlot("IoU Scores", bar_width_pct=(90, 60), use_log_scale=True, min_side_length=256)
 
 # Disable box input on start up
 point_select_olay.enable(True)
 box_select_olay.enable(False)
 
-# Set backup controls
+# Set plots & backup controls
+plot_loss_elem = LossPlot("Loss", min_side_length=128)
+plot_scores_elem = ScoresPlot("IoU Scores", bar_width_pct=(90, 60), use_log_scale=True, min_side_length=128)
 backup_btn = ImmediateButton("Backup", (60, 120, 150), button_height=30, text_scale=0.35)
 restore_btn = ImmediateButton("Restore", (150, 120, 60), button_height=30, text_scale=0.35)
 last_backup_name_block = TextBlock("no backup", block_height=20)
-force_same_min_width(restore_btn, backup_btn)
+force_same_min_width(restore_btn, backup_btn, min_w=110)
 
 # Set up weight controls
 reset_btn = ImmediateButton("Reset", (60, 20, 170))
@@ -543,9 +542,10 @@ disp_layout = VStack(
 )
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
+display_size_px = arg_display_size_px
 display_image = disp_layout.render(h=display_size_px, w=display_size_px)
 render_limit_dict = {"h": display_size_px}
-min_display_size_px = min(600, disp_layout._rdr.limits.min_h)
+min_display_size_px = min(400, disp_layout._rdr.limits.min_h, arg_display_size_px)
 
 # Create hidden controls (easier to bind to keypresses this way)
 hidden_box_prompt_mode_btn = ToggleButton("Box prompt mode", default_state=False)

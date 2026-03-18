@@ -87,7 +87,7 @@ default_display_size = 800
 default_threshold = 0.5
 default_lora_rank = 32
 default_lr_low = 1e-7
-default_lr_init = 2.5e-5
+default_lr_init = 1e-4
 default_lr_high = 1e-1
 default_max_duration = 60
 default_loss_samples = 600
@@ -184,7 +184,7 @@ arg_student_path = args.student_path
 arg_continue_path = args.continue_path
 arg_train_text_path = args.training_text_path
 arg_skip_cli = args.skip_cli
-display_size_px = args.display_size
+arg_display_size_px = args.display_size
 device_str = args.device
 use_float32 = args.use_float32
 detection_threshold = args.detection_threshold
@@ -394,7 +394,7 @@ if need_load_weights:
         training_modules,
     )
     if need_module_resizing:
-        print("Resizing needed to load layer data (likely a lora rank mismatch)")
+        print("*** Resizing was needed to load layer data (likely a lora rank mismatch)")
     prior_weights_dict = training_modules.record_state_dict()
 
 # Get block mappings
@@ -454,14 +454,14 @@ header_msgbar = StaticMessageBar(layers_str, device_dtype_str, space_equally=Tru
 main_img_elem = ExpandingImage(loaded_image_bgr)
 bounding_box_olay = DrawBoxOverlay()
 olay_elem = OverlayStack(main_img_elem, bounding_box_olay)
-plot_loss_elem = LossPlot("Loss", min_side_length=256)
-plot_scores_elem = ScoresPlot("Detection Scores", use_log_scale=True, min_side_length=256)
 
-# Set backup controls
+# Set plots & backup controls
+plot_loss_elem = LossPlot("Loss", min_side_length=128)
+plot_scores_elem = ScoresPlot("Detection Scores", use_log_scale=True, min_side_length=128)
 backup_btn = ImmediateButton("Backup", (60, 120, 150), button_height=30, text_scale=0.35)
 restore_btn = ImmediateButton("Restore", (150, 120, 60), button_height=30, text_scale=0.35)
 last_backup_name_block = TextBlock("no backup", block_height=20)
-force_same_min_width(restore_btn, backup_btn)
+force_same_min_width(restore_btn, backup_btn, min_w=110)
 
 # Set up weight controls
 reset_btn = ImmediateButton("Reset", (60, 20, 170))
@@ -493,7 +493,7 @@ update_lr_from_pct = lambda lr_pct: float(10 ** (((lr_pct / 100.0) * (lr_high_lo
 
 # Set up slider controls
 train_btn = ToggleButton("Train", on_color=(0, 80, 220), off_color=(60, 75, 100))
-duration_slider = HSlider("Train duration (s)", 10, 0, duration_max_sec, step_size=1, marker_steps=10)
+duration_slider = HSlider("Train duration (s)", 30, 0, duration_max_sec, step_size=1, marker_steps=10)
 lr_slider = HSlider("Learning rate", lr_init_pct, 0, 100, step_size=1, marker_steps=10)
 accum_slider = HSlider("Gradient accumulation", 32, 1, 128, step_size=1, marker_steps=16)
 disp_n_slider = HSlider("Display updates (every N)", 1, 0, 8, step_size=1, marker_steps=2)
@@ -514,9 +514,10 @@ disp_layout = VStack(
 )
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
+display_size_px = arg_display_size_px
 display_image = disp_layout.render(h=display_size_px, w=display_size_px)
 render_limit_dict = {"h": display_size_px}
-min_display_size_px = disp_layout._rdr.limits.min_h
+min_display_size_px = min(400, disp_layout._rdr.limits.min_h, arg_display_size_px)
 
 # Create hidden controls (easier to bind to keypresses this way)
 hidden_text_input = ImmediateButton("Enter prompt")

@@ -49,34 +49,27 @@ class LoraLinear(nn.Module):
         if force_no_grad:
             base_linear_layer.requires_grad_(False)
 
-        # Figure out config of input linear layer
-        device, dtype = base_linear_layer.weight.device, base_linear_layer.weight.dtype
-        out_features, in_features = base_linear_layer.weight.shape
-        has_bias = base_linear_layer.bias is not None
-
-        # Make lora matching base layer sizing
-        lora_layers = self._make_lora(in_features, out_features, has_bias, rank, device, dtype)
-
         # Store components for forward calls
         self.base = base_linear_layer
-        self.lora = lora_layers
+        self.lora = self._make_lora(base_linear_layer, rank)
         self.reset_weights()
 
     # .................................................................................................................
 
     @staticmethod
-    def _make_lora(
-        in_features: int,
-        out_features: int,
-        include_bias: bool,
-        rank: int,
-        device: str = "cpu",
-        dtype: torch.device = torch.float32,
-    ):
+    def _make_lora(base_layer: nn.Linear, rank: int) -> Tensor:
+
+        # Figure out config of input linear layer
+        device, dtype = base_layer.weight.device, base_layer.weight.dtype
+        out_features, in_features = base_layer.weight.shape
+        has_bias = base_layer.bias is not None
+
+        # Make lora matching base layer sizing
         lora_layers = nn.Sequential()
         lora_layers.add_module("A", nn.Linear(in_features, rank, bias=False))
-        lora_layers.add_module("B", nn.Linear(rank, out_features, bias=include_bias))
+        lora_layers.add_module("B", nn.Linear(rank, out_features, bias=has_bias))
         lora_layers.to(device=device, dtype=dtype)
+
         return lora_layers
 
     # .................................................................................................................
@@ -104,7 +97,7 @@ class LoraLinear(nn.Module):
             return {name: weight.clone().float().cpu() for name, weight in self.lora.state_dict().items()}
         return {name: weight.clone() for name, weight in self.lora.state_dict().items()}
 
-    def load_weights(self, state_dict) -> bool:
+    def load_weights(self, state_dict: dict) -> bool:
 
         # Wipe out any training gradients, since they shouldn't apply to loaded weights
         need_resize_layers = False
@@ -122,25 +115,20 @@ class LoraLinear(nn.Module):
                 # Try to read out the weights we expect to be loading
                 a_weight = state_dict.get("A.weight", None)
                 b_weight = state_dict.get("B.weight", None)
-                b_bias = state_dict.get("B.bias", None)
-                has_bias = b_bias is not None
                 assert a_weight is not None, f"Unable to load target 'A.weight' (Got: {state_dict.keys()})"
                 assert b_weight is not None, f"Unable to load target 'B.weight' (Got: {state_dict.keys()})"
 
-                # Get loaded weight sizing and check that rank makes sense
-                a_device, a_dtype = a_weight.device, a_weight.dtype
+                # Sanity checks. Try to make sure weights are sized correctly
                 a_rank, in_feats = a_weight.shape
                 out_feats, b_rank = b_weight.shape
-                assert a_rank == b_rank, f"A and B weights have mismatching rank ({a_rank} vs. {b_rank})"
-
-                # Make sure loaded weights match the base weight sizing
                 base_out_feats, base_in_feats = self.base.weight.shape
+                assert a_rank == b_rank, f"A and B weights have mismatching rank ({a_rank} vs. {b_rank})"
                 assert in_feats == base_in_feats, f"In feature mismatch ({in_feats} vs. {base_in_feats})"
                 assert out_feats == base_out_feats, f"Out feature mismatch ({out_feats} vs. {base_out_feats})"
 
                 # Replace with lora sized to loaded weights
                 del self.lora
-                self.lora = self._make_lora(in_feats, out_feats, has_bias, a_rank, a_device, a_dtype)
+                self.lora = self._make_lora(self.base, a_rank)
                 self.lora.load_state_dict(state_dict)
 
             # Make sure device/dtype of lora matches base layer
@@ -199,10 +187,8 @@ class LoraConv2D(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def _make_lora(
-        base_conv_layer: nn.Conv2d,
-        rank: int,
-    ):
+    def _make_lora(base_conv_layer: nn.Conv2d, rank: int) -> Tensor:
+
         # Figure out config of input layer
         device, dtype = base_conv_layer.weight.device, base_conv_layer.weight.dtype
         out_features, in_features, _, _ = base_conv_layer.weight.shape
@@ -215,6 +201,7 @@ class LoraConv2D(nn.Module):
         lora_layers.add_module("A", nn.Conv2d(in_features, rank, bias=False, **conv_config))
         lora_layers.add_module("B", nn.Conv2d(rank, out_features, kernel_size=(1, 1), bias=has_bias))
         lora_layers.to(device=device, dtype=dtype)
+
         return lora_layers
 
     # .................................................................................................................
@@ -237,7 +224,7 @@ class LoraConv2D(nn.Module):
                 nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
         return
 
-    def load_weights(self, state_dict) -> bool:
+    def load_weights(self, state_dict: dict) -> bool:
 
         # Wipe out any training gradients, since they shouldn't apply to loaded weights
         need_resize_layers = False
@@ -334,10 +321,8 @@ class LoraConvTranspose2D(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def _make_lora(
-        base_convtranspose_layer: nn.ConvTranspose2d,
-        rank: int,
-    ):
+    def _make_lora(base_convtranspose_layer: nn.ConvTranspose2d, rank: int) -> Tensor:
+
         # Figure out config of input layer
         device, dtype = base_convtranspose_layer.weight.device, base_convtranspose_layer.weight.dtype
         in_features, out_features, _, _ = base_convtranspose_layer.weight.shape
@@ -350,6 +335,7 @@ class LoraConvTranspose2D(nn.Module):
         lora_layers.add_module("A", nn.ConvTranspose2d(in_features, rank, bias=False, **ct_config))
         lora_layers.add_module("B", nn.Conv2d(rank, out_features, kernel_size=(1, 1), bias=has_bias))
         lora_layers.to(device=device, dtype=dtype)
+
         return lora_layers
 
     # .................................................................................................................
@@ -372,7 +358,7 @@ class LoraConvTranspose2D(nn.Module):
                 nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
         return
 
-    def load_weights(self, state_dict) -> bool:
+    def load_weights(self, state_dict: dict) -> bool:
 
         # Wipe out any training gradients, since they shouldn't apply to loaded weights
         need_resize_layers = False
@@ -453,6 +439,7 @@ class LoraEmbedding(nn.Module):
         self,
         base_embedding: nn.Embedding,
         rank: int = 1,
+        include_bias: bool = False,
         force_no_grad: bool = True,
     ):
 
@@ -463,33 +450,29 @@ class LoraEmbedding(nn.Module):
         if force_no_grad:
             base_embedding.requires_grad_(False)
 
-        # Figure out config of input layer
-        device, dtype = base_embedding.weight.device, base_embedding.weight.dtype
-        num_embeddings, num_features = base_embedding.weight.shape
-
         # Set up lora components
-        lora_layers, lora_eye = self._make_lora(num_features, rank, device, dtype)
+        lora_layers, lora_eye = self._make_lora(base_embedding, rank, include_bias)
         self.register_buffer("lora_eye", lora_eye, persistent=False)
 
         # Store components for forward calls
+        self._has_bias = include_bias
         self.base = base_embedding
         self.lora = lora_layers
         self.reset_weights()
 
     @staticmethod
-    def _make_lora(
-        num_features: int,
-        rank: int,
-        device: str | torch.device = "cpu",
-        dtype: torch.dtype = torch.float32,
-    ):
+    def _make_lora(base_layer: nn.Embedding, rank: int, include_bias: bool) -> tuple[Tensor, Tensor]:
+
+        # Figure out config of input layer
+        device, dtype = base_layer.weight.device, base_layer.weight.dtype
+        num_embeddings, num_features = base_layer.weight.shape
 
         lora_layers = nn.ParameterDict()
         lora_layers["A"] = nn.Parameter(torch.zeros(num_features, rank))
         lora_layers["B"] = nn.Parameter(torch.zeros(rank, num_features))
-        lora_layers["bias"] = nn.Parameter(torch.zeros(num_features))
+        if include_bias:
+            lora_layers["bias"] = nn.Parameter(torch.zeros(num_features))
         lora_layers.to(device=device, dtype=dtype)
-
         lora_eye = torch.eye(num_features, device=device, dtype=dtype)
 
         return lora_layers, lora_eye
@@ -499,18 +482,19 @@ class LoraEmbedding(nn.Module):
     def forward(self, index_tensor: Tensor) -> Tensor:
         base = self.base(index_tensor)
         rotate = self.lora_eye + torch.matmul(self.lora.A, self.lora.B)
-        return torch.matmul(base, rotate) + self.lora.bias
+        result = torch.matmul(base, rotate)
+        if self._has_bias:
+            result = result + self.lora.bias
+        return result
 
     # .................................................................................................................
 
     def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
         nn.init.kaiming_uniform_(self.lora.A, nonlinearity="linear")
-        nn.init.zeros_(self.lora.B)
-        nn.init.zeros_(self.lora.bias)
-
-        if not use_zeroed_state:
-            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
-            nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        init_scale = 0 if use_zeroed_state else non_zero_scale
+        nn.init.uniform_(self.lora.B, -init_scale, init_scale)
+        if self._has_bias:
+            nn.init.uniform_(self.lora.bias, -init_scale, init_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
@@ -518,7 +502,7 @@ class LoraEmbedding(nn.Module):
             return {name: weight.clone().float().cpu() for name, weight in self.lora.state_dict().items()}
         return {name: weight.clone() for name, weight in self.lora.state_dict().items()}
 
-    def load_weights(self, state_dict) -> bool:
+    def load_weights(self, state_dict: dict) -> bool:
 
         # Wipe out any training gradients, since they shouldn't apply to loaded weights
         need_resize_layers = False
@@ -538,25 +522,20 @@ class LoraEmbedding(nn.Module):
                 a_weight = state_dict.get("A", None)
                 b_weight = state_dict.get("B", None)
                 bias_weight = state_dict.get("bias", None)
-                assert (
-                    any(weight is None for weight in (a_weight, b_weight, bias_weight)) is not None
-                ), f"Unable to load target weights ('A', 'B' and 'bias') (Got: {state_dict.keys()})"
+                has_bias = bias_weight is not None
+                assert a_weight is not None, f"Unable to load target 'A' (Got: {state_dict.keys()})"
+                assert b_weight is not None, f"Unable to load target 'B' (Got: {state_dict.keys()})"
 
-                # Get loaded weight sizing and check that rank makes sense
-                a_device, a_dtype = a_weight.device, a_weight.dtype
+                # Sanity checks. Try to make sure weights are sized correctly
                 num_a_feats, a_rank = a_weight.shape
                 b_rank, num_b_feats = b_weight.shape
-                num_bias = bias_weight.shape[0]
+                _, num_base_feats = self.base.weight.shape
                 assert a_rank == b_rank, f"A and B weights have mismatching rank ({a_rank} vs. {b_rank})"
                 assert num_a_feats == num_b_feats, f"A/B feature count mismatch ({num_a_feats} vs. {num_b_feats})"
-                assert num_a_feats == num_bias, f"A/bias feature count mismatch ({num_a_feats} vs. {num_bias})"
-
-                # Make sure loaded weights match the base weight sizing
-                _, num_base_feats = self.base.weight.shape
                 assert num_a_feats == num_base_feats, f"Base feature mismatch ({num_a_feats} vs. {num_base_feats})"
 
                 # Replace with lora sized to loaded weights
-                new_lora, lora_eye = self._make_lora(num_a_feats, a_rank, a_device, a_dtype)
+                new_lora, lora_eye = self._make_lora(self.base, a_rank, include_bias=has_bias)
                 del self.lora
                 self.lora = new_lora
                 self.lora.load_state_dict(state_dict)
@@ -576,7 +555,10 @@ class LoraEmbedding(nn.Module):
         base_weight = self.base.weight
         lora_linear = torch.matmul(self.lora.A, self.lora.B)
         perturb = self.lora_eye + lora_linear
-        return torch.matmul(base_weight, perturb) + self.lora.bias
+        result = torch.matmul(base_weight, perturb)
+        if self._has_bias:
+            return result + self.lora.bias
+        return result
 
     # .................................................................................................................
 
@@ -611,28 +593,20 @@ class OffsetLayernorm(nn.Module):
         if force_no_grad:
             base_layernorm_layer.requires_grad_(False)
 
-        # Figure out config of input layer
-        device, dtype = base_layernorm_layer.weight.device, base_layernorm_layer.weight.dtype
-        num_features = base_layernorm_layer.weight.shape[0]
-        has_bias = base_layernorm_layer.bias is not None
-        include_bias = has_bias and include_bias
-
-        # Set up offsets
-        offset_layers = self._make_offset(num_features, include_bias, device, dtype)
-
         # Store components for forward calls
         self._has_bias = include_bias
         self.base = base_layernorm_layer
-        self.offset = offset_layers
+        self.offset = self._make_offset(base_layernorm_layer, include_bias)
         self.reset_weights()
 
     @staticmethod
-    def _make_offset(
-        num_features: int,
-        include_bias: bool,
-        device: str | torch.device = "cpu",
-        dtype: torch.dtype = torch.float32,
-    ) -> Tensor:
+    def _make_offset(base_layer: nn.LayerNorm, include_bias: bool) -> Tensor:
+
+        # Figure out config of input layer
+        device, dtype = base_layer.weight.device, base_layer.weight.dtype
+        num_features = base_layer.weight.shape[0]
+        has_bias = base_layer.bias is not None
+        include_bias = has_bias and include_bias
 
         offset_layers = nn.ParameterDict()
         offset_layers["weight"] = nn.Parameter(torch.empty(num_features))
@@ -671,7 +645,7 @@ class OffsetLayernorm(nn.Module):
             return {name: weight.clone().float().cpu() for name, weight in self.offset.state_dict().items()}
         return {name: weight.clone() for name, weight in self.offset.state_dict().items()}
 
-    def load_weights(self, state_dict) -> bool:
+    def load_weights(self, state_dict: dict) -> bool:
 
         # Wipe out any training gradients, since they shouldn't apply to loaded weights
         need_resize_layers = False
@@ -692,16 +666,14 @@ class OffsetLayernorm(nn.Module):
                 has_bias = bias_offset is not None
                 assert weight_offset is not None, "Unable to load 'weight' offset"
 
-                # Get loaded weight sizing
-                w_device, w_dtype = weight_offset.device, weight_offset.dtype
+                # Sanity check, make sure weights are sized to match base layer
                 num_w_feats = weight_offset.shape[0]
                 _, num_base_feats = self.base.weight.shape
                 assert num_w_feats == num_base_feats, f"Base feature mismatch ({num_w_feats} vs. {num_base_feats})"
 
                 # Replace with offset sized to loaded weights
-                new_lora = self._make_offset(num_w_feats, has_bias, w_device, w_dtype)
                 del self.offset
-                self.offset = new_lora
+                self.offset = self._make_offset(self.base, include_bias=has_bias)
                 self.offset.load_state_dict(state_dict)
                 self._has_bias = has_bias
 
@@ -802,7 +774,6 @@ def replace_target_modules(
     submodule_prefix: str | None,
     module_to_replace: nn.Module,
     replacement_module: nn.Module,
-    exclude_names_func: callable | None = None,
 ) -> tuple[dict[str, nn.Module], int]:
     """
     Helper used to replace all instances of a type of module (e.g. nn.Linear)
@@ -833,9 +804,6 @@ def replace_target_modules(
     submod_strs_to_replace = []
     for module_name, module in model.named_modules():
         if isinstance(module, module_to_replace):
-            if exclude_names_func is not None:
-                if exclude_names_func(module_name):
-                    continue
             submod_strs_to_replace.append(module_name)
 
     # Replace each of the layers found above & record submodule name->lora instance
