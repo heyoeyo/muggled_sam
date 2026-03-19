@@ -162,6 +162,8 @@ class ShuffleList:
         return
 
     def __getitem__(self, index: int):
+        if isinstance(index, slice):
+            return [self._data[idx] for idx in self._idx_list[index]]
         data_idx = self._idx_list[index]
         return self._data[data_idx]
 

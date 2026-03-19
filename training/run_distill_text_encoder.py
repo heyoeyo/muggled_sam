@@ -59,6 +59,7 @@ from muggled_sam.demo_helpers.training.default_data import make_default_training
 from muggled_sam.demo_helpers.training.io import (
     TrainModulesDict,
     ShuffleList,
+    ResultCache,
     load_prior_weights,
     make_save_folder,
     save_training_weights,
@@ -91,6 +92,7 @@ default_lr_init = 1e-4
 default_lr_high = 1e-1
 default_max_duration = 60
 default_loss_samples = 600
+default_teacher_cache_mb = 16
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 text encoder")
@@ -174,6 +176,12 @@ parser.add_argument(
     type=int,
     help=f"Max number of loss plot values to show (default: {default_loss_samples})",
 )
+parser.add_argument(
+    "--teacher_cache",
+    default=default_teacher_cache_mb,
+    type=int,
+    help=f"Size of cache for storing/re-using teacher results (default: {default_teacher_cache_mb})",
+)
 
 # For convenience
 args = parser.parse_args()
@@ -197,6 +205,7 @@ lr_high = args.lr_high
 lr_init = args.lr_init
 duration_max_sec = max(1, int(args.max_duration))
 num_loss_samples = max(5, args.num_loss_samples)
+size_teacher_cache_mb = args.teacher_cache
 
 # Set up device config
 device_config_dict = make_device_config(device_str, use_float32)
@@ -334,15 +343,10 @@ if not arg_train_text_path.exists():
 print("", "Loading text for training...", f"@ {arg_train_text_path.name}", sep="\n")
 all_train_text_list = load_text_list_file(arg_train_text_path)
 all_train_text_list = ShuffleList(all_train_text_list, shuffle_on_init=True)
-
-# Convert all input text to vocabulary indexing ahead-of-time
-with torch.no_grad():
-    teacher_tokenizer = model_teacher.text_encoder.tokenizer
-    txt_to_idx_cache = {txt: teacher_tokenizer.text_to_vocab_index(txt) for txt in all_train_text_list}
-    num_unique_txt = len(txt_to_idx_cache)
-    example_txt = ", ".join(list(txt_to_idx_cache.keys())[0:5])
-    txt_cache_kb = 8 * sum(idx_tensor.shape[-1] for idx_tensor in txt_to_idx_cache.values()) / 1000
-print(f"  -> Found {num_unique_txt} unique text entries (cached {txt_cache_kb:.1f} KB of token indices)")
+teacher_cache = ResultCache(max_cache_mb=size_teacher_cache_mb)
+num_unique_txt = len(set(all_train_text_list))
+example_txt = ", ".join(all_train_text_list[0:5])
+print(f"  -> Found {num_unique_txt} unique text entries")
 print("  -> Examples:", example_txt, "...")
 
 
@@ -616,6 +620,7 @@ need_optim_reset = True
 is_nan_loss = False
 time_train_start_sec = 0
 total_iters = 0
+display_iters = 0
 optim_step_count = 0
 avg_loss = None
 loss_name, loss_func = loss_functions_list[0]
@@ -745,13 +750,18 @@ try:
                 elapsed_time = iter_time - time_train_start_sec
                 is_last_example = elapsed_time > duration_sec
 
-                # Run example through teacher & student model
+                # Run example through teacher (or re-use from cache) & student model
                 _, next_txt_prompt = all_train_text_list.get_next(request_display_only_update)
-                with torch.no_grad():
-                    input_vocab_index = txt_to_idx_cache.get(next_txt_prompt, None)
-                    if input_vocab_index is None:
-                        input_vocab_index = teacher_tokenizer.text_to_vocab_index(next_txt_prompt)
-                    out_target = run_full(model_teacher, input_vocab_index)
+                is_cached_result, result = teacher_cache.get(next_txt_prompt)
+                input_vocab_index, out_target = result if is_cached_result else (None, None)
+                if not is_cached_result:
+
+                    # Compute teacher result (and potentially cache for re-use)
+                    with torch.no_grad():
+                        input_vocab_index = model_teacher.text_encoder.tokenizer.text_to_vocab_index(next_txt_prompt)
+                        out_target = run_full(model_teacher, input_vocab_index)
+                        nbytes = input_vocab_index.nbytes + out_target.nbytes
+                        teacher_cache.store(nbytes, next_txt_prompt, (input_vocab_index, out_target))
                 out_pred = run_full(model_student, input_vocab_index)
 
                 # Calculate loss (prediction have shape: BxNxC -> B batch, N num tokens, C channels)
@@ -782,9 +792,15 @@ try:
                 if is_last_example:
                     break
 
+                # Increment count ot trigger training results refresh
+                display_iters += 1
+
             # Update display
-            need_display_update = (display_every_n > 0) and (total_iters % display_every_n) == 0
-            if need_display_update or is_last_example or request_display_only_update:
+            need_display_refresh = (display_every_n > 0) and (display_iters >= display_every_n)
+            if need_display_refresh or is_last_example or request_display_only_update:
+
+                # Reset display update counter
+                display_iters = display_iters % display_every_n if display_every_n > 0 else 0
 
                 # Report loss & iterations
                 loss_txt_block.set_value(f"{avg_loss:.2e}")
@@ -856,7 +872,7 @@ try:
             all_scores_list = []
             with torch.no_grad():
                 for txt in all_train_text_list:
-                    input_vocab_index = txt_to_idx_cache[txt]
+                    input_vocab_index = model_teacher.text_encoder.tokenizer.text_to_vocab_index(next_txt_prompt)
                     out_target = run_full(model_teacher, input_vocab_index)
                     out_pred = run_full(model_student, input_vocab_index)
                     loss_score = loss_func(out_target, out_pred, channel_dim=-1).item()
