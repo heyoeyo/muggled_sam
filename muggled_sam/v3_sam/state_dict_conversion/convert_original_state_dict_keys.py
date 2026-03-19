@@ -90,7 +90,9 @@ def convert_state_dict_keys(
             if new_key.startswith("posenc.tile_embedding"):
                 # Original is shape: 1x(N+1)xC (N is number tokens + 1 cls token, C is features per token)
                 # -> Want in image format: 1xCxHxW, without the cls token (which isn't used)
-                new_data = new_data[0, 1:, :].reshape(1, 24, 24, 1024).permute(0, 3, 1, 2)
+                _, num_tiles, num_tile_features = new_data.shape
+                tile_size = round((num_tiles - 1) ** 0.5)
+                new_data = new_data[0, 1:, :].reshape(1, tile_size, tile_size, num_tile_features).permute(0, 3, 1, 2)
 
             # Store new key/weight data
             _update_sd(sam_module_type, orig_key, new_key, new_data)

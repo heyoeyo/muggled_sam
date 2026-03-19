@@ -29,6 +29,11 @@ from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, sele
 from muggled_sam.demo_helpers.text_input import confirm_prompt
 from muggled_sam.demo_helpers.training.default_data import make_default_image_encoder_block_mapping, save_unnested_json
 
+# Only used for feature pruning
+from muggled_sam.demo_helpers.training.pruning import copy_samv3_features
+from muggled_sam.v3_sam.make_sam_v3 import make_sam_v3, make_samv3_from_original_state_dict
+from muggled_sam.v3_sam.state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Script args
@@ -48,6 +53,13 @@ parser.add_argument(
     help="Path to a json file containing block mappings (run script to generate initial file)",
 )
 parser.add_argument("-n", "--map_name", default=None, type=str, help="Name of block mapping to use")
+parser.add_argument(
+    "-f",
+    "--feature_count",
+    default=None,
+    type=int,
+    help="Set to a number to choose how many features to use (prune) from original model",
+)
 parser.add_argument("-debug", default=False, action="store_true", help="Enable debug printouts")
 
 # For convenience
@@ -56,6 +68,7 @@ arg_model_path = args.model_path
 mapping_path = args.mapping_path
 enable_debug_printouts = args.debug
 map_name = args.map_name
+target_prune_features = args.feature_count
 
 # Info printout
 print(
@@ -145,6 +158,55 @@ if mugsam_key in state_dict.keys():
 sam3_required_key = "detector.backbone.vision_backbone.trunk.pos_embed"
 if sam3_required_key not in state_dict.keys():
     raise TypeError("Error! Only SAMv3 models are supported")
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Prune features
+
+if target_prune_features is not None:
+
+    # Get state dict of original model in mugsam format
+    orig_config, orig_model_mugsam = make_samv3_from_original_state_dict(state_dict)
+    _, reverse_key_lut = convert_state_dict_keys(orig_config, state_dict)
+    orig_sd_mugsam = orig_model_mugsam.state_dict()
+    del orig_model_mugsam
+
+    # Sanity check, make sure we're actually doing something
+    num_orig_feats, num_orig_heads = orig_config["imgencoder_features"], orig_config["imgencoder_num_heads"]
+    num_orig_feats_per_head = round(num_orig_feats / num_orig_heads)
+    assert (
+        target_prune_features < num_orig_feats
+    ), f"Error no features are being pruned (orig feature count: {num_orig_feats})"
+
+    # Create new model config (with features pruned)
+    new_img_feats = round(target_prune_features / num_orig_feats_per_head) * num_orig_feats_per_head
+    new_img_heads = round(new_img_feats / num_orig_feats_per_head)
+    new_config = {**orig_config}
+    new_config["imgencoder_features"] = new_img_feats
+    new_config["imgencoder_num_heads"] = new_img_heads
+
+    # Get state dict of new mugsam model (with reduced feature count)
+    new_model_mugsam = make_sam_v3(**new_config)
+    new_sd_mugsam = new_model_mugsam.state_dict()
+    del new_model_mugsam
+
+    # Try to copy features into pruned model
+    print("", f"Pruning image encoder features ({num_orig_feats} down to {new_img_feats})...")
+    is_ok_prune, pruned_sd = copy_samv3_features(orig_sd_mugsam, new_sd_mugsam, state_dict, reverse_key_lut)
+    assert set(pruned_sd.keys()) == set(state_dict.keys()), "Error, mismatching keys after feature pruning!"
+    if not is_ok_prune:
+        print(
+            "",
+            "Warning",
+            "Feature pruning produces some errors!",
+            "The pruned model may not be useable...",
+            sep="\n",
+        )
+    state_dict = pruned_sd
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Get block indexing
 
 # Hard-code block prefix for SAMv3
 target_block_key_prefix = "detector.backbone.vision_backbone.trunk.blocks"
