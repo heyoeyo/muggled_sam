@@ -53,6 +53,7 @@ def make_default_image_encoder_block_mapping():
     """
     return {
         "samv3": {
+            "1_block": [[0]],
             "4_blocks": [[0], [1], [2], [7]],
             "8_blocks": [[0, 1], [2, 3], [4, 5], [6, 7]],
             "12_blocks": [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 15]],
@@ -93,6 +94,7 @@ def make_default_text_encoder_block_mapping():
     """
     return {
         "samv3": {
+            "1_layer": tuple(range(1)),
             "4_layers": tuple(range(4)),
             "8_layers": tuple(range(8)),
             "12_layers": tuple(range(12)),
