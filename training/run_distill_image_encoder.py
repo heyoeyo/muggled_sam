@@ -232,6 +232,7 @@ device_config_dict = make_device_config(device_str, use_float32)
 is_using_cuda = "cuda" in device_config_dict["device"]
 
 # Force checkpointing if we're likely to run out of VRAM
+total_mem_gb = 8  # Assume at least 8GB of RAM
 if is_using_cuda and not enable_checkpointing:
     _, total_mem_bytes = torch.cuda.mem_get_info()
     total_mem_gb = total_mem_bytes / 1e9
@@ -361,6 +362,12 @@ img_path_list = ShuffleList(all_train_image_paths_list)
 teacher_cache = ResultCache(max_cache_mb=size_teacher_cache_mb)
 count_data_bytes = lambda in_data, out_data: in_data.nbytes + sum(entry.nbytes for entry in out_data)
 
+# For small datasets, ask user if they want to enable teacher caching
+if len(img_path_list) < 10 and size_teacher_cache_mb == 0 and total_mem_gb > 6:
+    target_size_cache_mb = len(img_path_list) * 100
+    user_confirm_cache = confirm_prompt(f"Small dataset detected, enable {target_size_cache_mb}MB teacher cache?")
+    teacher_cache = ResultCache(max_cache_mb=target_size_cache_mb)
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Attach training layers
@@ -419,9 +426,14 @@ if need_load_weights:
         print("Resizing needed to load layer data (likely a lora rank mismatch)")
     prior_weights_dict = training_modules.record_state_dict()
 
-# Get block mappings
+# Get student/teacher config data
 num_blocks_student = config_student["imgencoder_num_blocks"]
 num_blocks_teacher = config_teacher["imgencoder_num_blocks"]
+num_feats_student = config_student["imgencoder_features"]
+num_feats_teacher = config_teacher["imgencoder_features"]
+feat_count_str = f"{num_feats_student}"
+if num_feats_student != num_feats_teacher:
+    feat_count_str = f"{num_feats_student} from {num_feats_teacher}"
 
 # Report training parameter count
 num_student_params = sum(p.numel() for p in model_student.image_encoder.parameters() if p.requires_grad)
@@ -439,6 +451,7 @@ print(
     f"   Conv2D.T params: {num_convtranspose_params}",
     f"  Layernorm params: {num_layernorm_params}",
     f"       Block count: {num_blocks_student} from {num_blocks_teacher}",
+    f"     Feature count: {feat_count_str}",
     f"         Lora rank: {report_lora_rank}",
     sep="\n",
     flush=True,
@@ -446,7 +459,7 @@ print(
 sleep(0.5)
 
 # Warn if student is same/bigger than teacher
-if num_blocks_student >= num_blocks_teacher:
+if num_blocks_student >= num_blocks_teacher and num_feats_student >= num_feats_teacher:
     print(
         "",
         "WARNING:",
@@ -455,7 +468,7 @@ if num_blocks_student >= num_blocks_teacher:
         sep="\n",
         flush=True,
     )
-    sleep(5)
+    sleep(8)
 
 # Set up checkpointing if needed
 if enable_checkpointing:
@@ -491,7 +504,7 @@ box_select_olay.enable(False)
 
 # Set plots & backup controls
 plot_loss_elem = LossPlot("Loss", min_side_length=128)
-plot_scores_elem = ScoresPlot("IoU Scores", bar_width_pct=(90, 60), use_log_scale=True, min_side_length=128)
+plot_scores_elem = ScoresPlot("IoU Scores", bar_width_pct=(90, 60), min_side_length=128)
 backup_btn = ImmediateButton("Backup", (60, 120, 150), button_height=30, text_scale=0.35)
 restore_btn = ImmediateButton("Restore", (150, 120, 60), button_height=30, text_scale=0.35)
 last_backup_name_block = TextBlock("no backup", block_height=20)
@@ -757,8 +770,12 @@ try:
             mask_idx_select = mask_btn_idx if mask_idx_select != mask_btn_idx else None
             request_display_only_update |= not is_training
 
-        # Force display update when switching mask stacking
+        # Force display update when switching mask stacking (and/or disable single mask display)
         if is_mask_stacking_changed:
+            if mask_idx_select is not None:
+                mask_idx_select = None
+                is_stack_vertical = not is_stack_vertical
+                hidden_mask_stack_btn.toggle(flag_if_changed=False)
             num_mask_rowcol = mask_rc_list[int(is_stack_vertical)]
             request_display_only_update |= not is_training
 

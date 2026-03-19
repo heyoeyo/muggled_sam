@@ -168,7 +168,7 @@ class ScoresPlot(BaseCallback):
         axis_width: int = 2,
         bar_width_pct: tuple[int, int] = (100, 100),
         xy_margin=(8, 10),
-        text_scale: float = 0.5,
+        text_scale: float = 0.35,
         use_log_scale: bool = False,
         min_side_length: int = 256,
     ):

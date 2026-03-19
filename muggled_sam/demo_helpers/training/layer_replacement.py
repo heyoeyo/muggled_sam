@@ -80,16 +80,11 @@ class LoraLinear(nn.Module):
     # .................................................................................................................
 
     def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
-        has_bias = self.base.bias is not None
         nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="linear")
-        nn.init.zeros_(self.lora.B.weight)
-        if has_bias:
-            nn.init.zeros_(self.lora.B.bias)
-
-        if not use_zeroed_state:
-            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
-            if has_bias:
-                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        init_scale = 0 if use_zeroed_state else non_zero_scale
+        nn.init.uniform_(self.lora.B.weight, -init_scale, init_scale)
+        if self.base.bias is not None:
+            nn.init.uniform_(self.lora.B.bias, -init_scale, init_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:
@@ -212,16 +207,11 @@ class LoraConv2D(nn.Module):
     # .................................................................................................................
 
     def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
-        has_bias = self.base.bias is not None
         nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="conv2d")
-        nn.init.zeros_(self.lora.B.weight)
-        if has_bias:
-            nn.init.zeros_(self.lora.B.bias)
-
-        if not use_zeroed_state:
-            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
-            if has_bias:
-                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        init_scale = 0 if use_zeroed_state else non_zero_scale
+        nn.init.uniform_(self.lora.B.weight, -init_scale, init_scale)
+        if self.base.bias is not None:
+            nn.init.uniform_(self.lora.B.bias, -init_scale, init_scale)
         return
 
     def load_weights(self, state_dict: dict) -> bool:
@@ -346,16 +336,11 @@ class LoraConvTranspose2D(nn.Module):
     # .................................................................................................................
 
     def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
-        has_bias = self.base.bias is not None
         nn.init.kaiming_uniform_(self.lora.A.weight, nonlinearity="conv_transpose2d")
-        nn.init.zeros_(self.lora.B.weight)
-        if has_bias:
-            nn.init.zeros_(self.lora.B.bias)
-
-        if not use_zeroed_state:
-            nn.init.uniform_(self.lora.B.weight, -non_zero_scale, non_zero_scale)
-            if has_bias:
-                nn.init.uniform_(self.lora.B.bias, -non_zero_scale, non_zero_scale)
+        init_scale = 0 if use_zeroed_state else non_zero_scale
+        nn.init.uniform_(self.lora.B.weight, -init_scale, init_scale)
+        if self.base.bias is not None:
+            nn.init.uniform_(self.lora.B.bias, -init_scale, init_scale)
         return
 
     def load_weights(self, state_dict: dict) -> bool:
@@ -630,14 +615,10 @@ class OffsetLayernorm(nn.Module):
     # .................................................................................................................
 
     def reset_weights(self, use_zeroed_state: bool = True, non_zero_scale: float = 0.1) -> None:
-        nn.init.zeros_(self.offset.weight)
+        init_scale = 0 if use_zeroed_state else non_zero_scale
+        nn.init.uniform_(self.offset.weight, -init_scale, init_scale)
         if self._has_bias:
-            nn.init.zeros_(self.offset.bias)
-
-        if not use_zeroed_state:
-            nn.init.uniform_(self.offset.weight, -non_zero_scale, non_zero_scale)
-            if self._has_bias:
-                nn.init.uniform_(self.offset.bias, -non_zero_scale, non_zero_scale)
+            nn.init.uniform_(self.offset.bias, -init_scale, init_scale)
         return
 
     def record_weights(self, move_to_cpu: bool = True) -> dict[str, Tensor]:

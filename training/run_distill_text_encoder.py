@@ -401,9 +401,14 @@ if need_load_weights:
         print("*** Resizing was needed to load layer data (likely a lora rank mismatch)")
     prior_weights_dict = training_modules.record_state_dict()
 
-# Get block mappings
+# Get student/teacher config data
 num_layers_student = config_student["txtencoder_num_blocks"]
 num_layers_teacher = config_teacher["txtencoder_num_blocks"]
+num_feats_student = config_student["txtencoder_features"]
+num_feats_teacher = config_teacher["txtencoder_features"]
+feat_count_str = f"{num_feats_student}"
+if num_feats_student != num_feats_teacher:
+    feat_count_str = f"{num_feats_student} from {num_feats_teacher}"
 
 # Report training parameter count
 num_student_params = sum(p.numel() for p in model_student.text_encoder.parameters() if p.requires_grad)
@@ -420,6 +425,7 @@ print(
     f"     Linear params: {num_linear_params}",
     f"  Layernorm params: {num_layernorm_params}",
     f"       Layer count: {num_layers_student} from {num_layers_teacher}",
+    f"     Feature count: {feat_count_str}",
     f"         Lora rank: {report_lora_rank}",
     sep="\n",
     flush=True,
@@ -427,7 +433,7 @@ print(
 sleep(0.5)
 
 # Warn if student is same/bigger than teacher
-if num_layers_student >= num_layers_teacher:
+if num_layers_student >= num_layers_teacher and num_feats_student >= num_feats_teacher:
     print(
         "",
         "WARNING:",
@@ -436,7 +442,7 @@ if num_layers_student >= num_layers_teacher:
         sep="\n",
         flush=True,
     )
-    sleep(5)
+    sleep(8)
 
 # Set up initial 'backup' weights, just so we don't get errors if user tries to restore
 backup_weights_dict = {ltype: {} for ltype in training_modules.get_layer_types()}
