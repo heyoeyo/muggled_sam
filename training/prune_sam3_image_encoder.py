@@ -28,6 +28,7 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, select_from_options
 from muggled_sam.demo_helpers.text_input import confirm_prompt
 from muggled_sam.demo_helpers.training.default_data import make_default_image_encoder_block_mapping, save_unnested_json
+from muggled_sam.v3_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
 
 # Only used for feature pruning
 from muggled_sam.demo_helpers.training.pruning import copy_samv3_features
@@ -159,11 +160,17 @@ sam3_required_key = "detector.backbone.vision_backbone.trunk.pos_embed"
 if sam3_required_key not in state_dict.keys():
     raise TypeError("Error! Only SAMv3 models are supported")
 
+# Get model config for reporting
+orig_config = get_model_config_from_state_dict(state_dict)
+num_img_feats = orig_config["imgencoder_features"]
+num_img_heads = orig_config["imgencoder_num_heads"]
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Prune features
 
-if target_prune_features is not None:
+is_prune_enabled = target_prune_features is not None
+if is_prune_enabled:
 
     # Get state dict of original model in mugsam format
     orig_config, orig_model_mugsam = make_samv3_from_original_state_dict(state_dict)
@@ -198,11 +205,13 @@ if target_prune_features is not None:
         print(
             "",
             "Warning",
-            "Feature pruning produces some errors!",
+            "Feature pruning produced errors!",
             "The pruned model may not be useable...",
             sep="\n",
         )
     state_dict = pruned_sd
+    num_img_feats = new_img_feats
+    num_img_heads = new_img_heads
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -317,7 +326,7 @@ for new_idx, old_idx in enumerate(flat_idx_to_keep_list):
 # Sanity check, make sure we're changing something
 is_identical_order = tuple(flat_idx_to_keep_list) == tuple(range(max_block_idx + 1))
 if is_identical_order and num_layers_removed == 0:
-    print("", "*" * 32, "WARNING: Blocks are unchanged!", "  -> Model won't be changed", "*" * 32, sep="\n")
+    print("", "*" * 32, "WARNING: Blocks are unchanged!", "*" * 32, sep="\n")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -326,6 +335,8 @@ if is_identical_order and num_layers_removed == 0:
 # Figure out name of new model
 old_model_path = Path(model_path)
 new_model_name = f"{old_model_path.stem}_imgenc_{map_name}"
+if is_prune_enabled:
+    new_model_name = f"{old_model_path.stem}_imgenc_{num_img_feats}feats_{map_name}"
 new_model_path = old_model_path.with_stem(new_model_name)
 for rename_idx in range(2, 100):
     if not new_model_path.exists():
@@ -348,12 +359,16 @@ if user_confirm_save:
     new_global_idxs = [n + sum(num_new_blocks_per_stage[:idx]) - 1 for idx, n in enumerate(num_new_blocks_per_stage)]
     print(
         "",
-        "Using this model with the original SAM3 codebase requires (minor) modifications.",
-        f"  1 - Set the model depth to: {actual_num_blocks_to_keep}",
-        f"  2 - Set the global attention block indices to: {tuple(new_global_idxs)}",
+        "*" * 64,
+        "",
+        "Using this model with the original SAM3 codebase requires (minor) modifications:",
+        f"  1 - Set the ViT embedding dimension to: {num_img_feats}",
+        f"  2 - Set the depth to: {actual_num_blocks_to_keep}",
+        f"  3 - Set the number of heads to: {num_img_heads}",
+        f"  4 - Set the global attention block indices to: {tuple(new_global_idxs)}",
         "",
         "See:",
-        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L79",
+        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L78-L80",
         "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L87",
         sep="\n",
     )

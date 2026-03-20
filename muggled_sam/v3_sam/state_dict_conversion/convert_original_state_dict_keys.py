@@ -424,36 +424,6 @@ def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
     if key.startswith("ln_pre"):
         return key.replace("ln_pre", "pre_layernorm")
 
-    # Handle special post-transformer up-/down-scaling layers
-    # (e.g. ...vision_backbone.convs.3.conv_3x3.bias or ...vision_backbone.sam2_convs.0.dconv_2x2_0.weight)
-    if "convs." in key:
-
-        # Throw away final (unused) downscaling projection layer
-        if "convs.3.conv" in key:
-            return None
-
-        # Swap out prefix for new component names
-        new_key = key.replace("sam2_convs.", "multires_proj_sam2.")
-        new_key = new_key.replace("convs.", "multires_proj_sam3.")
-
-        # Re-map the output projection layers (e.g. 'neck' convolutions)
-        find_and_replace_lut = {
-            "0.dconv_2x2_0": "proj_x4.0",
-            "0.dconv_2x2_1": "proj_x4.2",
-            "0.conv_1x1": "proj_x4.3",
-            "0.conv_3x3": "proj_x4.4",
-            "1.dconv_2x2": "proj_x2.0",
-            "1.conv_1x1": "proj_x2.1",
-            "1.conv_3x3": "proj_x2.2",
-            "2.conv_1x1": "proj_x1.0",
-            "2.conv_3x3": "proj_x1.1",
-        }
-        is_lut_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
-        if is_lut_match:
-            return new_key.replace(targ_str, match_str)
-
-        pass
-
     return None
 
 

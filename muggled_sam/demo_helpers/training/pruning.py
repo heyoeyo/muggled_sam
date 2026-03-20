@@ -26,7 +26,7 @@ def copy_samv3_features(
     This is somewhat of an awkward procedure, as this function tries to maintain
     the original SAM weight naming scheme, but expects to be given muggled sam
     weights as a reference (easier to produce a correctly sized/configured model this way).
-    
+
     The inputs should be:
         original_sd_mugsam:
             state dict from the 'reference' model, in muggled sam format
@@ -100,5 +100,28 @@ def copy_samv3_features(
             is_ok = False
             continue
         out_sd[orig_name] = new_weights
+
+    # Special handling of 'text_projection' weight that isn't used in the original model (not stored in mugsam)
+    # -> The unused weight has a shape of: (txt_features, 'out_dim') where out_dim is not used elsewhere
+    # -> We can copy the out_dim from the original (unused) weight and get the new feature count from the vocab embed.
+    unused_txt_proj_key = "detector.backbone.language_backbone.encoder.text_projection"
+    orig_txtproj = out_sd[unused_txt_proj_key]
+    _, new_width = out_sd["detector.backbone.language_backbone.encoder.token_embedding.weight"].shape
+    orig_width, orig_outdim = orig_txtproj.shape
+    if orig_width != new_width:
+        out_sd[unused_txt_proj_key] = torch.zeros(
+            (new_width, orig_outdim), dtype=orig_txtproj.dtype, device=orig_txtproj.device
+        )
+
+    # Special handling of ViT-neck 4th convolution layers, which aren't used (not stored in mugsam)
+    # -> The unused 4th convs have the same shape as the 3rd layer convs
+    ref_conv_key = "detector.backbone.vision_backbone.convs.2.conv_1x1.weight"
+    unused_sam2_conv_key = "detector.backbone.vision_backbone.sam2_convs.3.conv_1x1.weight"
+    unused_sam3_conv_key = "detector.backbone.vision_backbone.convs.3.conv_1x1.weight"
+    new_weight = out_sd[ref_conv_key] * 0.0
+    old_weight = out_sd[unused_sam2_conv_key]
+    if old_weight.shape != new_weight.shape:
+        out_sd[unused_sam2_conv_key] = new_weight.clone()
+        out_sd[unused_sam3_conv_key] = new_weight.clone()
 
     return is_ok, out_sd

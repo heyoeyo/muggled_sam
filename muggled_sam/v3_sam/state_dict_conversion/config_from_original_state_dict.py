@@ -17,22 +17,31 @@ from .key_regex import get_nth_integer
 def get_model_config_from_state_dict(state_dict):
 
     # Check for special config that is stored in weights that are not needed, so may not be present
-    imgenc_num_stages, imgenc_num_heads, imgenc_window_size = get_image_encoder_freqs_data(state_dict)
+    imgenc_num_stages, imgenc_window_size = get_image_encoder_freqs_data(state_dict)
 
     # Generally it's not possible to determine the number of heads from weights directly
     hardcoded_maskdec_num_heads = 8
-    hardcoded_txtenc_num_heads = 16
     hardcoded_samplingenc_num_heads = 8
     hardcoded_imgexmfuse_num_heads = 8
     hardcoded_exmdet_num_heads = 8
     hardcoded_exmseg_num_heads = 8
+
+    # Take a guess at image encoder number of heads by assuming a 'features per head' value
+    hardcoded_imgenc_features_per_head = 64
+    imgenc_num_features = get_image_encoder_features_per_token(state_dict)
+    imgenc_num_heads = imgenc_num_features // hardcoded_imgenc_features_per_head
+
+    # Guess at text encoder heads by assuming a 'features per head' value
+    hardcoded_txtenc_features_per_head = 64
+    txtenc_num_features = get_text_encoder_features_per_token(state_dict)
+    txtenc_num_heads = txtenc_num_features // hardcoded_txtenc_features_per_head
 
     return {
         "features_per_prompt_token": get_features_per_prompt_token(state_dict),
         "features_per_decoder_token": get_mask_decoder_features_per_token(state_dict),
         "features_per_memory_token": get_features_per_memory_token(state_dict),
         "features_per_detection_token": get_exemplar_detector_features_per_token(state_dict),
-        "imgencoder_features": get_image_encoder_features_per_token(state_dict),
+        "imgencoder_features": imgenc_num_features,
         "imgencoder_num_stages": imgenc_num_stages,
         "imgencoder_num_blocks": get_image_encoder_block_count(state_dict),
         "imgencoder_num_heads": imgenc_num_heads,
@@ -45,9 +54,9 @@ def get_model_config_from_state_dict(state_dict):
         "memencoder_num_downsample_layers": get_memory_encoder_downsample_layer_count(state_dict),
         "memencoder_num_mixer_layers": get_memory_encoder_mixer_layer_count(state_dict),
         "memimgfusion_num_fusion_layers": get_memory_image_fusion_layer_count(state_dict),
-        "txtencoder_features": get_text_encoder_features_per_token(state_dict),
+        "txtencoder_features": txtenc_num_features,
         "txtencoder_num_blocks": get_text_encoder_block_count(state_dict),
-        "txtencoder_num_heads": hardcoded_txtenc_num_heads,
+        "txtencoder_num_heads": txtenc_num_heads,
         "txtencoder_vocab_size": get_text_encoder_vocab_size(state_dict),
         "samplingenc_num_blocks": get_sampling_encoder_block_count(state_dict),
         "samplingenc_num_heads": hardcoded_samplingenc_num_heads,
@@ -169,7 +178,6 @@ def get_image_encoder_posembed_hw(state_dict):
 def get_image_encoder_freqs_data(
     state_dict,
     default_num_stages: int = 4,
-    default_num_heads: int = 16,
     default_window_size: int = 24,
 ) -> tuple[int, int, int]:
     """
@@ -189,12 +197,13 @@ def get_image_encoder_freqs_data(
     The number of 'large' token counts indicates the number of stages.
     The window sizing is found as the square root of the smaller token count
 
-    The channel count can be used to infer the number of heads, as the 'freqs'
-    values are actually used after tokens are split into a multi-headed shape.
+    Note that the channel count can actually be used to infer the number of heads,
+    as the 'freqs' values are actually used after tokens are split into a multi-headed shape.
     Specifically, the channel count is given by:
         C = 2 * (F / num_heads) / 4
         -> where F is features per image token (1024 default)
         num_heads = F / (2*C)
+    -> However, we skip this since it's very fragile
 
     All this being said, the inclusion of the freqs_cis weights is actually
     problematic for how the model works! So it's possible they may be
@@ -202,12 +211,11 @@ def get_image_encoder_freqs_data(
     has to have a fallback option in case these weights aren't present.
 
     Returns:
-        num_stages, num_heads, window_size
+        num_stages, window_size
     """
 
     # Default values if freqs data is missing
     num_stages = default_num_stages
-    num_heads = default_num_heads
     window_size = default_window_size
 
     # Look for 'freqs_cis' keys (which aren't actually needed, so may not be available)
@@ -219,10 +227,10 @@ def get_image_encoder_freqs_data(
             "Warning:",
             "Couldn't find 'freqs_cis' weights in model!",
             "Cannot determine stage count, heads or window size of image encoder.",
-            f"Will assume defaults: {num_stages}, {num_heads}, {window_size} respectively",
+            f"Will assume defaults: {num_stages}, {window_size} respectively",
             sep="\n",
         )
-        return num_stages, num_heads, window_size
+        return num_stages, window_size
 
     # Figure out min/max 'num tokens' since these correspond to windowed & global blocks
     count_of_num_tokens = Counter(freqs_num_tokens)
@@ -233,7 +241,7 @@ def get_image_encoder_freqs_data(
     num_stages = max(count_of_num_tokens[global_num_tokens], 1)
     window_size = int(round(windowed_num_tokens**0.5))
 
-    return num_stages, num_heads, window_size
+    return num_stages, window_size
 
 
 # ---------------------------------------------------------------------------------------------------------------------
