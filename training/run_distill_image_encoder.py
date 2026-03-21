@@ -43,7 +43,7 @@ from muggled_sam.demo_helpers.ui.base import force_same_min_width
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from muggled_sam.demo_helpers.text_input import confirm_prompt
-from muggled_sam.demo_helpers.mask_postprocessing import make_stacked_masks
+from muggled_sam.demo_helpers.mask_postprocessing import make_stacked_masks, draw_mask_prediction_comparison
 from muggled_sam.demo_helpers.ui.helpers.images import get_image_hw_for_max_side_length
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
@@ -362,11 +362,20 @@ img_path_list = ShuffleList(all_train_image_paths_list)
 teacher_cache = ResultCache(max_cache_mb=size_teacher_cache_mb)
 count_data_bytes = lambda in_data, out_data: in_data.nbytes + sum(entry.nbytes for entry in out_data)
 
-# For small datasets, ask user if they want to enable teacher caching
-if len(img_path_list) < 10 and size_teacher_cache_mb == 0 and total_mem_gb > 6:
-    target_size_cache_mb = len(img_path_list) * 100
-    user_confirm_cache = confirm_prompt(f"Small dataset detected, enable {target_size_cache_mb}MB teacher cache?")
-    teacher_cache = ResultCache(max_cache_mb=target_size_cache_mb)
+# For datasets that might fit in memory, ask user if they want to enable teacher caching
+if size_teacher_cache_mb == 0 and is_using_cuda and total_mem_gb > 6:
+    free_mem_bytes, _ = torch.cuda.mem_get_info()
+    total_data_cache_size_bytes = len(img_path_list) * 75_000_000
+    target_size_cache_mb = 0
+    if free_mem_bytes > 2 * total_data_cache_size_bytes:
+        target_size_cache_mb = 1 + round(total_data_cache_size_bytes / 1_000_000)
+    elif free_mem_bytes > total_data_cache_size_bytes:
+        target_size_cache_mb = round(0.5 * total_data_cache_size_bytes / 1_000_000)
+    if target_size_cache_mb > 0:
+        user_confirm_cache = confirm_prompt(f"Small dataset detected. Enable {target_size_cache_mb}MB teacher cache?")
+        if user_confirm_cache:
+            teacher_cache = ResultCache(max_cache_mb=target_size_cache_mb)
+            print("-> Enabled teacher cache!")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -688,6 +697,12 @@ print(
     flush=True,
 )
 
+
+# Set up mask & box coloring
+color_true_neg, color_true_pos = (0, 0, 0), (80, 255, 0)
+color_false_neg, color_false_pos = (250, 10, 110), (70, 40, 255)
+palette_tn_fn_fp_tp = np.uint8([color_true_neg, color_false_neg, color_false_pos, color_true_pos])
+
 # Initialize training loop data/state
 remake_optimizer = lambda lr: torch.optim.AdamW((p for p in model_student.parameters() if p.requires_grad), lr=lr)
 need_optim_reset = True
@@ -906,18 +921,12 @@ try:
 
                     # Draw mask predictions showing matching pixels and false positives/negatives
                     if mask_idx_select is None:
-                        test_mask_img = make_stacked_masks(test_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
-                        true_mask_img = make_stacked_masks(true_mask_preds[0] > 0, num_mask_rowcol).cpu().numpy()
+                        true_stack_masks = make_stacked_masks(true_mask_preds, num_mask_rowcol)
+                        test_stack_masks = make_stacked_masks(test_mask_preds, num_mask_rowcol)
                     else:
-                        test_mask_img = (test_mask_preds[0, mask_idx_select] > 0).cpu().numpy()
-                        true_mask_img = (true_mask_preds[0, mask_idx_select] > 0).cpu().numpy()
-                    mask_img = np.zeros((*true_mask_img.shape, 3), dtype=np.uint8)
-                    match_mask_img = np.bitwise_and(test_mask_img, true_mask_img)
-                    false_pos_img = np.bitwise_and(test_mask_img, ~true_mask_img)
-                    false_neg_img = np.bitwise_and(~test_mask_img, true_mask_img)
-                    mask_img[false_neg_img > 0] = (250, 10, 110)
-                    mask_img[false_pos_img > 0] = (70, 40, 255)
-                    mask_img[match_mask_img > 0] = (80, 255, 0)
+                        true_stack_masks = true_mask_preds[0, mask_idx_select]
+                        test_stack_masks = test_mask_preds[0, mask_idx_select]
+                    mask_img = draw_mask_prediction_comparison(true_stack_masks, test_stack_masks, palette_tn_fn_fp_tp)
 
                     # Get plottable IoU scores
                     test_iou_np = test_iou_preds[0].float().cpu().numpy()

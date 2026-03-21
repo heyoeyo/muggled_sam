@@ -70,5 +70,5 @@ def confirm_prompt(message: str, is_yes_by_default: bool = False, quit_on_keyboa
 
     user_response = user_response.strip().lower()
     if is_yes_by_default:
-        return user_response not in ("n", "no")
-    return user_response in ("y", "yes")
+        return "n" not in user_response
+    return "y" in user_response

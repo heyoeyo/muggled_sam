@@ -47,7 +47,8 @@ from muggled_sam.demo_helpers.loading import (
     ask_for_value_if_missing,
 )
 from muggled_sam.demo_helpers.text_input import read_user_text_input, confirm_prompt
-from muggled_sam.demo_helpers.mask_postprocessing import draw_combined_mask
+from muggled_sam.demo_helpers.detections import get_filtered_detections
+from muggled_sam.demo_helpers.mask_postprocessing import draw_mask_prediction_comparison
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -294,11 +295,8 @@ loaded_image_bgr = cv2.imread(image_path)
 exemplar_prompt = {"text": text_prompt}
 true_encimg, _, _ = model_teacher.encode_detection_image(loaded_image_bgr)
 true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
-_, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
-
-# Figure out how many detections to display based on 'true' result
-num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
-use_top_n = num_true_detections if num_true_detections > 0 else 5
+true_mask_preds, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
+_, true_filt_masks, _, _ = get_filtered_detections(true_mask_preds, None, true_score_preds, detection_threshold)
 
 # Delete unusued components save memory
 del base_model_student
@@ -620,6 +618,12 @@ print(
     flush=True,
 )
 
+# Set up mask & box coloring
+color_box_missing, color_box_found = (0, 200, 255), (0, 255, 0)
+color_true_neg, color_true_pos = (0, 0, 0), (80, 255, 0)
+color_false_neg, color_false_pos = (250, 10, 110), (70, 40, 255)
+palette_tn_fn_fp_tp = np.uint8([color_true_neg, color_false_neg, color_false_pos, color_true_pos])
+
 # Initialize training loop data/state
 remake_optimizer = lambda lr: torch.optim.AdamW((p for p in model_student.parameters() if p.requires_grad), lr=lr)
 need_optim_reset = True
@@ -666,13 +670,17 @@ try:
         if need_new_prompt:
             _, _, new_prompt = read_user_text_input(prompt_for_exiting=None, allow_numeric_inputs=False)
             exemplar_prompt = {"text": new_prompt}
+            print(f"-> {'is in' if new_prompt in all_train_text_list else 'not in'} training data")
 
-            # Update 'true' predictions for comparisons
+            # Re-compute 'true' detections for comparisons
             true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
-            _, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
-            num_true_detections = (true_score_preds > detection_threshold).count_nonzero()
-            use_top_n = num_true_detections if num_true_detections > 0 else 5
+            true_mask_preds, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
+
+            # Update 'true' display data
             plot_scores_elem.set_true_data(true_score_preds.squeeze(0).float().cpu().numpy())
+            _, true_filt_masks, _, _ = get_filtered_detections(
+                true_mask_preds, None, true_score_preds, detection_threshold
+            )
 
             request_display_only_update |= not is_training
 
@@ -820,37 +828,33 @@ try:
                         true_encimg, test_encexm
                     )
 
-                    # Figure out how many valid detections we have for display
-                    test_score_preds = test_score_preds[0].float().cpu()
-                    is_valid_detection = (test_score_preds > detection_threshold).cpu()
-                    num_valid_detections = is_valid_detection.count_nonzero()
+                    # Filtered results for display
+                    is_valid_filter, test_filt_masks, test_filt_boxes, _ = get_filtered_detections(
+                        test_mask_preds, test_box_preds, test_score_preds, detection_threshold
+                    )
 
-                    # Set up display filtering + special handling for NaN states
-                    has_detections = num_valid_detections > 0
-                    test_sorted_idx = None if has_detections else test_score_preds.sort(descending=True)[-1]
-                    filter_idx = is_valid_detection if has_detections else test_sorted_idx[0:use_top_n]
+                    # Special handling for nan case (replace nan values with zeros)
                     if is_nan_loss:
-                        filter_idx = torch.zeros_like(is_valid_detection)
+                        test_filt_masks = torch.zeros_like(test_mask_preds[0, [0]])
+                        test_filt_boxes = torch.zeros_like(test_box_preds[0, [0]])
                         test_score_preds = torch.zeros_like(test_score_preds)
-                        num_valid_detections = 0
 
                     # Generate mask or image + box display
                     disp_img = loaded_image_bgr
                     if show_masks:
-                        test_mask_preds = test_mask_preds[0].float().cpu()
-                        filtered_masks = test_mask_preds[filter_idx]
-                        disp_img = draw_combined_mask(filtered_masks, main_img_elem.get_render_hw())
                         bounding_box_olay.clear()
+                        mask_hw = main_img_elem.get_render_hw()
+                        disp_img = draw_mask_prediction_comparison(
+                            true_filt_masks, test_filt_masks, palette_tn_fn_fp_tp, display_hw=mask_hw
+                        )
                     else:
-                        test_box_preds = test_box_preds[0].float().cpu()
-                        filtered_boxes = test_box_preds[filter_idx]
-                        bounding_box_olay.style(color=(0, 255, 0) if num_valid_detections > 0 else (0, 200, 255))
-                        bounding_box_olay.set_boxes(filtered_boxes.float().cpu().numpy())
+                        bounding_box_olay.style(color=color_box_found if is_valid_filter else color_box_missing)
+                        bounding_box_olay.set_boxes(test_filt_boxes.float().cpu().numpy())
 
                     # Update displayed image & plot data
                     main_img_elem.set_image(disp_img)
                     plot_loss_elem.set_plot_data(plot_loss_list[-num_loss_samples:], 0)
-                    plot_scores_elem.set_test_data(test_score_preds.numpy())
+                    plot_scores_elem.set_test_data(test_score_preds[0].float().cpu().numpy())
 
             # Stop training
             if is_last_example or request_display_only_update:

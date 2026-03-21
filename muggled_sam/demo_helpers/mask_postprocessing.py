@@ -285,48 +285,7 @@ def get_box_nms_indexing(
     return box_idx_to_keep
 
 
-def draw_combined_mask(
-    mask_predictions: Tensor,
-    display_hw=None,
-    mask_threshold: float = 0,
-    return_3ch: bool = True,
-    use_hires_resize: bool = False,
-):
-    """
-    Helper used to draw a single mask from multiple predictions.
-    The single mask is the logical 'OR' of all mask predictions.
-
-    Returns:
-        image_uint8
-    """
-    # Make sure we're dealing with NxHxW shaped masks
-    if mask_predictions.ndim == 4:
-        mask_predictions = mask_predictions.squeeze(0)
-    elif mask_predictions.ndim == 2:
-        mask_predictions = mask_predictions.unsqueeze(0)
-    assert mask_predictions.ndim == 3, "Expecting mask with 3 dimensions (NxHxW)"
-
-    # Do hi-resolution scaling if needed
-    needs_scale = display_hw is not None
-    if needs_scale and use_hires_resize:
-        if mask_predictions.ndim == 3:
-            mask_predictions = mask_predictions.unsqueeze(0)
-        mask_predictions = torch.nn.functional.interpolate(mask_predictions, display_hw, mode="bilinear")
-        mask_predictions = mask_predictions[0]
-
-    # Get combined mask
-    combined_mask_tensor, _ = (mask_predictions > mask_threshold).max(dim=0)
-    mask_uint8 = (combined_mask_tensor.byte() * 255).cpu().numpy()
-
-    # Do low-resolution scaling if needed
-    if needs_scale and not use_hires_resize:
-        disp_h, disp_w = display_hw
-        mask_uint8 = cv2.resize(mask_uint8, (disp_w, disp_h), interpolation=cv2.INTER_NEAREST)
-
-    return cv2.cvtColor(mask_uint8, cv2.COLOR_GRAY2BGR) if return_3ch else mask_uint8
-
-
-def make_stacked_masks(mask_predictions: Tensor, rows_columns: tuple[int, int] = (4, 1)):
+def make_stacked_masks(mask_predictions: Tensor, rows_columns: tuple[int, int] = (4, 1)) -> Tensor:
     """
     Helper used to stack together SAM mask predictions into, typically, either a
     single row or column of images, or otherwise as a 2x2 grid.
@@ -403,6 +362,65 @@ def draw_stacked_mask_image(
         mask_uint8 = cv2.resize(mask_uint8, (scale_w, scale_h), interpolation=cv2.INTER_NEAREST)
 
     return cv2.cvtColor(mask_uint8, cv2.COLOR_GRAY2BGR) if return_3ch else mask_uint8
+
+
+def draw_mask_prediction_comparison(
+    true_mask_predictions: Tensor,
+    test_mask_predictions: Tensor,
+    palette_tn_fn_fp_tp: ndarray = np.uint8(((0, 0, 0), (0, 0, 255), (255, 0, 0), (0, 255, 0))),
+    display_hw=None,
+    mask_threshold: float = 0,
+    use_hires_resize: bool = False,
+) -> ndarray:
+    """
+    Function used to draw an image representing the difference between 2 mask predictions.
+    The first given predictions are assumed to be 'true' with the second being the comparison masks.
+
+    The resulting image is colored according to the given palette, which should be an
+    array of 4 uint8 color values. They should be given in order:
+        True-negative, False-negative, False-positive, True-positive
+    -> For example, the 'True-positive' color is what is shown when both masks predict the same result.
+
+    Note that this function expects masks as float tensors (not binary!),
+    and can work with either NxHxW or just HxW inputs. If NxHxW masks are given,
+    they will be merged in the 'N' dimension following boolean-OR logic.
+
+    Returns:
+        comparison_image_uint8
+    """
+
+    # Make sure we're dealing with NxHxW shaped masks
+    if test_mask_predictions.ndim == 4:
+        true_mask_predictions = true_mask_predictions.squeeze(0)
+        test_mask_predictions = test_mask_predictions.squeeze(0)
+    elif test_mask_predictions.ndim == 2:
+        true_mask_predictions = true_mask_predictions.unsqueeze(0)
+        test_mask_predictions = test_mask_predictions.unsqueeze(0)
+    assert test_mask_predictions.ndim == 3, "Expecting mask with 3 dimensions (NxHxW)"
+
+    # Do hi-resolution scaling if needed
+    needs_scale = display_hw is not None
+    if needs_scale and use_hires_resize:
+        shared_kwargs = {"size": display_hw, "mode": "bilinear"}
+        true_mask_predictions = torch.nn.functional.interpolate(true_mask_predictions[None], **shared_kwargs)[0]
+        test_mask_predictions = torch.nn.functional.interpolate(test_mask_predictions[None], **shared_kwargs)[0]
+
+    # Convert to binary masks and produce 2-bit merged mask
+    # -> Merge is 0 if both masks are false, 1 if only truth is true, 2 if only test is true, 3 if both true
+    true_combined_img = (true_mask_predictions > mask_threshold).any(dim=0)
+    test_combined_img = (test_mask_predictions > mask_threshold).any(dim=0)
+    merged_mask = true_combined_img | test_combined_img << 1
+
+    # TN, FN, FP, TP
+    # palette = np.uint8([(0, 0, 0), (250, 10, 110), (70, 40, 255), (80, 255, 0)])
+    merge_img_uint8 = np.take(palette_tn_fn_fp_tp, merged_mask.cpu().numpy(), axis=0)
+
+    # Do low-resolution scaling if needed
+    if needs_scale and not use_hires_resize:
+        disp_h, disp_w = display_hw
+        merge_img_uint8 = cv2.resize(merge_img_uint8, (disp_w, disp_h), interpolation=cv2.INTER_NEAREST)
+
+    return merge_img_uint8
 
 
 def sample_points_from_mask(mask_image: ndarray, num_points_approx: int = 25) -> list[tuple[float, float]]:
