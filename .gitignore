@@ -27,5 +27,6 @@ experiments/_*
 training/_*
 
 # Ignore training config data
+training/config/
 training/*.json
 training/*.txt

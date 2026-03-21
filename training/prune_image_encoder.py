@@ -41,7 +41,7 @@ from muggled_sam.v3_sam.state_dict_conversion.convert_original_state_dict_keys i
 
 # Set argparse defaults (useful for hard-coding overrides)
 default_model_path = None
-default_mapping_path = "block_mappings_image_encoder.json"
+default_mapping_path = "image_encoder_prune_mappings.json"
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Script used to prune the image encoder of a SAMv3 model")
@@ -103,10 +103,12 @@ history.store(model_path=model_path)
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Get block mapping
 
-# Force relative path to be relative to this script
+# Force relative path to be relative to config folder
 mapping_path = Path(mapping_path)
 if mapping_path.parent == Path("."):
-    mapping_path = Path(__file__).parent / mapping_path
+    config_folder = Path(__file__).parent / "config"
+    mapping_path = config_folder / mapping_path
+    config_folder.mkdir(parents=True, exist_ok=True)
 
 # Load mapping (create if missing)
 if not mapping_path.exists():

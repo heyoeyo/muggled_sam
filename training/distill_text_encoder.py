@@ -84,7 +84,7 @@ default_text_prompt = None
 default_teacher_path = None
 default_student_path = None
 default_continue_path = None
-default_train_text_path = "distill_training_text.json"
+default_train_text_path = "training_text_list.json"
 default_display_size = 800
 default_threshold = 0.5
 default_lora_rank = 32
@@ -315,10 +315,12 @@ model_student.toggle_inference_mode(False)
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Load training data
 
-# Force relative path to be relative to this script
+# Force relative path to be relative to config folder
 arg_train_text_path = Path(arg_train_text_path)
 if arg_train_text_path.parent == Path("."):
-    arg_train_text_path = Path(__file__).parent / arg_train_text_path
+    config_folder = Path(__file__).parent / "config"
+    arg_train_text_path = config_folder / arg_train_text_path
+    config_folder.mkdir(parents=True, exist_ok=True)
 
 # For convenience, check for a .txt version of the given training text file
 if not arg_train_text_path.exists() and arg_train_text_path.with_suffix(".txt").exists():
