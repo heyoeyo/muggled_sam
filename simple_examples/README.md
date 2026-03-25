@@ -26,6 +26,13 @@ _(Supports SAMv1, SAMv2, SAMv3)_
 This is an extension of the basic image segmentation script, modified to show how an image batch can be processed. Processing a batch of images is the same as processing multiple images, one after another, except batching can be slightly faster when using a GPU. For simplicity, this example just repeats a single image to form a batch, but normally many images would be loaded in and processed together.
 
 
+## Model Distillation
+
+_(Supports SAMv1, SAMv2, SAMv3)_
+
+This script shows a basic example of how to do model distillation (e.g. unsupervised training). In this case the script does distillation of the image encoder only, but can be easily modified to train other model components. Distillation uses a teacher model (meant to be an original SAM model) to provide 'ground-truth' data for training a student model (meant to be a smaller version of the teacher). Smaller versions of SAMv3 can be made using the [pruning scripts](https://github.com/heyoeyo/muggled_sam/tree/main/training#pruning) of this repo. Training also requires example images, a good source for these is coco128 which can be downloaded from [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0) (see assets > coco128.zip).
+
+
 ## Object Detection
 
 _(Supports SAMv3)_

@@ -11,6 +11,7 @@ Distillation is handled as a 3-part process in this repo:
 
 Each of the scripts associated with these steps is described in more detail below.
 
+If you'd like to implement custom distillation/training, see the [model distillation](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#model-distillation) example script as a starting point.
 
 ## Pruning
 
@@ -67,7 +68,7 @@ Training the image encoder requires several resources (the script will prompt fo
 
 1. A path to a test/validation image. This is used to provide visual feedback about the performance of the student model during training, it doesn't directly affect the results in any way.
 
-2. A path to images used for training. This can be a path to a folder containing images, or otherwise a path to a text file that lists paths to the images. These should only be actual images and not masks (this distillation script doesn't use masks). The images provided here are what the student model will 'get good at'. A simple starting set of images (if not using your own) would be [COCO128](https://cocodataset.org/#home) which is a small dataset that can be downloaded from places like [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0), [roboflow](https://universe.roboflow.com/team-roboflow/coco-128/dataset/1) or [kaggle](https://www.kaggle.com/datasets/ultralytics/coco128). 
+2. A path to images used for training. This can be a path to a folder containing images, or otherwise a path to a text file that lists paths to the images. These should only be actual images and not masks (this distillation script doesn't use masks). The images provided here are what the student model will 'get good at'. A simple starting set of images (if not using your own) would be [COCO128](https://cocodataset.org/#home) which is a small dataset that can be downloaded from places like [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0) (see: assets > coco128.zip), [roboflow](https://universe.roboflow.com/team-roboflow/coco-128/dataset/1) or [kaggle](https://www.kaggle.com/datasets/ultralytics/coco128).
 
 3. A path to a student model. The student should be made by running the image encoder pruning script to produce a smaller version of the original SAMv3 model. The smaller the student model, the more difficult it will be to train to match the original SAMv3 model (but it will also run faster).
 
