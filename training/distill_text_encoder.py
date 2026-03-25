@@ -270,7 +270,7 @@ assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tun
 model_teacher = base_model_teacher.make_detector_model()
 
 # Make sure all weights are un-trainable to begin
-for p in model_teacher.parameters():
+for p in model_student.parameters():
     p.requires_grad_(False)
 for p in model_teacher.parameters():
     p.requires_grad_(False)

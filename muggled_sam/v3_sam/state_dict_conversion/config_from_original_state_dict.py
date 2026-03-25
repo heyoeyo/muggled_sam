@@ -241,6 +241,10 @@ def get_image_encoder_freqs_data(
     num_stages = max(count_of_num_tokens[global_num_tokens], 1)
     window_size = int(round(windowed_num_tokens**0.5))
 
+    # Special handling in case we have the same min/max number of tokens (can happen if all layers are 'global')
+    if windowed_num_tokens == global_num_tokens:
+        window_size = default_window_size
+
     return num_stages, window_size
 
 

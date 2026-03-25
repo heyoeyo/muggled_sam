@@ -304,7 +304,7 @@ for component_name in to_delete:
         delattr(model_teacher, component_name)
 
 # Make sure all weights are un-trainable to begin
-for p in model_teacher.parameters():
+for p in model_student.parameters():
     p.requires_grad_(False)
 for p in model_teacher.parameters():
     p.requires_grad_(False)
