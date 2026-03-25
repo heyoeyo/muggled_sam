@@ -185,10 +185,10 @@ captures = ModelOutputCapture(sammodel, target_modules=target_modules)
 encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
 assert len(captures) > 0, "Error! No block data was captured... likely targeting the wrong blocks?"
 
-# For SAMv1, windowed blocks will include a captured global block internally. We need to remove these!
-# -> The internal global blocks have many 'windows' in the batch dimension
-# -> So we remove any captured data with a batch size that isn't just 1 (assumes we don't batch more than 1 image!)
-if not is_v2_model:
+# For SAMv1, every windowed block includes a global block that operates on windows. We need to remove these!
+# -> Since internal globals are used for windowed attention, the features have batch sizes > 1
+# -> So we can figure out which blocks to remove by keeping only the ones with a batch size of 1
+if is_v1_model:
     captures = [cap for cap in captures if cap.shape[0] == 1]
 
 # Provide some feedback about how the model is running
@@ -294,7 +294,7 @@ block_txt = ValueBlock("Block: ", 0)
 min_txt = ValueBlock("Min: ", "-")
 max_txt = ValueBlock("Max: ", "-")
 channel_txt = ValueBlock("Channel: ", 0)
-show_norm_btn = ToggleButton("Show Norm", default_state=False, text_scale=0.35, on_color=(35, 75, 200))
+show_norm_btn = ToggleButton("Show Norm", default_state=True, text_scale=0.35, on_color=(35, 75, 200))
 text_row = VStack(HStack(block_txt, min_txt, max_txt), HStack(show_norm_btn, channel_txt))
 
 # Create slider to allow user to change which channel is being viewed
@@ -372,6 +372,10 @@ try:
         # Update channel-specific values as needed
         need_channel_update = is_channel_changed or is_block_changed or is_show_norm_changed
         if need_channel_update:
+
+            # Force display of channels when adjusted
+            if is_channel_changed:
+                show_norm_btn.toggle(False)
 
             # Get new channel/norm data for display
             result_select = captures[block_idx]

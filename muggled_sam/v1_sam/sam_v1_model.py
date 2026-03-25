@@ -143,29 +143,57 @@ class SAMV1Model(nn.Module):
         image_bgr: ndarray,
         max_side_length=1024,
         use_square_sizing=True,
-    ) -> tuple[Tensor, tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
+        """
+        Encode image data, this is one of the inputs needed to generate masks
+
+        Returns:
+            encoded_images_list, patch_grid_hw, preencoded_image_hw
+            -> The encoded images list contains a single feature map with
+               shape: Bx256x64x64 (using default settings). This is
+               formatted as a list for compatibility with SAMv2/v3
+            -> The patch_grid_hw contains the height & width of the low-res
+               feature map (64x64 with default 1024x1024 input sizing)
+            -> The preencoded_image_hw contains the height & width of the
+               input image after pre-processing, just before being encoded
+               by default it would be 1024x1024
+        """
 
         with _inference_mode(self._infmode):
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image = self.image_encoder(image_rgb_normalized_bchw)
 
+        # Create list version of image encoding, purely for compatibility with SAMv2/v3
+        encoded_images_list = [encoded_image]
+
         # Get patch sizing of the encoded image tokens (as needed by other components)
         patch_grid_hw = encoded_image.shape[2:]
 
-        return encoded_image, patch_grid_hw, image_preenc_hw
+        return encoded_images_list, patch_grid_hw, image_preenc_hw
 
     # .................................................................................................................
 
     def generate_masks(
         self,
-        encoded_image: Tensor,
+        encoded_image_features_list: list[Tensor],
         encoded_prompts: Tensor,
         mask_hint: Tensor | None = None,
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
+        """
+        Function used to generate segmentation masks given an image encoding,
+        as well as a prompt encoding and potentially a mask hint/prompt. These
+        input encodings are expected to come from other model components.
+
+        Returns:
+            mask_predictions, iou_predictions
+            -> Masks have shape: Bx4xHxW (HxW is 256x256 using default settings)
+            -> iou_predictions have shape: Bx4
+        """
 
         with _inference_mode(self._infmode):
+            encoded_image = encoded_image_features_list[0]
             patch_grid_hw = encoded_image.shape[2:]
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
             mask_preds, iou_preds, _ = self.mask_decoder(

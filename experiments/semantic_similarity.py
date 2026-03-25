@@ -168,6 +168,10 @@ def encode_image_samv1(model, image_bgr, max_side_length=1024, use_square_sizing
         reg_encimg, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
         flip_encimg, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
 
+        # Unpack compatibility list wrapper
+        reg_encimg = reg_encimg[0]
+        flip_encimg = flip_encimg[0]
+
         # Combine regular encodings with horizontal flip in batch dimension for output
         proj_encimg = torch.concat((reg_encimg, torch.fliplr(flip_encimg)), dim=0)
 
@@ -431,11 +435,6 @@ print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 # -> Here we take the non-h-flipped encodings (i.e. batch index 0) as our encoding for mask generation
 encoded_img_a = [enc[[0]] for enc in proj_enc_a]
 encoded_img_b = [enc[[0]] for enc in proj_enc_b]
-
-# Remove list indexing for SAMv1 models, which normally don't have this!
-if is_v1_model:
-    encoded_img_a = encoded_img_a[0]
-    encoded_img_b = encoded_img_b[0]
 
 # Run model without prompts as sanity check. Also gives initial result values
 encoded_prompts = sammodel.encode_prompts([], [], [])
