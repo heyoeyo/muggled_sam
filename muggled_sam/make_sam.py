@@ -76,11 +76,14 @@ def import_model_functions(state_dict: dict[str, Tensor]) -> Callable | None:
         sd_keys = state_dict["model"].keys()
 
     # Search for original SAM model weights
-    samv3_target_key = "detector.backbone.vision_backbone.trunk.pos_embed"
+    samv3p1_target_key = "tracker.model.interactive_sam_mask_decoder.iou_token.weight"
+    samv3p0_target_key = "tracker.no_obj_ptr"
     samv2_target_key = "image_encoder.trunk.pos_embed_window"
     samv1_target_key = "image_encoder.pos_embed"
     make_sam_func = None
-    if samv3_target_key in sd_keys:
+    if samv3p1_target_key in sd_keys:
+        raise NotImplementedError("SAMv3.1 is not yet supported...")
+    elif samv3p0_target_key in sd_keys:
         from .v3_sam.make_sam_v3 import make_samv3_from_original_state_dict as make_sam_func
     elif samv2_target_key in sd_keys:
         from .v2_sam.make_sam_v2 import make_samv2_from_original_state_dict as make_sam_func
