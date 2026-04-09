@@ -19,6 +19,7 @@ def get_model_config_from_state_dict(state_dict):
 
     # Not clear if this value can be interpretted from model weights...
     hardcoded_num_decoder_heads = 8
+    hardcoded_num_memfusion_heads = 1
 
     # Get model config from state dict
     config_dict = {
@@ -36,6 +37,7 @@ def get_model_config_from_state_dict(state_dict):
         "num_output_mask_tokens": get_num_output_mask_tokens(state_dict),
         "num_decoder_blocks": get_mask_decoder_block_count(state_dict),
         "num_decoder_heads": hardcoded_num_decoder_heads,
+        "num_memory_fusion_heads": hardcoded_num_memfusion_heads,
         "is_version_2p1": check_is_version_2p1(state_dict),
     }
 

@@ -189,6 +189,7 @@ def make_sam_v3(
     memencoder_num_downsample_layers=4,
     memencoder_num_mixer_layers=2,
     memimgfusion_num_fusion_layers=4,
+    memimgfusion_num_heads=1,
     txtencoder_features=1024,
     txtencoder_num_blocks=24,
     txtencoder_num_heads=16,
@@ -248,6 +249,7 @@ def make_sam_v3(
         features_per_prompt_token,
         features_per_memory_token,
         num_layers=memimgfusion_num_fusion_layers,
+        num_heads=memimgfusion_num_heads,
     )
 
     # Detection components

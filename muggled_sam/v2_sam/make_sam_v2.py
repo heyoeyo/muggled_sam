@@ -155,6 +155,7 @@ def make_sam_v2(
     num_memory_downsample_layers=4,
     num_memory_encoder_mixer_layers=2,
     num_memory_fusion_layers=4,
+    num_memory_fusion_heads=1,
     is_version_2p1=True,
 ) -> SAMV2Model:
     """
@@ -250,6 +251,7 @@ def make_sam_v2(
         features_per_prompt_token,
         features_per_memory_token,
         num_layers=num_memory_fusion_layers,
+        num_heads=num_memory_fusion_heads,
         is_version_2p1=is_version_2p1,
     )
 

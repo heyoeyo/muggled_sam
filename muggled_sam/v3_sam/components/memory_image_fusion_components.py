@@ -46,8 +46,8 @@ class MemoryImageFusionTransformerLayer(nn.Module):
         self,
         features_per_image_token: int = 256,
         features_per_memory_token: int = 64,
-        mlp_ratio: float = 8,
         num_heads: int = 1,
+        mlp_ratio: float = 8,
     ):
 
         # Inherit from parent

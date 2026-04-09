@@ -52,6 +52,7 @@ class SAMV2MemoryImageFusion(nn.Module):
         features_per_image_token=256,
         features_per_memory_token=64,
         num_layers=4,
+        num_heads=1,
         max_memory_history=6,
         is_version_2p1=True,
     ):
@@ -75,7 +76,9 @@ class SAMV2MemoryImageFusion(nn.Module):
         # Build transformer layers
         layers_list = []
         for _ in range(num_layers):
-            layer = MemoryFusionTransformerLayer(features_per_image_token, features_per_memory_token, mlp_ratio=8)
+            layer = MemoryFusionTransformerLayer(
+                features_per_image_token, features_per_memory_token, num_heads, mlp_ratio=8
+            )
             layers_list.append(layer)
         self.layers = nn.ModuleList(layers_list)
         self.out_norm = nn.LayerNorm(features_per_image_token)

@@ -43,7 +43,7 @@ class MemoryFusionTransformerLayer(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, features_per_image_token=256, features_per_memory_token=64, mlp_ratio=8, num_heads=1):
+    def __init__(self, features_per_image_token=256, features_per_memory_token=64, num_heads=1, mlp_ratio=8):
 
         # Inherit from parent
         super().__init__()

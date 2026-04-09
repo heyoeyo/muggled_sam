@@ -21,6 +21,7 @@ def get_model_config_from_state_dict(state_dict):
 
     # Generally it's not possible to determine the number of heads from weights directly
     hardcoded_maskdec_num_heads = 8
+    hardcoded_memimgfusion_num_heads = 1
     hardcoded_samplingenc_num_heads = 8
     hardcoded_imgexmfuse_num_heads = 8
     hardcoded_exmdet_num_heads = 8
@@ -54,6 +55,7 @@ def get_model_config_from_state_dict(state_dict):
         "memencoder_num_downsample_layers": get_memory_encoder_downsample_layer_count(state_dict),
         "memencoder_num_mixer_layers": get_memory_encoder_mixer_layer_count(state_dict),
         "memimgfusion_num_fusion_layers": get_memory_image_fusion_layer_count(state_dict),
+        "memimgfusion_num_heads": hardcoded_memimgfusion_num_heads,
         "txtencoder_features": txtenc_num_features,
         "txtencoder_num_blocks": get_text_encoder_block_count(state_dict),
         "txtencoder_num_heads": txtenc_num_heads,
