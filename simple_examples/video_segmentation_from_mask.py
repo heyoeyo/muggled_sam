@@ -53,11 +53,11 @@ sammodel.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = sammodel.encode_image(init_mask_image, **imgenc_config_dict)
-init_mem = sammodel.initialize_from_mask(init_encoded_img, init_mask)
+init_mem, init_ptr = sammodel.initialize_from_mask(init_encoded_img, init_mask)
 
 # Set up data storage for prompted object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
-prompt_ptrs = deque([])
+prompt_ptrs = deque([init_ptr])
 prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
 

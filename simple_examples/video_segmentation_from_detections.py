@@ -188,9 +188,9 @@ try:
                 print(f"    -> Adding {len(new_det_idxs_list)} new objects")
                 for idx_offset, det_idx in enumerate(new_det_idxs_list):
                     raw_det_mask = det_masks[0, det_idx]
-                    init_mem = track_model.initialize_from_mask(encoded_imgs_list, raw_det_mask > 0)
+                    init_mem, init_ptr = track_model.initialize_from_mask(encoded_imgs_list, raw_det_mask)
                     new_idx = next_new_idx + idx_offset
-                    memory_per_obj_dict[new_idx].store_prompt_result(idx_frame, init_mem)
+                    memory_per_obj_dict[new_idx].store_prompt_result(idx_frame, init_mem, init_ptr)
                     masks_on_frame_list.append(raw_det_mask.unsqueeze(0))
                 pass
 

@@ -348,39 +348,35 @@ class SAMV3Model(nn.Module):
             device, dtype = lowres_imgenc.device, lowres_imgenc.dtype
             token_h, token_w = lowres_imgenc.shape[2:]
 
-            # Hard-code the object score as being 'high/confident', since we assume the given mask is accurate
-            obj_score = torch.tensor(100.0, device=device, dtype=dtype)
-
             # Force input into a boolean mask & convert to torch tensor
             if isinstance(mask_image, ndarray):
-                if mask_image.dtype != np.bool:
-                    mask_image = mask_image > 0
                 mask_tensor = torch.tensor(mask_image, device=device, dtype=dtype)
             elif isinstance(mask_image, Tensor):
-                if mask_image.dtype != torch.bool:
-                    mask_image = mask_image > 0
                 mask_tensor = mask_image.to(device=device, dtype=dtype)
             assert isinstance(mask_tensor, Tensor), "Unsupported mask type! Must be a numpy array or torch tensor"
 
             # Make sure we get a mask with shape: BxNxHxW
             if mask_tensor.ndim == 2:
-                # Convert HxW -> 1x1xHxW
-                mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0)
+                mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0)  #  HxW -> 1x1xHxW
             elif mask_tensor.ndim == 3 and mask_tensor.shape[-1] <= 3:
-                # Convert (opencv image format) HxWxC -> 1x1xHxW
-                mask_tensor = mask_tensor[:, :, 0].unsqueeze(0).unsqueeze(0)
+                mask_tensor = mask_tensor[:, :, 0].unsqueeze(0).unsqueeze(0)  # HxWxC -> 1x1xHxW
             elif mask_tensor.ndim == 3:
-                # Convert BxHxW -> Bx1xHxW
-                mask_tensor = mask_tensor.unsqueeze(1)
-            assert (
-                mask_tensor.ndim == 4 and mask_tensor.shape[1] == 1
-            ), "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
+                mask_tensor = mask_tensor.unsqueeze(1)  # BxHxW -> Bx1xHxW
+            assert mask_tensor.ndim == 4, "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
+            assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
+
+            # Hard-code the object score as being 'high/confident', since we assume the given mask is accurate
+            obj_score = torch.tensor(100.0, device=device, dtype=dtype)
 
             # Scale input to correct size before encoding
             mask_tensor = nn.functional.interpolate(mask_tensor, size=(4 * token_h, 4 * token_w))
             memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, obj_score, is_prompt_encoding=True)
 
-        return memory_encoding
+            # Build a 'blank' pointer, since we don't get one without running the mask decoder
+            mem_b, mem_c, _, _ = memory_encoding.shape
+            blank_ptr = torch.zeros((1, 1, mem_c * 4), device=device, dtype=dtype)
+
+        return memory_encoding, blank_ptr
 
     # .................................................................................................................
 
