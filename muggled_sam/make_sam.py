@@ -82,7 +82,7 @@ def import_model_functions(state_dict: dict[str, Tensor]) -> Callable | None:
     samv1_target_key = "image_encoder.pos_embed"
     make_sam_func = None
     if samv3p1_target_key in sd_keys:
-        raise NotImplementedError("SAMv3.1 is not yet supported...")
+        from .v3p1_sam.make_sam_v3p1 import make_samv3p1_from_original_state_dict as make_sam_func
     elif samv3p0_target_key in sd_keys:
         from .v3_sam.make_sam_v3 import make_samv3_from_original_state_dict as make_sam_func
     elif samv2_target_key in sd_keys:

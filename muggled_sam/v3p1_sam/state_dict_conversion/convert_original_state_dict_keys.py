@@ -1,0 +1,1043 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Imports
+
+from collections import defaultdict
+
+from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_match_by_lut
+
+from torch import Tensor
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Define sub-module names
+
+
+class SAM3ModuleType:
+    image_encoder = "image_encoder"
+    image_projection = "image_projection"
+    image_coordinate_encoder = "image_coordinate_encoder"
+    video_coordinate_encoder = "video_coordinate_encoder"
+    prompt_encoder = "prompt_encoder"
+    image_mask_decoder = "image_mask_decoder"
+    video_mask_decoder = "video_mask_decoder"
+    memory_encoder = "memory_encoder"
+    memory_image_fusion = "memory_image_fusion"
+    text_encoder = "text_encoder"
+    sampling_encoder = "sampling_encoder"
+    image_exemplar_fusion = "image_exemplar_fusion"
+    exemplar_detector = "exemplar_detector"
+    exemplar_segmentation = "exemplar_segmentation"
+    not_used = "not_used"
+    unknown = "unknown"
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Main function
+
+
+def convert_state_dict_keys(
+    config_dict: dict,
+    original_state_dict: dict,
+    warn_missing: bool = True,
+    report_unused: bool = False,
+) -> tuple[dict[SAM3ModuleType, dict], dict[str, str]]:
+    """
+    Function which converts original SAM3 model weights into the new format
+    needed by the model implementation in this repo (MuggledSAM).
+    (layer names are renamed to make the model easier to understand, some are deleted or re-arranged)
+
+    Returns:
+        new_state_dict, reverse_key_lut
+
+    - The 'reverse_key_lut' has keys corresponding to the new name of the
+      model weights and values which represent the original weight names.
+      This is meant to help convert from muggled-sam names back to
+      the original weight names
+    """
+
+    # Grab model config info for properly interpreting model structure
+    num_imgenc_stages = config_dict["imgencoder_num_stages"]
+    num_imgenc_blocks = config_dict["imgencoder_num_blocks"]
+    imgenc_blocks_per_stage = num_imgenc_blocks // num_imgenc_stages
+
+    # Allocate storage for new state dict & reverse lookup (i.e. how new keys map to original keys)
+    new_state_dict = defaultdict(dict)
+    reverse_key_lut = {}
+
+    def _update_sd(module_type: str, old_key: str, new_key: str, new_data: Tensor):
+        new_state_dict[module_type][new_key] = new_data
+        reverse_key_lut[f"{module_type}.{new_key}"] = old_key
+        return
+
+    # Loop over all state dict keys and convert them to new formatting
+    for orig_key, orig_data in original_state_dict.items():
+
+        # For sanity, make sure the key is definitely a string
+        orig_key = str(orig_key)
+        sam_module_type = get_module_type(orig_key)
+        new_key, new_data = orig_key, orig_data
+
+        if sam_module_type == SAM3ModuleType.image_encoder:
+
+            # Skip unused keys
+            new_key = _convert_imgenc_keys(orig_key, imgenc_blocks_per_stage)
+            if new_key is None:
+                continue
+
+            # Reshape base-position encoding
+            if new_key.startswith("posenc.tile_embedding"):
+                # Original is shape: 1x(N+1)xC (N is number tokens + 1 cls token, C is features per token)
+                # -> Want in image format: 1xCxHxW, without the cls token (which isn't used)
+                _, num_tiles, num_tile_features = new_data.shape
+                tile_size = round((num_tiles - 1) ** 0.5)
+                new_data = new_data[0, 1:, :].reshape(1, tile_size, tile_size, num_tile_features).permute(0, 3, 1, 2)
+
+            # Store new key/weight data
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.image_projection:
+
+            # Skip unused keys
+            new_key = _convert_imgproj_keys(orig_key)
+            if new_key is None:
+                continue
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type in (SAM3ModuleType.image_coordinate_encoder, SAM3ModuleType.video_coordinate_encoder):
+
+            # Skip unused keys
+            new_key = _convert_coordencoder_keys(orig_key)
+            if new_key is None:
+                continue
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.prompt_encoder:
+
+            # Skip unused keys
+            new_key = _convert_promptencoder_keys(orig_key)
+            if new_key is None:
+                continue
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type in (SAM3ModuleType.image_mask_decoder, SAM3ModuleType.video_mask_decoder):
+
+            # Skip unused keys
+            new_key = _convert_maskdecoder_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Correct layernorm2d weight shapes
+            layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.norm")
+            new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
+
+            # Reshape multiplex embeddings to 1xMx1xC from MxC originally (M is multiplex count, C channels))
+            if "multiplex_encoder." in new_key:
+                new_data = new_data.unsqueeze(1).unsqueeze(0)
+
+            # Add batch dimension to cls tokens
+            if "cls_" in new_key:
+                new_data = new_data.unsqueeze(0)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.memory_encoder:
+
+            # Skip unused keys
+            new_key = _convert_memencoder_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Correct layernorm2d weight shapes
+            layernorm_key_hints = [f"mask_downsampler.downsample.{idx}." for idx in (1, 4, 7, 10)]
+            layernorm_key_hints.extend(["channel_mixer.0.norm", "channel_mixer.1.norm"])
+            new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
+
+            # Convert linear 'point-wise' weights to 1x1 convolution shapes
+            # -> Original shape is: DxC (D output channels, C input channels)
+            # -> Want 1x1 conv shape: DxCx1x1
+            if "inverted_bottleneck" in new_key and "weight" in new_key:
+                new_data = new_data.unsqueeze(-1).unsqueeze(-1)
+
+            # Add broadcasting dimensions to channel scaling term to match BxCxHxW shape
+            # -> Original assumed shape: BxHxWxC, so didn't need broadcast dimensions
+            # -> This is required due to changing to 1x1 convolutions!
+            if "per_channel_scale" in new_key:
+                new_data = new_data.reshape(1, -1, 1, 1)
+
+            # Add batch dimension to 'no object' embedding to get BxMxC shape (M multiplex, C channels)
+            if "no_object_embed" in new_key:
+                new_data = new_data.unsqueeze(0)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.memory_image_fusion:
+
+            # Skip unused keys
+            new_key = _convert_memimgfusion_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Switch from rows-of-tokens (BNC) to image-like shape (BCHW)
+            if "no_mem_embed_bchw" in new_key:
+                new_data = new_data.reshape(1, -1, 1, 1)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.text_encoder:
+
+            # Skip unused keys
+            new_key = _convert_txtencoder_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Skip unused weights
+            if new_key.startswith("NOT_USED"):
+                continue
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.sampling_encoder:
+
+            # Skip unused keys
+            new_key = _convert_samplingencoder_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Split label embedding into separate fg/bg parameters with shape: 1x1xC (originally a 2xC 'nn.Embedding')
+            if new_key.endswith("label_embed.weight"):
+                neg_label = new_key.replace("label_embed.weight", "negative_coord_label")
+                # samplingencoder_sd[neg_label] = new_data[0].unsqueeze(0).unsqueeze(0)
+                _update_sd(sam_module_type, orig_key, neg_label, new_data[0].unsqueeze(0).unsqueeze(0))
+                pos_label = new_key.replace("label_embed.weight", "positive_coord_label")
+                # samplingencoder_sd[pos_label] = new_data[1].unsqueeze(0).unsqueeze(0)
+                _update_sd(sam_module_type, orig_key, pos_label, new_data[1].unsqueeze(0).unsqueeze(0))
+                continue
+
+            # Re-work cls token to be a parameter with shape: 1x1xC (originally a 1xC 'nn.Embedding')
+            if new_key.endswith("cls_token.weight"):
+                new_key = new_key.replace("cls_token.weight", "cls_token")
+                new_data = new_data.unsqueeze(0)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.image_exemplar_fusion:
+
+            # Skip unused keys
+            new_key = _convert_imgexmfusion_keys(orig_key)
+            if new_key is None:
+                continue
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.exemplar_detector:
+
+            # Skip unused keys
+            new_key = _convert_exmdetector_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Re-shape nn.Embeddings into nn.Parameters & add 0th batch dimension
+            if new_key.endswith("detection_tokens.weight"):
+                new_key = new_key.replace("detection_tokens.weight", "detection_tokens")
+                new_data = new_data.unsqueeze(0)
+            if new_key.endswith("anchor_boxes_cxcywh.weight"):
+                new_key = new_key.replace("anchor_boxes_cxcywh.weight", "anchor_boxes_cxcywh")
+                new_data = new_data.unsqueeze(0)
+            if new_key.endswith("presence_token.weight"):
+                new_key = new_key.replace("presence_token.weight", "presence_token")
+                new_data = new_data.unsqueeze(0)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.exemplar_segmentation:
+
+            new_key = _convert_exmsegmentation_keys(orig_key)
+            if new_key is None:
+                continue
+
+            # Skip unused weights
+            if new_key.startswith("NOT_USED"):
+                continue
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.not_used:
+            if report_unused:
+                print("", f"Unused key: {orig_key}", f"     Shape: {tuple(orig_data.shape)}", sep="\n")
+            pass
+        elif sam_module_type == SAM3ModuleType.unknown:
+            print(f"Unknown key: {orig_key}")
+        elif warn_missing:
+            # Warn about any missed weights
+            print(
+                "",
+                "Warning, model weight not handled on load:",
+                f"    Key: '{orig_key}'",
+                f"  Shape: {tuple(orig_data.shape)}",
+                sep="\n",
+            )
+
+    return new_state_dict, reverse_key_lut
+
+
+def get_module_type(key: str) -> SAM3ModuleType:
+    """
+    Function used to figure out which part of the (mugsam)
+    model implementation a given weight key belongs to. This
+    helps prevent every model component trying to parse each key.
+    """
+
+    # Handle image encoder + new SAM3 components
+    if key.startswith("detector"):
+        if key.startswith("detector.backbone.vision"):
+            # Re-direct certain backbone keys to image projection
+            if "convs." in key:
+                return SAM3ModuleType.image_projection
+            return SAM3ModuleType.image_encoder
+        elif key.startswith("detector.backbone.language"):
+            return SAM3ModuleType.text_encoder
+        elif key.startswith("detector.geometry_encoder"):
+            return SAM3ModuleType.sampling_encoder
+        elif key.startswith("detector.transformer.encoder"):
+            return SAM3ModuleType.image_exemplar_fusion
+        elif key.startswith("detector.transformer.decoder"):
+            return SAM3ModuleType.exemplar_detector
+        elif key.startswith("detector.dot_prod_scoring"):
+            return SAM3ModuleType.exemplar_detector
+        elif key.startswith("detector.segmentation_head"):
+            return SAM3ModuleType.exemplar_segmentation
+
+    # Handle 'old SAM2' components
+    if key.startswith("tracker"):
+        if key.startswith("tracker.model.transformer"):
+            return SAM3ModuleType.memory_image_fusion
+        elif key.startswith("tracker.model.maskmem_backbone"):
+            return SAM3ModuleType.memory_encoder
+        elif key.endswith("gaussian_matrix"):
+            if key.startswith("tracker.model.interactive_"):
+                return SAM3ModuleType.image_coordinate_encoder
+            return SAM3ModuleType.video_coordinate_encoder
+        elif key.startswith("tracker.model.interactive_sam_prompt_encoder"):
+            if "mask" in key:
+                return SAM3ModuleType.image_mask_decoder
+            return SAM3ModuleType.prompt_encoder
+        elif key.startswith("tracker.model.sam_mask_decoder"):
+            if ".conv_" in key:
+                return SAM3ModuleType.image_projection
+            return SAM3ModuleType.video_mask_decoder
+        elif key.startswith("tracker.model.interactive_sam_mask_decoder"):
+            if ".conv_" in key:
+                return SAM3ModuleType.image_projection
+            return SAM3ModuleType.image_mask_decoder
+        elif key.startswith("tracker.model.obj_ptr_proj"):
+            return SAM3ModuleType.video_mask_decoder
+        elif key.startswith("tracker.model.interactive_obj_ptr_proj"):
+            return SAM3ModuleType.image_mask_decoder
+        elif key.startswith("tracker.model.no_obj_ptr_linear"):
+            return SAM3ModuleType.video_mask_decoder
+        elif key.startswith("tracker.model.mask_downsample"):
+            return SAM3ModuleType.unknown
+        elif key.startswith("tracker.model.interactive_mask_downsample"):
+            return SAM3ModuleType.image_mask_decoder
+        elif key.startswith("tracker.model.interactivity_no_mem_embed"):
+            return SAM3ModuleType.memory_image_fusion
+        elif key.endswith("valid_embed"):
+            return SAM3ModuleType.video_mask_decoder
+        elif key.startswith("tracker.model.no_obj"):
+            if key == "tracker.model.no_obj_embed_spatial":
+                return SAM3ModuleType.memory_encoder
+            return SAM3ModuleType.image_mask_decoder
+        elif key.startswith("tracker.model.obj_ptr_tpos_proj"):
+            return SAM3ModuleType.memory_image_fusion
+        elif key == "tracker.model.maskmem_tpos_enc":
+            return SAM3ModuleType.memory_image_fusion
+
+    return SAM3ModuleType.unknown
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Component functions
+
+
+def _reshape_layernorm2d(key, data, *key_hints):
+    """
+    Helper used to re-shape weight tensors for layernorm layers. The original
+    model used weights that had a single dimension (i.e. a vector), but then
+    internally added the missing batch/height/width dimensions to make them
+    image-like, with a shape of: 1xFx1x1
+    (where F is the length of the original weight 'vector')
+
+    Rather than re-shaping every time the model runs, we can reshape on load
+    and just use the result directly!
+    """
+
+    # If we get a key with a matching hint, reshape it
+    for hint in key_hints:
+        if hint in key:
+            res = data.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            return res
+
+    return data
+
+
+# .....................................................................................................................
+
+
+def _convert_imgenc_keys(key: str, blocks_per_stage: int) -> None | str:
+    """
+    Converts keys associated with the image encoder component of the model
+    Takes care of:
+        - position embeddings
+        - transformer blocks (including re-structuring as stages)
+        - channel projection ('neck') layers
+    """
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.backbone.vision_backbone.")
+    if "trunk" in key:
+        key = key.removeprefix("trunk.")
+
+    # Handle transformer blocks (bulk of the model)
+    if key.startswith("blocks"):
+
+        # Drop the stored rope position encodings (these are generated at run-time, not learned)
+        if "freqs_cis" in key:
+            return None
+
+        # We need the block index to figure out which stage we're in
+        # (the original model does not have 'stages')
+        orig_block_idx = get_nth_integer(key, 0)
+        stage_idx = orig_block_idx // blocks_per_stage
+
+        # Figure out if the block is a global attention block (otherwise windowed attention)
+        block_idx_within_stage = orig_block_idx % blocks_per_stage
+        last_block_idx_within_stage = blocks_per_stage - 1
+        is_global_block = block_idx_within_stage == last_block_idx_within_stage
+
+        # Update key to account for stage indexing
+        # blocks.6.norm1.weight -> stages.2.windowed_attn_blocks.0.global_attn.norm1.weight
+        # blocks.11.mlp.lin2.bias -> stages.3.global_attn_block.mlp.layers.2.bias
+        target_prefix = "blocks.#"
+        new_prefix = f"stages.{stage_idx}.windowed_attn_blocks.{block_idx_within_stage}"
+        if is_global_block:
+            new_prefix = f"stages.{stage_idx}.global_attn_block"
+        new_key = replace_prefix(key, target_prefix, new_prefix)
+
+        # Rename attention block norm layers to be more descriptive
+        if ".norm" in new_key:
+            new_key = new_key.replace("norm1", "norm_preattn")
+            new_key = new_key.replace("norm2", "norm_premlp")
+            return new_key
+
+        # Handle mlp linear layer re-structuring
+        if "mlp.fc" in new_key:
+            new_key = new_key.replace("fc1", "layers.0")
+            new_key = new_key.replace("fc2", "layers.2")
+            return new_key
+
+        return new_key
+
+    # Handle patch embeddings
+    if key.startswith("patch_embed"):
+        return key
+
+    # Handle position embedding
+    if key.startswith("pos_embed"):
+        return key.replace("pos_embed", "posenc.tile_embedding_bhwc")
+
+    # Handle layernorm prior to transformer blocks
+    if key.startswith("ln_pre"):
+        return key.replace("ln_pre", "pre_layernorm")
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_imgproj_keys(key: str) -> None | str:
+
+    # Handle keys that are part of the mask decoder
+    if key.startswith("tracker.model"):
+        # -> There are entries for both image & video segmentation, and each has
+        #    a conv_s0 and conv_s1 layer, both with weights & biases (so 8 total entries)
+        new_key = key.removeprefix("tracker.model.")
+        new_key = new_key.replace("interactive_sam_mask_decoder.conv_s0", "multires_proj_image.proj_x4.5")
+        new_key = new_key.replace("interactive_sam_mask_decoder.conv_s1", "multires_proj_image.proj_x2.3")
+        new_key = new_key.replace("sam_mask_decoder.conv_s0", "multires_proj_video.proj_x4.5")
+        new_key = new_key.replace("sam_mask_decoder.conv_s1", "multires_proj_video.proj_x2.3")
+        return new_key
+
+    # Handle keys that are part of the detector weights
+    new_key = key.removeprefix("detector.backbone.vision_backbone.")
+
+    # Throw away final (unused) downscaling projection layer
+    if "convs.3.conv" in key:
+        return None
+
+    # Swap out prefix for new component names
+    new_key = new_key.replace("interactive_convs.", "multires_proj_image.")
+    new_key = new_key.replace("propagation_convs.", "multires_proj_video.")
+    if new_key.startswith("convs."):
+        new_key = new_key.replace("convs.", "multires_proj_detect.")
+
+    # Re-map the output projection layers (e.g. 'neck' convolutions)
+    find_and_replace_lut = {
+        "0.dconv_2x2_0": "proj_x4.0",
+        "0.dconv_2x2_1": "proj_x4.2",
+        "0.conv_1x1": "proj_x4.3",
+        "0.conv_3x3": "proj_x4.4",
+        "1.dconv_2x2": "proj_x2.0",
+        "1.conv_1x1": "proj_x2.1",
+        "1.conv_3x3": "proj_x2.2",
+        "2.conv_1x1": "proj_x1.0",
+        "2.conv_3x3": "proj_x1.1",
+    }
+    is_lut_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+    if is_lut_match:
+        return new_key.replace(targ_str, match_str)
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_coordencoder_keys(key: str) -> None | str:
+
+    # Handle position embedding
+    if "pe_layer" in key:
+        return "gaussian_matrix"
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_promptencoder_keys(key: str) -> None | str:
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("tracker.model.interactive_sam_prompt_encoder.")
+
+    # Handle special 'not a point' token (used for padding prompt)
+    if key.startswith("not_a_point_embed"):
+        return "point_encoder.not_a_point_embed"
+
+    # Handle the point & bounding box embeddings
+    if key.startswith("point_embeddings"):
+
+        # The point embeddings are stored in a single matrix
+        # -> Rows of the matrix correspond to different point encodings
+        # -> This LUT maps the row index of the original weights to the new named weights
+        point_type_lut = {
+            0: "bg_embed",
+            1: "fg_embed",
+            2: "tl_embed",
+            3: "br_embed",
+        }
+
+        # Map old indexing to new individually named parameters
+        pt_idx = get_nth_integer(key, 0)
+        is_box_point = pt_idx > 1
+        enc_type = "box_encoder" if is_box_point else "point_encoder"
+        pt_type = point_type_lut[pt_idx]
+        new_key = f"{enc_type}.{pt_type}"
+
+        return new_key
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_maskdecoder_keys(key: str) -> None | str:
+
+    # Convert some weights that belonged to the prompt encoder originally over to the mask decoder
+    if key.startswith("tracker.model.interactive_sam_prompt_encoder"):
+        new_key = key.removeprefix("tracker.model.interactive_sam_prompt_encoder.")
+
+        # Handle special 'no mask' token
+        if "no_mask_embed" in new_key:
+            return "maskhint_encoder.no_mask_embed"
+
+        # Handle downscaling layers for mask prompts
+        if new_key.startswith("mask_downscaling"):
+            return new_key.replace("mask_downscaling", "maskhint_encoder.downscaler")
+
+    # Capture object pointer weights (now part of mask decoder, instead of 'parent' model)
+    if key.startswith("tracker.model.no_obj_ptr_linear"):
+        return key.replace("tracker.model.no_obj_ptr_linear", "objptrgen.no_ptr_proj")
+    elif key.startswith("tracker.model.interactive_obj_ptr_proj") or key.startswith("tracker.model.obj_ptr_proj"):
+        layer_idx = get_nth_integer(key, 0)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key)
+        return f"objptrgen.pointer_mlp.layers.{new_idx}.{weight_or_bias}"
+    elif key.endswith("valid_embed"):
+        return "multiplex_encoder.embed_inactive" if "invalid" in key else "multiplex_encoder.embed_active"
+    elif key.startswith("tracker.model.interactive_mask_downsample"):
+        return key.replace("tracker.model.interactive_mask_downsample", "mask_to_ptr_hint_downsampler")
+
+    # Remove original prefixes for remaining mask decoder keys
+    key = key.removeprefix("tracker.model.interactive_sam_mask_decoder.")
+    key = key.removeprefix("tracker.model.sam_mask_decoder.")
+
+    # Rename transformer layers (bulk of model)
+    if key.startswith("transformer"):
+
+        # All transformer key changes are handled using find-and-replace lookup
+        find_and_replace_lut = {
+            "self_attn": "prompt_selfattn.attn",
+            "cross_attn_token_to_image": "prompt_crossattn.attn",
+            "cross_attn_image_to_token": "image_crossattn.attn",
+            "mlp.lin1": "prompt_mlpnorm.mlp.0",
+            "mlp.lin2": "prompt_mlpnorm.mlp.2",
+            "norm1": "prompt_selfattn.norm",
+            "norm2": "prompt_crossattn.norm",
+            "norm3": "prompt_mlpnorm.norm",
+            "norm4": "image_crossattn.norm",
+            "final_attn_token_to_image": "final_prompt_crossattn.attn",
+            "norm_final_attn": "final_prompt_crossattn.norm",
+        }
+        has_attn_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+        if has_attn_match:
+            return key.replace(targ_str, match_str)
+        return key
+
+    # Rename output mlp layers (another large part of the model)
+    if key.startswith("output_hypernetworks_mlps"):
+        seq_idx = get_nth_integer(key, 0)
+        layer_idx = get_nth_integer(key, 1)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key, 1)
+        return f"maskgen.mask_token_mlps.{seq_idx}.layers.{new_idx}.{weight_or_bias}"
+
+    # Rename built-in tokens
+    if key.startswith("obj_score_token"):
+        return "cls_obj_token"
+    if key.startswith("iou_token"):
+        return "cls_iou_token"
+    if key.startswith("mask_tokens"):
+        return "cls_mask_tokens"
+
+    if key.startswith("output_upscaling"):
+
+        # Adjust nested key names, which were originally stored in a sequential model, now stored in a separate module
+        find_and_replace_lut = {
+            "output_upscaling.0": "maskgen.img_patch_upscaler.upscale_1",
+            "output_upscaling.1": "maskgen.img_patch_upscaler.norm",
+            "output_upscaling.3": "maskgen.img_patch_upscaler.upscale_2",
+        }
+
+        has_attn_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+        if has_attn_match:
+            return key.replace(targ_str, match_str)
+
+        return None
+
+    if key.startswith("iou_prediction_head"):
+        layer_idx = get_nth_integer(key, 0)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key, 1)
+        return f"iou_token_mlp.layers.{new_idx}.{weight_or_bias}"
+
+    # Convert 'object score head' keys to MLP naming scheme
+    if key.startswith("pred_obj_score_head"):
+        layer_idx = get_nth_integer(key, 0)
+        new_idx = 2 * layer_idx
+        weight_or_bias = get_suffix_terms(key, 1)
+        return f"objptrgen.score_mlp.layers.{new_idx}.{weight_or_bias}"
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_memencoder_keys(key: str) -> None | str:
+
+    # Check for 'no object embedding' which is named differently than other memory-encoder keys
+    if key == "tracker.model.no_obj_embed_spatial":
+        return "missing_obj_encoder.no_object_embed"
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("tracker.model.maskmem_backbone.")
+
+    # Update mask downsampler to sequential indexing scheme
+    if key.startswith("mask_downsampler.encoder"):
+
+        # Rename downsampler layers
+        new_key = key.replace("mask_downsampler.encoder", "mask_downsampler.downsample")
+
+        # Special renaming of final 'downsample' layer, which is actually a projection layer
+        if "downsample.12" in new_key:
+            return new_key.replace("downsample.12", "out_proj")
+
+        return new_key
+
+    # Rename the image projection layer
+    if key.startswith("pix_feat_proj"):
+        return key.replace("pix_feat_proj", "image_proj")
+
+    # Update fuser layers to sequential indexing scheme
+    if key.startswith("fuser.layers"):
+
+        # Rename prefix
+        new_key = key.replace("fuser.layers", "channel_mixer")
+
+        # All transformer key changes are handled using find-and-replace lookup
+        find_and_replace_lut = {
+            "dwconv": "per_channel_conv",
+            "gamma": "per_channel_scale",
+            "pwconv1": "inverted_bottleneck.0",
+            "pwconv2": "inverted_bottleneck.2",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+        return new_key
+
+    # Keep output projection as-is
+    if key.startswith("out_proj"):
+        return key
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_memimgfusion_keys(key: str) -> None | str:
+
+    # Ignore position encoding when no memory is present (not used)
+    if key == "tracker.model.no_mem_pos_enc":
+        return None
+
+    # Capture 'no_mem_embed' which originally belonged to parent SAM model
+    if key == "tracker.model.interactivity_no_mem_embed":
+        return "no_mem_embed_bchw"
+
+    # Rename frame position offset embedding
+    if key == "tracker.model.maskmem_tpos_enc":
+        return "memconcat.memposenc.base_memposenc_offsets"
+
+    # Rename object pointer projection weights (only present on SAMv2.1)
+    if key.startswith("tracker.model.obj_ptr_tpos_proj"):
+        return key.replace("tracker.model.obj_ptr_tpos_proj", "memconcat.ptrposenc.pointer_pos_proj")
+
+    # Remove original prefix for remaining 'transformer' keys
+    key = key.removeprefix("tracker.model.transformer.encoder.")
+
+    # Re-name the layers of the transformer (bulk of this model)
+    if key.startswith("layers"):
+
+        # Handle re-structuring of the fusion transformer layers
+        find_and_replace_lut = {
+            "norm1": "image_selfattn.norm",
+            "norm2": "image_crossattn.norm",
+            "self_attn_": "image_selfattn.",
+            "image_cross_attn_q_proj": "image_crossattn.currimg_q_proj",
+            "image_cross_attn_k_proj": "image_crossattn.previmg_k_proj",
+            ".cross_attn_q_proj": ".image_crossattn.encimg_q_proj",
+            ".cross_attn_k_proj": ".image_crossattn.mem_k_proj",
+            ".cross_attn_v_proj": ".image_crossattn.mem_v_proj",
+            ".cross_attn_out_proj": ".image_crossattn.out_proj",
+            "norm3": "image_mlp.mlp.0",
+            "linear1": "image_mlp.mlp.1",
+            "linear2": "image_mlp.mlp.3",
+        }
+        has_attn_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+        if has_attn_match:
+            return key.replace(targ_str, match_str)
+
+    # Rename final norm layers for clarity
+    # (these are different from the norm layers 'norm1/2/3' inside the transformer)
+    if key.startswith("norm"):
+        return key.replace("norm", "out_norm")
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_txtencoder_keys(key: str) -> None | str:
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.backbone.language_backbone.")
+
+    # Handle transformer block weights (bulk of the model)
+    if key.startswith("encoder.transformer"):
+
+        # Rename shared prefix
+        new_key = key.replace("encoder.transformer.resblocks", "transformer.blocks")
+
+        # Rename block norm & mlp components
+        find_and_replace_lut = {
+            "in_proj_weight": "qkv.weight",
+            "in_proj_bias": "qkv.bias",
+            "out_proj": "proj",
+            "ln_1": "norm_preattn",
+            "ln_2": "norm_premlp",
+            "c_fc": "0",
+            "c_proj": "2",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+        return new_key
+
+    elif key.startswith("encoder."):
+
+        # Handle non-block weights
+        find_and_replace_lut = {
+            "encoder.token_embedding": "vocab_embeddings",
+            "encoder.positional_embedding": "transformer.posenc",
+            "encoder.ln_final": "transformer.out_norm",
+            "encoder.text_projection": "NOT_USED",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+        if has_match:
+            return key.replace(targ_str, match_str)
+
+    # Handle non-encoder keys
+    if key.startswith("resizer"):
+        return key.replace("resizer", "out_proj")
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_samplingencoder_keys(key: str) -> None | str:
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.geometry_encoder.")
+
+    # Handle encoder layer keys (e.g. 'detector.geometry_encoder.encode.2...')
+    if key.startswith("encode."):
+        new_key = key.replace("encode.", "fusion_transformer.fusion_layers.")
+        find_and_replace_lut = {
+            "norm1": "selfattn.norm",
+            "self_attn": "selfattn.attn",
+            "norm2": "img_crossattn.norm",
+            "cross_attn_image": "img_crossattn.attn",
+            "norm3": "mlp.mlp.0",
+            "linear1": "mlp.mlp.1",
+            "linear2": "mlp.mlp.3",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+    # Handle layer that's just called 'norm' (otherwise have problems matching to other keys that contain 'norm')
+    if key.startswith("norm."):
+        return key.replace("norm.", "fusion_transformer.pre_norm.1.")
+
+    # Handle re-structuring for all other keys (all stand-alone)
+    find_and_replace_lut = {
+        "label_embed": "label_embed",
+        "cls_embed": "cls_token",
+        "points_direct_project": "point_encoder.xy_proj",
+        "points_pool_project": "point_encoder.img_sample_proj",
+        "points_pos_enc_project": "point_encoder.posenc_proj",
+        "boxes_direct_project": "box_encoder.cxcywh_proj",
+        "boxes_pool_project": "box_encoder.img_sample_conv",
+        "boxes_pos_enc_project": "box_encoder.posenc_proj",
+        "final_proj": "fusion_transformer.pre_norm.0",
+        "img_pre_norm": "img_pre_norm",
+        "encode_norm": "fusion_transformer.out_norm",
+    }
+    has_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+    if has_match:
+        return key.replace(targ_str, match_str)
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_imgexmfusion_keys(key: str) -> None | str:
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.transformer.encoder.")
+
+    # Handle layer keys (e.g. 'detector.transformer.encoder.layers.4...')
+    if key.startswith("layers."):
+        new_key = key.replace("layers.", "fusion_layers.")
+        find_and_replace_lut = {
+            "norm1": "img_selfattn.norm",
+            "self_attn": "img_selfattn.attn",
+            "norm2": "img_crossattn.norm",
+            "cross_attn_image": "img_crossattn.attn",
+            "norm3": "img_mlp.mlp.0",
+            "linear1": "img_mlp.mlp.1",
+            "linear2": "img_mlp.mlp.3",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_exmdetector_keys(key: str) -> None | str:
+
+    # Handle 'decoder' keys (bulk of the model)
+    if key.startswith("detector.transformer"):
+
+        # Remove original prefix for simplicity
+        key = key.removeprefix("detector.transformer.decoder.")
+
+        # Handle layer keys (e.g. 'detector.transformer.decoder.layers.4...'), this is the bulk of the model
+        if key.startswith("layers."):
+            new_key = key.replace("layers.", "fusion_layers.")
+            find_and_replace_lut = {
+                "self_attn": "query_selfattn.attn",
+                "norm2": "query_selfattn.norm",
+                "ca_text": "exemplar_crossattn.attn",
+                "catext_norm": "exemplar_crossattn.norm",
+                "cross_attn": "image_crossattn.attn",
+                "norm1": "image_crossattn.norm",
+                "linear1": "query_mlp.mlp.0",
+                "linear2": "query_mlp.mlp.2",
+                "norm3": "query_mlp.norm",
+            }
+            has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+            if has_match:
+                return new_key.replace(targ_str, match_str)
+
+        if key.startswith("norm."):
+            return key.replace("norm.", "out_norm_detections.")
+
+        # Merge pres. token head & norm into single 'score' mlp model
+        if key.startswith("presence_token_head."):
+            new_key = key.replace("presence_token_head", "mlp_presence_score")
+            find_and_replace_lut = {
+                "layers.0": "layers.1",
+                "layers.1": "layers.3",
+                "layers.2": "layers.5",
+            }
+            has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+            if has_match:
+                return new_key.replace(targ_str, match_str)
+        if key.startswith("presence_token_out_norm."):
+            return key.replace("presence_token_out_norm", "mlp_presence_score.layers.0")
+
+        # Handle MLP layer indexing
+        if key.startswith("bbox_embed.") or key.startswith("boxRPB_embed") or key.startswith("ref_point_head"):
+
+            # Update base mlp names
+            new_key = key.replace("bbox_embed", "mlp_detection_to_box")
+            new_key = new_key.replace("boxRPB_embed_x", "mlp_box_relpos_dx")
+            new_key = new_key.replace("boxRPB_embed_y", "mlp_box_relpos_dy")
+            new_key = new_key.replace("ref_point_head", "mlp_detection_posenc")
+
+            find_and_replace_lut = {
+                "layers.0": "0",
+                "layers.1": "2",
+                "layers.2": "4",
+            }
+            has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+            if has_match:
+                return new_key.replace(targ_str, match_str)
+
+        # Handle embeddings
+        if key.startswith("query_embed"):
+            return key.replace("query_embed", "detection_tokens")
+        if key.startswith("presence_token."):
+            return key
+        if key.startswith("reference_points"):
+            return key.replace("reference_points", "anchor_boxes_cxcywh")
+
+    elif key.startswith("detector.dot_prod_scoring"):
+
+        # Remove original prefix for simplicity
+        new_key = key.replace("detector.dot_prod_scoring", "detection_scoring")
+
+        # Handle MLP layer indexing
+        if "prompt_mlp" in new_key:
+            new_key = new_key.replace("prompt_mlp", "exemplar_mlp")
+            find_and_replace_lut = {
+                "layers.0": "mlp.0",
+                "layers.1": "mlp.2",
+                "out_norm": "norm",
+            }
+            has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+            if has_match:
+                return new_key.replace(targ_str, match_str)
+
+        # Handle linear layer renaming
+        find_and_replace_lut = {
+            "prompt_proj": "exemplar_proj",
+            "hs_proj": "detection_token_proj",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+    return None
+
+
+# .....................................................................................................................
+
+
+def _convert_exmsegmentation_keys(key: str) -> None | str:
+
+    # Remove original prefix for simplicity
+    key = key.removeprefix("detector.segmentation_head.")
+
+    # Handle MLP layer indexing
+    if key.startswith("mask_predictor"):
+        new_key = key.removeprefix("mask_predictor.")
+        find_and_replace_lut = {
+            "mask_embed.layers.0": "query_mlp.0",
+            "mask_embed.layers.1": "query_mlp.2",
+            "mask_embed.layers.2": "query_mlp.4",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+    # Handle conversion to standalone attn block
+    if key.startswith("cross_"):
+        new_key = key.replace("cross_attend_prompt", "image_cross_attn.attn")
+        return new_key.replace("cross_attn_norm", "image_cross_attn.norm")
+
+    # Handle conversion of 'pixel decoder' into upscale layers (including labeling unused components for removal!)
+    if key.startswith("pixel_decoder"):
+        new_key = key.removeprefix("pixel_decoder.")
+        find_and_replace_lut = {
+            "conv_layers.0": "upscale_x2.postprocess.0",
+            "norms.0": "upscale_x2.postprocess.1",
+            "conv_layers.1": "upscale_x4.postprocess.0",
+            "norms.1": "upscale_x4.postprocess.1",
+            "conv_layers.2": "NOT_USED",
+            "norms.2": "NOT_USED",
+        }
+        has_match, targ_str, match_str = find_match_by_lut(new_key, find_and_replace_lut)
+        if has_match:
+            return new_key.replace(targ_str, match_str)
+
+    # Handle basic renaming
+    find_and_replace_lut = {
+        "instance_seg_head": "img_token_proj",
+        "semantic_seg_head": "semantic_proj",
+    }
+    has_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+    if has_match:
+        return key.replace(targ_str, match_str)
+
+    return None

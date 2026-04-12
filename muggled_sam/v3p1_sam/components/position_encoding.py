@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Imports
+
+import torch
+import torch.nn as nn
+
+# For type hints
+from torch import Tensor
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Classes
+
+
+class RPEComplex(nn.Module):
+    """
+    Rotational-Position-Encoder which uses complex numbers.
+    The encoding uses RoPE, which encodes the position of tokens
+    using rotation offsets.
+
+    This implementation represents the rotations using complex
+    numbers (as in the original implementation), but it could
+    also be done using 2D matrix operations for wider compatibility.
+
+    This module doesn't exist in the original sam3 implementation, but
+    is instead handled through 2 functions: 'compute_axial_cis'
+    and 'apply_rotary_enc' (which themselves depend on other functions), see:
+    https://github.com/facebookresearch/sam3/blob/2d1cbaeac7b52ca64baf61e58973d0940ae843d0/sam3/model/vitdet.py#L41
+    https://github.com/facebookresearch/sam3/blob/2d1cbaeac7b52ca64baf61e58973d0940ae843d0/sam3/model/vitdet.py#L68
+
+    Note that a separate (mostly identical) copy of these implementations elsewhere in the codebase:
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/sam/rope.py#L24
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/sam/rope.py#L56
+
+    Note: This module does not contain any learnable parameters!
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token: int, theta: float = 10000.0, rope_hw: tuple[int, int] | None = None):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store rope sizing (needed when re-computing rotation vectors)
+        self._use_hw_scaling = rope_hw is not None
+        if rope_hw is None:
+            rope_hw = (None, None)
+        self._rope_h = rope_hw[0]
+        self._rope_w = rope_hw[1]
+
+        # Pre-compute base angles used to construct rotation amounts
+        # -> 'powers' are just evenly spaced values on interval [0,1), ex: [0.0, 0.25, 0.5, 0.75]
+        quarter_features = features_per_token // 4
+        powers = torch.arange(0, quarter_features) / quarter_features
+        base_angles = 1.0 / torch.pow(theta, powers)  # WARNING: torch.pow(theta, -powers) is not the same numerically!
+        self.register_buffer("base_angles", base_angles, persistent=False)
+
+        # Allocate storage for caching results, so we don't re-compute position encodings repeatedly
+        # (encodings don't change for a fixed sized input, e.g. video frames)
+        self._cache_hw = (0, 0)
+        self.register_buffer("clx_rotors_bdnc", torch.empty(1, 1, 1, 1), persistent=False)
+
+    # .................................................................................................................
+
+    def forward(self, q: Tensor, k: Tensor, q_tokens_hw: tuple[int, int]) -> tuple[Tensor, Tensor]:
+        """
+        Applies rotational position encodings to both query & key tokens.
+        Every pair of feature values of each token is interpreted as a
+        2D vector, 2D-rotated by some amount based on the (x,y) position
+        associated with the token, and then converted back to the original
+        non-paired representation.
+
+        For example, if a token comes is as:
+            [1,2,3,4,5,6,7,8],
+        it first gets broken into xy pairs:
+            [[1,2], [3,4], [5,6], [7,8]]
+
+        Then each of these gets rotated based on it's indexing.
+        For the sake of convenience, let's say the rotation amount
+        for these four indexes are: [0, 90degrees, 180degrees, 270degrees]
+        Then the rotation result would be:
+            [[1,2], [-4,3], [-5,-6], [8,-7]]
+        The final output un-pairs these values:
+            [1,2,-4,3,-5,-6,8,-7]
+
+        Returns:
+            q_out, k_out
+        """
+
+        # For clarity
+        # -> Tokens assumed to have shape: BxDxNxC (B is batch, D is num heads, N is number tokens, C is channels)
+        bq, dq, nq, cq = q.shape
+        bk, dk, nk, ck = k.shape
+
+        # Re-build rotation vectors if needed
+        if self._cache_hw != q_tokens_hw:
+            self.clx_rotors_bdnc = self.get_complex_rotors(q_tokens_hw)
+            self._cache_hw = q_tokens_hw
+
+        # Convert each consecutive feature value pairs into 'xy' format and rotate by 'rotvectors'
+        # -> Features are converted to xy simply by stacking pairs of values in 'channel' dimension,
+        #    for example, for a single token with features: [-10, 20, 5, -60, 32, 11, etc.]
+        #    these get stacked in pairs to form 'xy' format for rotation: [(-10, 20), (5, -60), (32, 11), etc.]
+        # -> Notice reshaping: BxDxNxC -> BxDxNx(C/2)x2,
+        #    however, 'view_as_complex' gets rid of separate xy dimension giving just: BxDxNx(C/2)
+        q_as_xy = torch.view_as_complex(q.float().reshape(bq, dq, nq, cq // 2, 2))
+        q_out = torch.view_as_real(q_as_xy * self.clx_rotors_bdnc)
+
+        # Do the same for key tokens, but must handle potential mismatching number of q vs k tokens
+        k_as_xy = torch.view_as_complex(k.float().reshape(bk, dk, nk, ck // 2, 2))
+        k_rot_amt = self.clx_rotors_bdnc if nk == nq else self.clx_rotors_bdnc.repeat(1, 1, nk // nq, 1)
+        k_out = torch.view_as_real(k_as_xy * k_rot_amt)
+
+        # Restore to original (non-xy pairing) shape: BxDxNx(C/2)x2 -> BxDxNxC
+        q_out = q_out.flatten(3).to(q.device, q.dtype)
+        k_out = k_out.flatten(3).to(q.device, q.dtype)
+        return q_out, k_out
+
+    # .................................................................................................................
+
+    def get_complex_rotors(self, tokens_hw: tuple[int, int]) -> Tensor:
+        """
+        In the original implementation, this functionality is called 'compute_axial_cis', see:
+        https://github.com/facebookresearch/sam3/blob/2d1cbaeac7b52ca64baf61e58973d0940ae843d0/sam3/model/vitdet.py#L41
+        -> Not sure, but 'cis' probably refers to 'cos + i * sin'
+        -> 'axial' seems like a strange name, but might refer to the fact that these are applied 'per-token'
+
+        This function calculates a rotation amount for all possible (x,y) positions,
+        which is how RoPE encodes positioning of tokens. The rotation amounts are
+        represented using 2D unit vectors stored as complex numbers ('rotors').
+
+        There are a few simple but uncommon math things being used here...
+            1. Computes (x,y) indexing in a 1D format
+               e.g. For a 2D matrix converted to 1D (by flattening)
+                   [1  2]
+                   [3, 4]  -> [1, 2, 3, 4, 5, 6]
+                   [5, 6]
+               The x-/column-indexing for the 1D sequence is: [0,1,0,1,0,1]
+               The y-/row-indexing is: [0,0,1,1,2,2]
+               These are called 'x_mults' and 'y_mults' in the code
+
+            2. Multiplying vectors using an 'outer' product
+               Given vector A: [1,2,3] and vector B: [1,10]
+               The outer product gives a 2D matrix:
+                   [1, 10]
+                   [2, 20]
+                   [3, 30]
+               e.g. the rows hold values of A, with each column multiplied by values of B
+
+            3. The use of torch.polar(...), which converts a distance & angle
+               into a single complex number with a matching magnitude & phase.
+               However, the magnitudes are always 1, so it's just being used
+               to create 'rotated' complex numbers. Multiplying another
+               complex number by one of these is equivalent to a simple 2D rotation.
+
+        Returns:
+            rotation_vectors (as complex numbers)
+        """
+
+        # For clarity
+        h, w = tokens_hw
+        x_mult_scale = self._rope_h / h if self._use_hw_scaling else 1.0
+        y_mult_scale = self._rope_w / w if self._use_hw_scaling else 1.0
+        device, dtype = self.base_angles.device, self.base_angles.dtype
+
+        # Determine xy token indexing, in 1D, to use as angle multipliers
+        # -> x_mults looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for w=3, h=4)
+        # -> y_mults looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for w=3, h=4)
+        # -> Except these may be multiplied by a scalar if the input sizing doesn't match rope sizing
+        x_mults = torch.arange(w, device=device, dtype=dtype).repeat(h) * x_mult_scale
+        y_mults = torch.arange(h, device=device, dtype=dtype).repeat_interleave(w) * y_mult_scale
+
+        # Calculate angles as multiples of (pre-computed) base angles
+        # -> Base angles have length equal to 1/4 of the features per token/head (64/4 = 16 by default)
+        # -> x/y_mults have length equal to h*w = number of tokens
+        # -> So result has shape: Nx(f/4)
+        x_angles = torch.outer(x_mults, self.base_angles).float()
+        y_angles = torch.outer(y_mults, self.base_angles).float()
+
+        # Form final complex rotors (unit magnitude complex numbers)
+        x_rotors = torch.polar(torch.ones_like(x_angles), x_angles)
+        y_rotors = torch.polar(torch.ones_like(y_angles), y_angles)
+
+        # The final output has 1D 'rows-of-tokens' shape: 1x1xNx(2*f/4)
+        # -> This is expected to match the input tokens (with channels halved due to (x,y) formatting)
+        return torch.cat([x_rotors, y_rotors], dim=-1).unsqueeze(0).unsqueeze(0)
+
+    # .................................................................................................................
+
+
+class RPEReal(nn.Module):
+    """
+    Alternate version of RPEComplex, which doesn't use complex numbers.
+
+    The basic idea is to perform complex multiplication using only real numbers.
+    For example:
+        Complex multiplication: (a + ib) * (c + id) = (a*c - b*d) + i(a*d + b*c)
+    We can treat a,b,c,d as 4 real numbers and compute the result as:
+        x_out = (a*c - b*d)
+        y_out = (a*d + b*c)
+
+    Compared to the 'complex' version, this implementation is very slightly
+    slower, but should have better support across other run-times.
+
+    It replaces an earlier implementation which used 2D rotation matrices
+    but was significantly (>2x) slower, see:
+    https://github.com/heyoeyo/muggled_sam/blob/f7ae0cdfa2de7e2432b4b0b4628a85e3103725aa/muggled_sam/v3_sam/components/position_encoding.py#L196
+
+    Note: This module does not contain any learnable parameters!
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token: int, theta: float = 10000.0, rope_hw: tuple[int, int] | None = None):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store rope sizing (needed when re-computing rotation vectors)
+        self._use_hw_scaling = rope_hw is not None
+        if rope_hw is None:
+            rope_hw = (None, None)
+        self._rope_h = rope_hw[0]
+        self._rope_w = rope_hw[1]
+
+        # Pre-compute base angles used to construct rotation amounts
+        # -> 'powers' are just evenly spaced values on interval [0,1), ex: [0.0, 0.25, 0.5, 0.75]
+        quarter_features = features_per_token // 4
+        powers = torch.arange(0, quarter_features) / quarter_features
+        base_angles = 1.0 / torch.pow(theta, powers)  # WARNING: torch.pow(theta, -powers) is not the same numerically!
+        self.register_buffer("base_angles", base_angles, persistent=False)
+
+        # Allocate storage for caching results, so we don't re-compute position encodings repeatedly
+        # (encodings don't change for a fixed sized input, e.g. video frames)
+        self._cache_hw = (0, 0)
+        self.register_buffer("x_rotors_bdnc", torch.empty(1, 1, 1, 1), persistent=False)
+        self.register_buffer("y_rotors_bdnc", torch.empty(1, 1, 1, 1), persistent=False)
+
+    # .................................................................................................................
+
+    def forward(self, q: Tensor, k: Tensor, q_tokens_hw: tuple[int, int]) -> tuple[Tensor, Tensor]:
+        """
+        Applies rotational position encodings to both query & key tokens.
+        Every pair of feature values of each token is interpreted as a
+        2D vector, 2D-rotated by some amount based on the (x,y) position
+        associated with the token, and then converted back to the original
+        non-paired representation.
+
+        For example, if a token comes is as:
+            [1,2,3,4,5,6,7,8],
+        it first gets broken into xy pairs:
+            [[1,2], [3,4], [5,6], [7,8]]
+
+        Then each of these gets rotated based on it's indexing.
+        For the sake of convenience, let's say the rotation amount
+        for these four indexes are: [0, 90degrees, 180degrees, 270degrees]
+        Then the rotation result would be:
+            [[1,2], [-4,3], [-5,-6], [8,-7]]
+        The final output un-pairs these values:
+            [1,2,-4,3,-5,-6,8,-7]
+
+        Returns:
+            q_out, k_out
+        """
+
+        # For clarity
+        # -> Tokens assumed to have shape: BxDxNxC (B is batch, D is num heads, N is number tokens, C is channels)
+        bq, dq, nq, cq = q.shape
+        bk, dk, nk, ck = k.shape
+
+        # Re-build rotation vectors if needed
+        if self._cache_hw != q_tokens_hw:
+            self.x_rotors_bdnc, self.y_rotors_bdnc = self.get_real_rotors(q_tokens_hw)
+            self._cache_hw = q_tokens_hw
+
+        # Apply rotations to q tokens
+        q_as_xy = q.reshape(bq, dq, nq, cq // 2, 2)
+        q_x = q_as_xy[:, :, :, :, 0]
+        q_y = q_as_xy[:, :, :, :, 1]
+        q_out_x = (q_x * self.x_rotors_bdnc) - (q_y * self.y_rotors_bdnc)
+        q_out_y = (q_x * self.y_rotors_bdnc) + (q_y * self.x_rotors_bdnc)
+        q_out = torch.stack((q_out_x, q_out_y), dim=-1).flatten(3)
+
+        # Apply rotations to k tokens
+        k_as_xy = k.reshape(bk, dk, nk, ck // 2, 2)
+        k_x = k_as_xy[:, :, :, :, 0]
+        k_y = k_as_xy[:, :, :, :, 1]
+        x_rotors = self.x_rotors_bdnc if nk == nq else self.x_rotors_bdnc.repeat(1, 1, nk // nq, 1)
+        y_rotors = self.y_rotors_bdnc if nk == nq else self.y_rotors_bdnc.repeat(1, 1, nk // nq, 1)
+        k_out_x = (k_x * x_rotors) - (k_y * y_rotors)
+        k_out_y = (k_x * y_rotors) + (k_y * x_rotors)
+        k_out = torch.stack((k_out_x, k_out_y), dim=-1).flatten(3)
+
+        return q_out, k_out
+
+    # .................................................................................................................
+
+    def get_real_rotors(self, tokens_hw: tuple[int, int]) -> tuple[Tensor, Tensor]:
+        """
+        See the RPEComplex 'get_complex_rotors' for more info.
+        In this implementation, rotors are held as separate
+        x & y tensors.
+        These correspond to the real & imaginary parts
+        of the rotors from the original implementation.
+
+        Returns:
+            x_rotors_bdnc, y_rotors_bdnc
+        """
+
+        # For clarity
+        h, w = tokens_hw
+        x_mult_scale = self._rope_h / h if self._use_hw_scaling else 1.0
+        y_mult_scale = self._rope_w / w if self._use_hw_scaling else 1.0
+        device, dtype = self.base_angles.device, self.base_angles.dtype
+
+        # Determine xy token indexing, in 1D, to use as angle multipliers
+        # -> x_mults looks like: [0,1,2,0,1,2,0,1,2,0,1,2] (for w=3, h=4)
+        # -> y_mults looks like: [0,0,0,1,1,1,2,2,2,3,3,3] (for w=3, h=4)
+        # -> Except these may be multiplied by a scalar if the input sizing doesn't match rope sizing
+        x_mults = torch.arange(w, device=device, dtype=dtype).repeat(h) * x_mult_scale
+        y_mults = torch.arange(h, device=device, dtype=dtype).repeat_interleave(w) * y_mult_scale
+
+        # Calculate angles as multiples of (pre-computed) base angles
+        # -> Base angles have length equal to 1/4 of the features per token/head
+        # -> x/y_mults have length equal to h*w = number of tokens
+        # -> So result has shape: Nx(f/4)
+        x_angles = torch.outer(x_mults, self.base_angles)
+        y_angles = torch.outer(y_mults, self.base_angles)
+
+        # Form final 'rows-of-tokens' output with batch and 'heads' dimensions
+        # -> Each rotor has shape: 1x1xNx(f/2)
+        x_rotors = torch.cat((torch.cos(x_angles), torch.cos(y_angles)), dim=-1).unsqueeze(0).unsqueeze(0)
+        y_rotors = torch.cat((torch.sin(x_angles), torch.sin(y_angles)), dim=-1).unsqueeze(0).unsqueeze(0)
+        return x_rotors, y_rotors
+
+    # .................................................................................................................
+
+
+class SinusoidalPE2D(nn.Module):
+    """
+    Implements position encodings similar to 'sine/cosine' approach originally
+    used in paper: "Attention Is All You Need" (see page 5), but adapted
+    to work with 'image-like' tokens.
+
+    The math in this model is fairly non-sensical looking, it follows
+    the formulas in the original paper:
+
+        PE(pos, even-i) = sin(pos * f)
+        PE(pos, odd-i)  = cos(pos * f)
+        Where f = 1 / 10000 ^ (2*i / features-per-token)
+        and 'i' is meant to be the feature index (so i/features-per-token is like a normalized index)
+
+    This implementation uses the same 'f' values for the feature channels of all
+    image tokens, but scales the values for each token based on the normalized
+    x/y position of the token, prior to computing the sin(...) & cos(...) result.
+
+    See original code:
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/position_encoding.py#L10
+    """
+
+    # .................................................................................................................
+
+    def __init__(self, features_per_token: int, temperature: float = 10000.0):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Sanity check. Need even number so we can make (x,y) pairings
+        assert features_per_token % 2 == 0, "Need an even number of features for sinusoidal position encoding!"
+
+        # Pre-compute periods with 'geometric scaling' (e.g. temperature ^ scaling)
+        # -> These are associated with frequencies: 2πf where 'f' is 1/p, p being the calculate frequency,
+        #    the values are calculated this way to maintain numerical consistency with original implementation
+        # -> There are C/2 'scale_factors' and they look like repeated-normalized values,
+        #    for example, with features_per_token = 16, result is: [0, 0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75]
+        half_features = features_per_token // 2
+        scale_factors = (torch.arange(half_features, dtype=torch.float32) // 2) * (2 / half_features)
+        per_channel_period = temperature**scale_factors
+        self.register_buffer("per_channel_period", per_channel_period, persistent=False)
+        self.register_buffer("twopi", torch.tensor(2.0 * torch.pi), persistent=False)
+
+        # Also allocate storage for re-using encodings
+        self.register_buffer("cached_posenc_bchw", torch.empty((1, 1, 1, 1)), persistent=False)
+
+    # .................................................................................................................
+
+    def forward(self, height: int, width: int) -> Tensor:
+        """Computes (non-learned) 2D sinusoidal position encodings, with shape: BxCxHxW"""
+
+        # Re-generate cached result if needed
+        cache_h, cache_w = self.cached_posenc_bchw.shape[-2:]
+        if cache_h != height or cache_w != width in self.cache:
+
+            # For convenience
+            device, dtype = self.cached_posenc_bchw.device, self.cached_posenc_bchw.dtype
+
+            # Make index sequence (e.g. sequences like: 1, 2, 3, 4, ..., height or width) that is then normalized
+            # -> For a height of 5, result would be: [0.2, 0.4, 0.6, 0.8, 1.0]
+            # -> Original includes 'divide-by-zero' eps protection for some reason... included here to match original
+            eps = 1e-6
+            y_idx_norm = torch.arange(1, 1 + height, dtype=torch.float32, device=device) / (height + eps)
+            x_idx_norm = torch.arange(1, 1 + width, dtype=torch.float32, device=device) / (width + eps)
+
+            # Encode x/y grid coordinates
+            x_sincos, y_sincos = self.encode_xy(x_idx_norm, y_idx_norm)
+
+            # Repeat x/y components along h/w dimensions and stack to form a single BxCxHxW tensor
+            x_sincos_hwc = x_sincos.unsqueeze(0).repeat(height, 1, 1)
+            y_sincos_hwc = y_sincos.unsqueeze(1).repeat(1, width, 1)
+            xy_stacked_bchw = torch.cat((y_sincos_hwc, x_sincos_hwc), dim=-1).permute(2, 0, 1).unsqueeze(0)
+            self.cached_posenc_bchw = xy_stacked_bchw.to(dtype)
+
+        return self.cached_posenc_bchw
+
+    # .................................................................................................................
+
+    def encode_xy(self, x_norm: Tensor, y_norm: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Encode x & y coordinates using sinusoids with scaled frequencies (different per channel).
+        Returns:
+            x_sincos, y_sincos
+            -> Shape is Nx(C/2) for both X & Y (where N is number of x_norm/y_norm inputs)
+        """
+
+        # Compute xy angles using pre-computed periods, these are of the form: α*2πf
+        # where α is a normalized x-/y-index and f is 1/p, where p are the pre-computed period values
+        # -> Note the shapes here are: YNx(C/2) and XNx(C/2), where C is features-per-token, YN/XN are input sizes
+        y_angles = y_norm.unsqueeze(-1) * self.twopi / self.per_channel_period
+        x_angles = x_norm.unsqueeze(-1) * self.twopi / self.per_channel_period
+
+        # Calculate the sine of even index angles, cosine of odd index angles & stack together
+        # -> Gives intermediate shapes: YNx(C/4)x2 & XNx(C/4)x2
+        # -> Then flatten last 2 dimensions back to: YNx(C/2), XNx(C/2)
+        y_sincos = torch.stack((y_angles[:, 0::2].sin(), y_angles[:, 1::2].cos()), dim=-1).flatten(-2)
+        x_sincos = torch.stack((x_angles[:, 0::2].sin(), x_angles[:, 1::2].cos()), dim=-1).flatten(-2)
+
+        return x_sincos, y_sincos
+
+    # .................................................................................................................
+
+    def encode_tensor(self, coord_norm_tensor: Tensor) -> Tensor:
+        """
+        Encoding variant that takes in a tensor of coordinate values and encodes
+        each one separately. Assumes the last-most dimension holds the different coordinates.
+        For a 2D input, this is equivalent to calling this model with:
+            .encode_xy(coord_norm_tensor[..., 0], coord_norm_tensor[..., 1])
+
+        However, this function will accept any number of coordinates!
+        If the input has shape: BxNxD, where B is batch size, N is number of
+        coords and D is coord dimension (e.g. D=2 for x & y, or D=4 for x,y,w,h etc.),
+        then the output will have shape: BxNxDx(F/2), where F is the features per token of this model.
+
+        Note that the shape of the input doesn't matter, other than ending with 'D' dimensions.
+        (e.g. Nx1xD or NxD or NxBx1xD etc. are all valid input shapes)
+
+        Returns:
+            coord_sincos
+        """
+
+        angles = coord_norm_tensor.unsqueeze(-1) * self.twopi / self.per_channel_period
+        return torch.stack((angles[..., 0::2].sin(), angles[..., 1::2].cos()), dim=-1).flatten(-2)
