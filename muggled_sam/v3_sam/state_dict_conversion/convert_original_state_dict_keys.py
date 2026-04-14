@@ -166,6 +166,11 @@ def convert_state_dict_keys(
             new_key = _convert_memimgfusion_keys(orig_key)
             if new_key is None:
                 continue
+
+            # Switch from rows-of-tokens (BNC) to image-like shape (BCHW)
+            if "no_mem_embed_bchw" in new_key:
+                new_data = new_data.reshape(1, -1, 1, 1)
+
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 
         elif sam_module_type == SAM3ModuleType.text_encoder:
@@ -682,7 +687,7 @@ def _convert_memimgfusion_keys(key: str) -> None | str:
 
     # Capture 'no_mem_embed' which originally belonged to parent SAM model
     if key == "tracker.no_mem_embed":
-        return key.removeprefix("tracker.")
+        return "no_mem_embed_bchw"
 
     # Rename frame position offset embedding
     if key == "tracker.maskmem_tpos_enc":

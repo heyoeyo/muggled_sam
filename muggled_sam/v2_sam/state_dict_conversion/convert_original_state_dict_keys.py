@@ -133,7 +133,13 @@ def convert_state_dict_keys(
 
         new_key = _convert_memfusion_keys(orig_key)
         if found_key(new_key):
-            _update_sd(SAM2ModuleType.memory_image_fusion, orig_key, new_key, orig_data)
+
+            # Switch from rows-of-tokens (BNC) to image-like shape (BCHW)
+            mod_data = orig_data
+            if "no_mem_embed_bchw" in new_key:
+                mod_data = orig_data.reshape(1, -1, 1, 1)
+
+            _update_sd(SAM2ModuleType.memory_image_fusion, orig_key, new_key, mod_data)
             continue
 
         # Explicity skip some keys, which are not used by MugSAM implementation
@@ -476,7 +482,7 @@ def _convert_memfusion_keys(key: str) -> None | str:
 
     # Capture 'no_mem_embed' which originally belonged to parent SAM model
     if key == "no_mem_embed":
-        return key
+        return "no_mem_embed_bchw"
 
     # Rename frame position offset embedding
     if key == "maskmem_tpos_enc":

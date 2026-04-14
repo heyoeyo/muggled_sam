@@ -58,7 +58,7 @@ class SAMV3MemoryImageFusion(nn.Module):
         self._num_tokens_per_pointer = features_per_image_token // features_per_memory_token
 
         # Embedding added to encoded image features when not using memory encoding
-        self.no_mem_embed = torch.nn.Parameter(torch.empty(1, 1, features_per_image_token))
+        self.no_mem_embed_bchw = torch.nn.Parameter(torch.empty(1, features_per_image_token, 1, 1))
 
         # Create models used to help prepare data for transformer layers
         self.memconcat = MemoryConcatenator(features_per_image_token, features_per_memory_token, max_memory_history)
@@ -106,9 +106,7 @@ class SAMV3MemoryImageFusion(nn.Module):
 
         # If we're prompting or there is no memory data, do simpler fuse
         if is_prompt_frame or len(prompt_memory_encodings) == 0:
-            no_mem_bchw = self.no_mem_embed.squeeze(0).unsqueeze(-1).unsqueeze(-1)
-            fused_tokens = lowres_image_tokens_bchw + no_mem_bchw
-            return fused_tokens
+            return lowres_image_tokens_bchw + self.no_mem_embed_bchw
 
         # Merge all prior memory data into a single set of tokens
         memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
