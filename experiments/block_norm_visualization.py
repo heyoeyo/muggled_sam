@@ -38,6 +38,10 @@ from muggled_sam.v3_sam.components.image_encoder_attention import (
     GlobalAttentionBlock as V3GlobalBlock,
     WindowedAttentionBlock as V3WindowBlock,
 )
+from muggled_sam.v3p1_sam.components.image_encoder_attention import (
+    GlobalAttentionBlock as V3p1GlobalBlock,
+    WindowedAttentionBlock as V3p1WindowBlock,
+)
 
 from muggled_sam.demo_helpers.ui.window import DisplayWindow, KEY
 from muggled_sam.demo_helpers.ui.layout import VStack, HStack, GridStack
@@ -170,7 +174,7 @@ is_v1_model, is_v2_model, is_v3_model = False, False, False
 target_modules = None
 if sammodel.name == "samv3":
     is_v3_model = True
-    target_modules = (V3GlobalBlock, V3WindowBlock)
+    target_modules = (V3GlobalBlock, V3WindowBlock, V3p1GlobalBlock, V3p1WindowBlock)
 elif sammodel.name == "samv2":
     is_v2_model = True
     target_modules = (V2GlobalBlock, V2WindowBlock, V2PoolBlock)
@@ -207,11 +211,17 @@ print(
 )
 
 # Print additional 'blocks per stage' info, which is relevant for interpreting block norm results
-blocks_per_stage = model_config_dict.get("imgencoder_blocks_per_stage", "unknown")
-if not is_v2_model:
+blocks_per_stage = "unknown"
+if is_v1_model:
     num_v1_blocks = model_config_dict.get("num_encoder_blocks", 0)
     num_v1_stages = model_config_dict.get("num_encoder_stages", 1)
     blocks_per_stage = tuple([num_v1_blocks // num_v1_stages] * num_v1_stages)
+if is_v2_model:
+    blocks_per_stage = model_config_dict.get("imgencoder_blocks_per_stage", "unknown")
+elif is_v3_model:
+    num_v3_blocks = model_config_dict.get("imgencoder_num_blocks", 0)
+    num_v3_stages = model_config_dict.get("imgencoder_num_stages", 1)
+    blocks_per_stage = tuple([num_v3_blocks // num_v3_stages] * num_v3_stages)
 print("  Blocks per stage:", blocks_per_stage)
 
 

@@ -61,14 +61,29 @@ def encode_image_samv3(
 
         # Generate normal image encodings (i.e. with feature projection)
         hflip_image_bgr = np.fliplr(image_bgr)
-        reg_encimg_list, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
-        flip_encimg_list, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+        multiversion_reg_encimgs, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
+        multiversion_flip_encimgs, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+
+        # If using v3.0, wrap encodings in outer-list to mimic v3.1 shape (so we can treat both as v3.1)
+        # -> v3.1 stores [v1_encimgs, v2_encimgs, v3_encimgs]
+        # -> v3.0 stores v1_encimgs, so we make it look like: [v1_encimgs]
+        is_sam_v3p0 = isinstance(multiversion_reg_encimgs[0], torch.Tensor)
+        if is_sam_v3p0:
+            multiversion_reg_encimgs = [multiversion_reg_encimgs]
+            multiversion_flip_encimgs = [multiversion_flip_encimgs]
 
         # Combine regular encodings with horizontal flip in batch dimension for output
-        proj_encimg_list = []
-        for regular_enc, flipped_enc in zip(reg_encimg_list, flip_encimg_list):
-            batch_combined_encs = torch.concat((regular_enc, torch.flipud(flipped_enc)), dim=0)
-            proj_encimg_list.append(batch_combined_encs)
+        multver_reg_and_flipped_encimg_list = []
+        for reg_encimg_list, flip_encimg_list in zip(multiversion_reg_encimgs, multiversion_flip_encimgs):
+            multires_encimgs_list = []
+            for regular_enc, flipped_enc in zip(reg_encimg_list, flip_encimg_list):
+                batch_combined_encs = torch.concat((regular_enc, torch.flipud(flipped_enc)), dim=0)
+                multires_encimgs_list.append(batch_combined_encs)
+            multver_reg_and_flipped_encimg_list.append(multires_encimgs_list)
+
+        # Undo v3.0 wrapping if needed
+        if is_sam_v3p0:
+            multver_reg_and_flipped_encimg_list = multver_reg_and_flipped_encimg_list[0]
 
         # Compute 'raw' encodings
         # -> Works by manually running the image encoder, without the final projection step
@@ -83,7 +98,7 @@ def encode_image_samv3(
         reg_encimg, flip_encimg = result_tokens
         raw_encimg = torch.concat((reg_encimg, torch.fliplr(flip_encimg)), dim=0)
 
-    return [raw_encimg], proj_encimg_list
+    return [raw_encimg], multver_reg_and_flipped_encimg_list
 
 
 def encode_image_samv2(model, image_bgr, max_side_length=1024, use_square_sizing=True) -> tuple[list, list]:
@@ -433,8 +448,17 @@ print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 # For convenience, create the usual 'encoded image' value needed for mask generation
 # -> We already computed this, but with support for h-flipping
 # -> Here we take the non-h-flipped encodings (i.e. batch index 0) as our encoding for mask generation
-encoded_img_a = [enc[[0]] for enc in proj_enc_a]
-encoded_img_b = [enc[[0]] for enc in proj_enc_b]
+is_samv3p1 = not isinstance(proj_enc_a[0], torch.Tensor)
+if is_samv3p1:
+    encoded_img_a, encoded_img_b = [], []
+    for v_encimgs_list_a, v_encimgs_list_b in zip(proj_enc_a, proj_enc_b):
+        encoded_img_a.append([enc[[0]] for enc in v_encimgs_list_a])
+        encoded_img_b.append([enc[[0]] for enc in v_encimgs_list_b])
+    token_hw_a, token_hw_b = proj_enc_a[0][0].shape[2:], proj_enc_b[0][0].shape[2:]
+else:
+    encoded_img_a = [enc[[0]] for enc in proj_enc_a]
+    encoded_img_b = [enc[[0]] for enc in proj_enc_b]
+    token_hw_a, token_hw_b = proj_enc_a[0].shape[2:], proj_enc_b[0].shape[2:]
 
 # Run model without prompts as sanity check. Also gives initial result values
 encoded_prompts = sammodel.encode_prompts([], [], [])
@@ -442,7 +466,6 @@ init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img_a, encoded_prom
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
 # Provide some feedback about how the model is running
-token_hw_a, token_hw_b = proj_enc_a[0].shape[2:], proj_enc_b[0].shape[2:]
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
 token_hw_a_str, token_hw_b_str = f"{token_hw_a[0]} x {token_hw_a[1]}", f"{token_hw_b[0]} x {token_hw_b[1]}"
@@ -493,6 +516,15 @@ norm_range_slider = HMultiSlider(
     step_size=0.05,
     fill_between_points=True,
 )
+max_version_idx = len(encoded_img_a) - 1 if is_samv3p1 else 0
+version_select_slider = HSlider(
+    "Encoding version",
+    initial_value=0,
+    min_value=0,
+    max_value=max_version_idx,
+    step_size=1,
+    marker_steps=1,
+)
 
 # Set up message bars
 device_dtype_str = f"{model_device}/{model_dtype}"
@@ -502,7 +534,6 @@ footer_msgbar = StaticMessageBar(
     "[r] Raw features",
     "[h] H-Flip",
     "[tab] Similarity",
-    "[, .] Change encoding" if (not is_v1_model) else None,
     text_scale=0.35,
     space_equally=True,
 )
@@ -517,6 +548,7 @@ disp_layout = VStack(
     cmap_bar,
     StackElem(ui_elems.layout, comp_img_elem),
     HStack(swap_images_btn if not use_same_image else None, hflip_btn, raw_feats_btn, similarity_btn),
+    version_select_slider if is_samv3p1 else None,
     encoding_select_slider if (not is_v1_model) else None,
     norm_range_slider,
     footer_msgbar if show_info else None,
@@ -543,6 +575,8 @@ window.attach_keypress_callback("h", hflip_btn.toggle)
 window.attach_keypress_callback("s", swap_images_btn.toggle)
 window.attach_keypress_callback("r", raw_feats_btn.toggle)
 window.attach_keypress_callback(KEY.TAB, similarity_btn.toggle)
+window.attach_keypress_callback(";", version_select_slider.decrement)
+window.attach_keypress_callback("'", version_select_slider.increment)
 window.attach_keypress_callback(",", encoding_select_slider.decrement)
 window.attach_keypress_callback(".", encoding_select_slider.increment)
 
@@ -579,8 +613,11 @@ try:
         is_swap_changed, use_image_swap = swap_images_btn.read()
         is_rawfeats_changed, use_raw_feats = raw_feats_btn.read()
         is_normrange_changed, (min_similarity, max_similarity) = norm_range_slider.read()
+        is_version_changed, version_select_idx = version_select_slider.read()
         is_stage_changed, encoding_select_idx = encoding_select_slider.read()
-        is_sim_controls_changed = is_normrange_changed or is_hflip_changed or is_rawfeats_changed or is_stage_changed
+        is_sim_controls_changed = any(
+            (is_normrange_changed, is_hflip_changed, is_rawfeats_changed, is_stage_changed, is_version_changed)
+        )
 
         # Special toggle: Switch to similarity view whenever controls would adjust it's appearance
         if is_sim_controls_changed:
@@ -645,13 +682,20 @@ try:
             raw_idx = min(encoding_select_idx, len(raw_enc_ref) - 1)
             proj_idx = max(raw_idx - 1, 0) if is_v2_model else encoding_select_idx
 
+            # Select which image encoding 'versions' should be used (v3.1 specific feature)
+            ref_encimg_version_select = proj_enc_ref
+            comp_encimg_version_select = proj_enc_comp
+            if is_samv3p1:
+                ref_encimg_version_select = proj_enc_ref[version_select_idx]
+                comp_encimg_version_select = proj_enc_comp[version_select_idx]
+
             # Pick appropriate encodings based on control settings
             # There are 4 options: projection encodings + hflip, project + no hflip, raw + hflip, raw + no hflip
             # -> We need to pick matching (project vs. raw) encodings for reference vs. comparison image
             # -> H-flip data is held in the batch dimension of encodings (index 0 is not flipped, 1 is h-flipped)
             # -> The comparison image always uses the non-hflip encodings to match the (not flipped) image itself
-            ref_enc = raw_enc_ref[raw_idx] if use_raw_feats else proj_enc_ref[proj_idx]
-            comp_enc = raw_enc_comp[raw_idx][[0]] if use_raw_feats else proj_enc_comp[proj_idx][[0]]
+            ref_enc = raw_enc_ref[raw_idx] if use_raw_feats else ref_encimg_version_select[proj_idx]
+            comp_enc = raw_enc_comp[raw_idx][[0]] if use_raw_feats else comp_encimg_version_select[proj_idx][[0]]
             if not use_hflip:
                 ref_enc = ref_enc[[0]]
 

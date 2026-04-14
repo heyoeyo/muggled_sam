@@ -60,7 +60,7 @@ default_max_pointer_history = 15
 default_show_iou_preds = False
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Run SAMV2 video segmentation with prompting from a separate image")
+parser = argparse.ArgumentParser(description="Run SAMV2/V3 video segmentation with prompting from a separate image")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
 parser.add_argument("-v", "--video_path", default=default_video_path, help="Path to input video")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")

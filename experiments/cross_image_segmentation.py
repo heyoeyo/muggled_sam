@@ -341,7 +341,6 @@ hover_a_keeper = ValueChangeTracker(False)
 hover_b_keeper = ValueChangeTracker(False)
 encoded_img, cross_encoded_img = encoded_img_a, encoded_img_b
 ref_preds, cross_preds = mask_a_preds, mask_b_preds
-ref_ptrs = torch.zeros((1, mask_a_preds.shape[1], encoded_img_a[0].shape[1])).to(mask_a_preds)
 stability_offset = 2
 
 # Some feedback
@@ -404,18 +403,16 @@ try:
         if need_prompt_encode:
             selected_prompts = prompts_a if side_select == "a" else prompts_b
             encoded_prompts = sammodel.encode_prompts(*selected_prompts)
-            with torch.inference_mode():
-                grid_posenc = sammodel.coordinate_encoder.get_grid_position_encoding(token_hw)
-                ref_preds, _, ref_ptrs, obj_score = sammodel.mask_decoder(encoded_img, encoded_prompts, grid_posenc)
+            ref_preds, _ = sammodel.generate_masks(encoded_img, encoded_prompts)
 
         # Encode memory data from selected mask
         need_memory_encode = need_prompt_encode or is_mask_select_changed or is_numiter_changed
         if need_memory_encode:
+
+            # Use prompted mask to initialize 'tracking' to segment the cross-image
             mem_mask_idx = mask_a_idx if side_select == "a" else mask_b_idx
             mask_for_mem = ref_preds[:, [mem_mask_idx], :, :]
-            with torch.inference_mode():
-                ref_mem = sammodel.memory_encoder(encoded_img[0], mask_for_mem, obj_score, is_prompt_encoding=True)
-            ref_ptr = ref_ptrs[:, [mem_mask_idx]]
+            ref_mem, ref_ptr = sammodel.initialize_from_mask(encoded_img, mask_for_mem)
 
             # Run 'video' segmentation to prompt other image
             prompt_mem, prompt_ptr = tuple([ref_mem]), tuple([ref_ptr])
