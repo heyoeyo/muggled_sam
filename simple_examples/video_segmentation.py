@@ -24,7 +24,7 @@ from muggled_sam.make_sam import make_sam_from_state_dict
 # Define pathing & device usage
 initial_frame_index = 0
 video_path = "/path/to/video.mp4"
-model_path = "/path/to/samv2_model.pth"
+model_path = "/path/to/sam_model.pt"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
@@ -61,6 +61,7 @@ prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
 
 # Process video frames
+is_using_cuda = "cuda" in device
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
@@ -76,11 +77,16 @@ try:
         # Process video frames with model
         t1 = perf_counter()
         encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+        if is_using_cuda:
+            torch.cuda.synchronize()
+        t2 = perf_counter()
         obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
-        t2 = perf_counter()
-        print(f"Took {round(1000 * (t2 - t1))} ms")
+        if is_using_cuda:
+            torch.cuda.synchronize()
+        t3 = perf_counter()
+        print(f"Encode: {round(1000 * (t2 - t1))} ms | Track: {round(1000*(t3-t2))} ms")
 
         # Store object results for future frames
         if obj_score < 0:

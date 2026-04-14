@@ -48,7 +48,7 @@ from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_f
 
 # Set argparse defaults
 default_device = get_default_device_string()
-default_image_path = None
+default_video_path = None
 default_model_path = None
 default_prompts_path = None
 default_display_size = 900
@@ -61,8 +61,8 @@ default_bg_color_hex = "ff00ff00"
 default_ffmpeg = get_default_ffmpeg_command()
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to run Segment-Anything-V2 (SAMv2) on a video")
-parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to input image")
+parser = argparse.ArgumentParser(description="Script used to run Segment-Anything (v2 or v3) on a video")
+parser.add_argument("-i", "--video_path", default=default_video_path, help="Path to input video")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAM model weights")
 parser.add_argument(
     "-s",
@@ -181,7 +181,7 @@ parser.add_argument(
 # For convenience
 args = parser.parse_args()
 enable_saving = not args.disable_save
-arg_image_path = args.image_path
+arg_video_path = args.video_path
 arg_model_path = args.model_path
 display_size_px = args.display_size
 device_str = args.device
@@ -209,7 +209,7 @@ _, history_vidpath = history.read("video_path")
 _, history_modelpath = history.read("model_path")
 
 # Get pathing to resources, if not provided already
-video_path = ask_for_path_if_missing(arg_image_path, "video", history_vidpath) if not use_webcam else 0
+video_path = ask_for_path_if_missing(arg_video_path, "video", history_vidpath) if not use_webcam else 0
 model_path = ask_for_model_path_if_missing(__file__, arg_model_path, history_modelpath)
 
 # Store history for use on reload (but don't save video path when using webcam)

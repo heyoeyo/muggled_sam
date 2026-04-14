@@ -23,13 +23,13 @@ from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
 
 # Define pathing & device usage
 video_path = "/path/to/video.mp4"
-model_path = "/path/to/samv2_model.pth"
+model_path = "/path/to/sam_model.pt"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
 # Define image processing config (shared for all video frames)
-imgenc_config_dict = {"max_side_length": 1024, "use_square_sizing": True}
+imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
 
 # For demo purposes, we'll define all prompts ahead of time and store them per frame index & object
 # -> First level key (e.g. 0, 90, 140) represents the frame index where the prompts should be applied
@@ -81,6 +81,7 @@ assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for vid
 sammodel.to(device=device, dtype=dtype)
 
 # Process video frames
+win_title, disp_mask = "Video Segmentation Result - q to quit", None
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
@@ -92,6 +93,7 @@ try:
         if not ok_frame:
             print("", "Done! No more frames...", sep="\n")
             break
+        scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
 
         # Encode frame data (shared for all objects)
         encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
@@ -108,7 +110,7 @@ try:
 
                 # Draw prompts for debugging
                 if enable_prompt_visualization:
-                    prompt_vis_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
+                    prompt_vis_frame = scaled_frame.copy()
                     norm_to_px_factor = np.float32((prompt_vis_frame.shape[1] - 1, prompt_vis_frame.shape[0] - 1))
                     for xy_norm in obj_prompts.get("fg_xy_norm_list", []):
                         xy_px = np.int32(xy_norm * norm_to_px_factor)
@@ -120,15 +122,17 @@ try:
                         xy1_px = np.int32(xy1_norm * norm_to_px_factor)
                         xy2_px = np.int32(xy2_norm * norm_to_px_factor)
                         cv2.rectangle(prompt_vis_frame, xy1_px, xy2_px, (0, 255, 255), 2)
+                    cv2.putText(prompt_vis_frame, "Press any key to continue", (5, 20), 0, 0.75, (255, 0, 255), 1, 16)
 
-                    # Show prompt in it's own window and close after viewing
-                    wintitle = f"Prompt ({obj_key_name}) - Press key to continue"
-                    cv2.imshow(wintitle, prompt_vis_frame)
+                    # Stack mask to keep image sizing consistent
+                    if disp_mask is None:
+                        disp_mask = np.zeros_like(prompt_vis_frame)
+                    sidebyside_frame = stack_func((prompt_vis_frame, disp_mask))
+                    cv2.imshow(win_title, sidebyside_frame)
                     cv2.waitKey(0)
-                    cv2.destroyWindow(wintitle)
 
         # Update tracking using newest frame
-        combined_mask_result = np.zeros(frame.shape[0:2], dtype=bool)
+        combined_mask_result = np.zeros(scaled_frame.shape[0:2], dtype=bool)
         for obj_key_name, obj_memory in memory_per_obj_dict.items():
             obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
                 encoded_imgs_list, **obj_memory.to_dict()
@@ -158,11 +162,10 @@ try:
         # Combine original image & mask result side-by-side for display
         combined_mask_result_uint8 = combined_mask_result.astype(np.uint8) * 255
         disp_mask = cv2.cvtColor(combined_mask_result_uint8, cv2.COLOR_GRAY2BGR)
-        sidebyside_frame = stack_func((frame, disp_mask))
-        sidebyside_frame = cv2.resize(sidebyside_frame, dsize=None, fx=0.5, fy=0.5)
+        sidebyside_frame = stack_func((scaled_frame, disp_mask))
 
         # Show result
-        cv2.imshow("Video Segmentation Result - q to quit", sidebyside_frame)
+        cv2.imshow(win_title, sidebyside_frame)
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break

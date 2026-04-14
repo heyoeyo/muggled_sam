@@ -18,54 +18,53 @@ import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
 
 # Setup
-batch_size = 4
-image_path = "/path/to/image.jpg"
 model_path = "/path/to/model.pth"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
+
+# Define all images to be batch processed & sizing
+image_paths_list = ["/path/to/image_1.jpg", "/path/to/image_2.jpg", "/path/to/image_4.jpg"]  # etc.
 
 # Define prompts using xy coordinates normalized between 0 and 1
 box_tlbr_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy), (bottom-right xy)]
 fg_xy_norm_list = []  # Example: [(0.5, 0.5)]
 bg_xy_norm_list = []
 
-# Load image
-img_bgr = cv2.imread(image_path)
-if img_bgr is None:
-    raise FileNotFoundError(f"Error loading image from: {image_path}")
+# Load images & form image batch
+imgs_list = []
+for img_path in image_paths_list:
+    img_bgr = cv2.imread(img_path)
+    if img_bgr is None:
+        raise FileNotFoundError(f"Error loading image from: {img_path}")
+    imgs_list.append(img_bgr)
+print(f"Got {len(imgs_list)} images for batching", "", sep="\n")
 
 # Set up model
 print("Loading model...")
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 sammodel.to(device=device, dtype=dtype)
 
-# Set up image batch by just repeating the single input image
-print(f"Encoding image batch... (batch size: {batch_size})")
-with torch.inference_mode():
-    image_tensor = sammodel.image_encoder.prepare_image(img_bgr, max_side_length=None, use_square_sizing=True)
-    image_batch = image_tensor.repeat(batch_size, 1, 1, 1)
-    encoded_img = sammodel.image_encoder(image_batch)
+# Set up image batch
+img_batch_tensor = sammodel.prepare_image_batch(imgs_list, max_side_length=None)
+img_batch_size = img_batch_tensor.shape[0]
 
-    # SAMv3 requires a 'samv2' projection step when used for direct mask predictions
-    if sammodel.name == "samv3":
-        encoded_img = sammodel.image_projection.v2_projection(encoded_img)
+# Create batched image features
+print("Encoding image batch...")
+encoded_img, tokens_hw, _ = sammodel.encode_image(img_batch_tensor)
 
-# Process data
+# Process data (will use the same prompt for all images)
 print("Generating masks...")
 encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
 
 # Feedback
-is_samv2 = isinstance(encoded_img, (tuple, list))
-tokens_shape = encoded_img[0].shape if is_samv2 else encoded_img.shape
 print("")
 print("Results:")
 if torch.cuda.is_available():
     free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
     print("VRAM Usage:", (total_vram_bytes - free_vram_bytes) // 1_000_000)
-print("Input image shape:", img_bgr.shape)
-print("Pre-encoded image shape:", tuple(image_batch.shape))
-print("Image tokens shape:", tuple(tokens_shape))
+print("Pre-encoded batch shape:", tuple(img_batch_tensor.shape))
+print("Tokens HW:", tokens_hw)
 print("Mask results shape:", tuple(mask_preds.shape))
 print("IoU results shape:", tuple(iou_preds.shape))

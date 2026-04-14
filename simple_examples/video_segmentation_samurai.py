@@ -24,7 +24,7 @@ from muggled_sam.demo_helpers.samurai import SimpleSamurai
 # Define pathing & device usage
 initial_frame_index = 0
 video_path = "/path/to/video.mp4"
-model_path = "/path/to/samv2_model.pth"
+model_path = "/path/to/sam_model.pth"
 device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
@@ -52,6 +52,11 @@ print("Loading model...")
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
 assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
 sammodel.to(device=device, dtype=dtype)
+
+# Bail on v3.1 since it won't work properly due to multiplex masking
+is_samv3p1 = hasattr(sammodel, "multiplex_video_masking")
+if is_samv3p1:
+    raise NotImplementedError("Sorry, SAMv3.1 is not (yet) supported with SAMURAI. Try v3.0 or v2")
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = sammodel.encode_image(first_frame, **imgenc_config_dict)
