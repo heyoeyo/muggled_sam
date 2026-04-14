@@ -48,21 +48,21 @@ class SAMV3p1MemoryEncoder(nn.Module):
         features_per_memory_token: int = 256,
         num_downsample_layers: int = 4,
         num_mixer_layers: int = 2,
-        multiplex_count: int = 16,
+        multiplex_channels: int = 16,
     ):
 
         # Inherit from parent
         super().__init__()
 
         # Define layers used to pre-process mask & image data prior to fusing
-        self.mask_downsampler = MaskDownsampler(features_per_image_token, num_downsample_layers, multiplex_count)
+        self.mask_downsampler = MaskDownsampler(features_per_image_token, num_downsample_layers, multiplex_channels)
         self.image_proj = Conv1x1Layer(features_per_image_token)
 
         # Define layers used to post-process fused mask + image result
         self.channel_mixer = nn.Sequential(*(ConvNeXtBlock(features_per_image_token) for _ in range(num_mixer_layers)))
 
         # Create special handler for when no object is present
-        self.missing_obj_encoder = NoObjectEncoder(features_per_memory_token, multiplex_count)
+        self.missing_obj_encoder = NoObjectEncoder(features_per_memory_token, multiplex_channels)
 
     # .................................................................................................................
 
@@ -72,7 +72,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         mask_prediction_1mhw: Tensor,
         object_score_m1: Tensor | None,
         is_prompt_encoding: bool = False,
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor]:
         """
         Takes the lowest-resolution image encoding and combines it
         with a mask prediction to form a 'fused' encoding, which can act
@@ -95,11 +95,11 @@ class SAMV3p1MemoryEncoder(nn.Module):
         the quality of segmentation results over long time periods!
 
         Returns:
-            fused_image_and_mask_encodings
-            -> Has shape: Bx(C/4)xHxW
-            -> B is the batch size
-            -> Output has 1/4 number of channels, C, as input image encoding
-            -> Output height & width match (low-res) image encoding
+            lowres_img_encoding_bchw, fused_image_and_mask_encodings
+            -> Both outputs have shape: BxCxHxW
+            -> B batch size, H & W are height and width
+            -> The 'lowres' output is the same as the input image encodings
+            -> Bundling of orig. image encodings is feature specific to v3.1 model!
         """
 
         # Prepare mask & image data for fusion
@@ -115,7 +115,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         if object_score_m1 is not None:
             memory_encoding = self.missing_obj_encoder(memory_encoding, object_score_m1)
 
-        return memory_encoding
+        return (lowres_image_encoding_bchw, memory_encoding)
 
     # .................................................................................................................
 
@@ -133,9 +133,9 @@ class NoObjectEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, features_per_memory_token: int, multiplex_count: int = 16):
+    def __init__(self, features_per_memory_token: int, multiplex_channels: int = 16):
         super().__init__()
-        self.no_object_embed = nn.Parameter(torch.empty(1, multiplex_count, features_per_memory_token))
+        self.no_object_embed = nn.Parameter(torch.empty(1, multiplex_channels, features_per_memory_token))
 
     def forward(self, memory_encoding_bchw: Tensor, object_score_m1: Tensor) -> Tensor:
         """

@@ -265,13 +265,9 @@ class MemoryConcatenator(nn.Module):
             ptr_b, num_ptr_tokens, ptr_c = ptr_tokens.shape
 
             # Compute position encodings for pointer tokens
-            # -> This is done in an odd way...
-            # -> There are N unique pointers, but each has 16 (by default) 'multiplex' entries
-            # -> We generate N position encodings and then need to repeat them to account for multiplexing
             ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, previous_is_recent_first)
-            multiplex_per_ptr = num_ptr_tokens // (num_prompt_pointers + num_prev_pointers)
-            ptrs_posenc = ptrs_posenc.repeat_interleave(multiplex_per_ptr, dim=0)
-            ptrs_posenc = ptrs_posenc.unsqueeze(0).expand(ptr_b, -1, -1)
+            if ptr_b > 1:
+                ptrs_posenc = ptrs_posenc.expand(ptr_b, -1, -1)
             assert (
                 num_ptr_tokens == ptrs_posenc.shape[1]
             ), f"Obj. pointer position encoding error! Mismatching shapes: {ptr_tokens.shape} vs. {ptrs_posenc.shape}"
@@ -390,7 +386,7 @@ class ObjectPointerPosEnc(nn.Module):
         previous_is_recent_first: bool = True,
     ) -> Tensor:
         """
-        Creates a position encoding tensor of shape: NxF
+        Creates a position encoding tensor of shape: 1xNxF
         -> N is total number of tokens (equal to 4 times the total number of pointers, by default)
         -> F is features per memory token (256 by default)
         """
@@ -426,6 +422,7 @@ class ObjectPointerPosEnc(nn.Module):
         # -> Result has shape: NxF, where N is total number of pointers, F is features per memory token (256 by default)
         ptrs_posenc = self.pointer_pos_proj(pos_embed)
 
-        return ptrs_posenc
+        # Add batch dimension for final output, shape: BxNxF
+        return ptrs_posenc.unsqueeze(0)
 
     # .................................................................................................................

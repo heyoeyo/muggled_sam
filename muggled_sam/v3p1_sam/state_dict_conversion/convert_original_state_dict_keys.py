@@ -19,11 +19,10 @@ from torch import Tensor
 class SAM3ModuleType:
     image_encoder = "image_encoder"
     image_projection = "image_projection"
-    image_coordinate_encoder = "image_coordinate_encoder"
-    video_coordinate_encoder = "video_coordinate_encoder"
+    coordinate_encoder = "coordinate_encoder"
     prompt_encoder = "prompt_encoder"
-    image_mask_decoder = "image_mask_decoder"
-    video_mask_decoder = "video_mask_decoder"
+    mask_decoder = "mask_decoder"
+    multiplex_video_masking = "multiplex_video_masking"
     memory_encoder = "memory_encoder"
     memory_image_fusion = "memory_image_fusion"
     text_encoder = "text_encoder"
@@ -107,7 +106,7 @@ def convert_state_dict_keys(
                 continue
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_module_type in (SAM3ModuleType.image_coordinate_encoder, SAM3ModuleType.video_coordinate_encoder):
+        elif sam_module_type == SAM3ModuleType.coordinate_encoder:
 
             # Skip unused keys
             new_key = _convert_coordencoder_keys(orig_key)
@@ -123,7 +122,7 @@ def convert_state_dict_keys(
                 continue
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 
-        elif sam_module_type in (SAM3ModuleType.image_mask_decoder, SAM3ModuleType.video_mask_decoder):
+        elif sam_module_type == SAM3ModuleType.mask_decoder:
 
             # Skip unused keys
             new_key = _convert_maskdecoder_keys(orig_key)
@@ -134,13 +133,49 @@ def convert_state_dict_keys(
             layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.norm")
             new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
-            # Reshape multiplex embeddings to 1xMx1xC from MxC originally (M is multiplex count, C channels))
-            if "multiplex_encoder." in new_key:
-                new_data = new_data.unsqueeze(1).unsqueeze(0)
-
             # Add batch dimension to cls tokens
             if "cls_" in new_key:
                 new_data = new_data.unsqueeze(0)
+
+            _update_sd(sam_module_type, orig_key, new_key, new_data)
+
+        elif sam_module_type == SAM3ModuleType.multiplex_video_masking:
+
+            # Try to convert as mask decoder or coord. encoder keys
+            new_maskdec_key = _convert_maskdecoder_keys(orig_key)
+            is_maskdec_key = new_maskdec_key is not None
+            is_coordenc_key = False
+            if not is_maskdec_key:
+                new_coordenc_key = _convert_coordencoder_keys(orig_key)
+                is_coordenc_key = new_coordenc_key is not None
+
+            # Skip unused keys
+            if not (is_maskdec_key or is_coordenc_key):
+                continue
+
+            # Handle (nested) coord encoder key
+            if is_coordenc_key:
+                new_key = f"coordinate_encoder.{new_coordenc_key}"
+
+            # Handle (nested) mask decoder keys
+            if is_maskdec_key:
+
+                new_key = new_maskdec_key
+
+                # Correct layernorm2d weight shapes
+                layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.norm")
+                new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
+
+                # Reshape multiplex embeddings to 1xMx1xC from MxC originally (M is multiplex count, C channels))
+                if "multiplex_encoder." in new_key:
+                    new_data = new_data.unsqueeze(1).unsqueeze(0)
+
+                # Add batch dimension to cls tokens
+                if "cls_" in new_key:
+                    new_data = new_data.unsqueeze(0)
+
+                # Prepend decoder prefix, since mplex masking uses a nested copy!
+                new_key = f"mask_decoder.{new_key}"
 
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 
@@ -319,38 +354,38 @@ def get_module_type(key: str) -> SAM3ModuleType:
             return SAM3ModuleType.memory_encoder
         elif key.endswith("gaussian_matrix"):
             if key.startswith("tracker.model.interactive_"):
-                return SAM3ModuleType.image_coordinate_encoder
-            return SAM3ModuleType.video_coordinate_encoder
+                return SAM3ModuleType.coordinate_encoder
+            return SAM3ModuleType.multiplex_video_masking
         elif key.startswith("tracker.model.interactive_sam_prompt_encoder"):
             if "mask" in key:
-                return SAM3ModuleType.image_mask_decoder
+                return SAM3ModuleType.mask_decoder
             return SAM3ModuleType.prompt_encoder
         elif key.startswith("tracker.model.sam_mask_decoder"):
             if ".conv_" in key:
                 return SAM3ModuleType.image_projection
-            return SAM3ModuleType.video_mask_decoder
+            return SAM3ModuleType.multiplex_video_masking
         elif key.startswith("tracker.model.interactive_sam_mask_decoder"):
             if ".conv_" in key:
                 return SAM3ModuleType.image_projection
-            return SAM3ModuleType.image_mask_decoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.model.obj_ptr_proj"):
-            return SAM3ModuleType.video_mask_decoder
+            return SAM3ModuleType.multiplex_video_masking
         elif key.startswith("tracker.model.interactive_obj_ptr_proj"):
-            return SAM3ModuleType.image_mask_decoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.model.no_obj_ptr_linear"):
-            return SAM3ModuleType.video_mask_decoder
+            return SAM3ModuleType.multiplex_video_masking
         elif key.startswith("tracker.model.mask_downsample"):
             return SAM3ModuleType.unknown
         elif key.startswith("tracker.model.interactive_mask_downsample"):
-            return SAM3ModuleType.image_mask_decoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.model.interactivity_no_mem_embed"):
             return SAM3ModuleType.memory_image_fusion
         elif key.endswith("valid_embed"):
-            return SAM3ModuleType.video_mask_decoder
+            return SAM3ModuleType.multiplex_video_masking
         elif key.startswith("tracker.model.no_obj"):
             if key == "tracker.model.no_obj_embed_spatial":
                 return SAM3ModuleType.memory_encoder
-            return SAM3ModuleType.image_mask_decoder
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.model.obj_ptr_tpos_proj"):
             return SAM3ModuleType.memory_image_fusion
         elif key == "tracker.model.maskmem_tpos_enc":

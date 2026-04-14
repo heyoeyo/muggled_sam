@@ -32,6 +32,11 @@ class SAMV3p1MaskDecoder(nn.Module):
     https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/multiplex_mask_decoder.py#L16
     https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/sam/mask_decoder.py#L14
 
+    To support the v3.1 updates, there is now a dedicated 'multiplex mask decoder' which wraps
+    around this module. In the non-multiplex use case, this module behaves exactly the same as in
+    SAMv3.0, however there are some minor 'toggle flags' added to this module to enable
+    support for multiplexing
+
     In the v3.1 update, there are a number of small changes that complicate the implementation
     of the mask decoder. Most of these changes are related to the handling of 'multiplex' masks,
     which change the shape of many of the internal tensors.
@@ -63,28 +68,28 @@ class SAMV3p1MaskDecoder(nn.Module):
         num_layers: int = 2,
         num_heads: int = 8,
         num_mask_tokens: int = 4,
-        multiplex_count: int = 1,
+        multiplex_channels: int = 1,
     ):
 
         # Inherit from parent
         super().__init__()
 
         # Check if multiplexing is enabled (e.g. for video-mask-decoding)
-        is_mplex = multiplex_count > 1
+        is_mplex = multiplex_channels > 1
 
         # Set up model for handling input mask hints for improving segmentation results
         self.maskhint_encoder = MaskHintEncoderVideo() if is_mplex else MaskHintEncoderImage(input_channels)
 
         # Set up model to encode which mask entries are being multiplexed
         self.multiplex_encoder = (
-            MultiplexEncoderVideo(input_channels, multiplex_count) if is_mplex else MultiplexEncoderImage()
+            MultiplexEncoderVideo(input_channels, multiplex_channels) if is_mplex else MultiplexEncoderImage()
         )
-        self._multiplex_mnc_shape = (multiplex_count, num_mask_tokens, input_channels)
+        self._multiplex_mnc_shape = (multiplex_channels, num_mask_tokens, input_channels)
 
         # Set up cls-like embeddings, which are combined with prompt embeddings as input into transformer
-        self.cls_obj_token = nn.Parameter(torch.empty(1, multiplex_count, input_channels))
-        self.cls_iou_token = nn.Parameter(torch.empty(1, multiplex_count, input_channels))
-        self.cls_mask_tokens = nn.Parameter(torch.empty(1, num_mask_tokens * multiplex_count, input_channels))
+        self.cls_obj_token = nn.Parameter(torch.empty(1, multiplex_channels, input_channels))
+        self.cls_iou_token = nn.Parameter(torch.empty(1, multiplex_channels, input_channels))
+        self.cls_mask_tokens = nn.Parameter(torch.empty(1, num_mask_tokens * multiplex_channels, input_channels))
 
         # Create transformer decoder
         self.transformer = MaskDecoderTransformer(num_layers, num_heads, input_channels, downsample_dim)
@@ -104,7 +109,7 @@ class SAMV3p1MaskDecoder(nn.Module):
         encoded_image_tokens_list_bchw: Tensor,
         encoded_prompts_bnc: Tensor,
         grid_positional_encoding: Tensor,
-        mask_hint: Tensor | int | None = None,
+        mask_hint: Tensor | None = None,
         blank_promptless_output: bool = True,
         num_multiplex_objects: int = 1,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -122,15 +127,22 @@ class SAMV3p1MaskDecoder(nn.Module):
         If 'blank_promptless_output' is true and no prompts are given, then a fully
         'blank' result will be returned instead of running the full decoder.
 
+        The 'num_multiplex_objects' input is only for use with multiplexing
+        (during video segmentation). It indicates how many of the built-in
+        multiplex outputs (16 by default) are being used. Mask quality will
+        be slightly degraded if there is a mismatch between this value and
+        the 'true' mask count being used
+
         Returns:
             mask_predictions, iou_predictions, object_pointers, object_score
-            -> Mask prediction has shape: Bx4xHxW
-            -> IoU has shape: Bx4
-            -> Object pointer has shape: Bx4xF (F is features per token, default 256)
+            -> Mask prediction has shape: BxNxHxW (N 'ambiguity' masks, 4 by default)
+            -> IoU has shape: BxN
+            -> Object pointer has shape: BxNxF (F is features per token, default 256)
             -> Object score has shape Bx1 and indicates (score > 0) if an object is masked
             -> Mask H & W are 4x the size of the image patch encoding size
             -> The 0-th mask was originally intended to be used in cases with
                many prompts, and not to be used with single points/box prompts
+            -> Multiplexed outputs are stored in the batch (B) dimension!
         """
 
         # For clarity
@@ -162,7 +174,7 @@ class SAMV3p1MaskDecoder(nn.Module):
         iou_token_out = encoded_prompt_tokens[:, slice_iou_tokens, :]
         mask_tokens_out = encoded_prompt_tokens[:, slice_mask_tokens, :]
 
-        # Split multiplex tokens (takes shape from Bx(M*N)xC -to-> BxMxNxC)
+        # Separate multiplex & ambiguity entries (takes shape from Bx(M*N)xC -to-> BxMxNxC)
         mask_tokens_bmnc = mask_tokens_out.view(batch_size_prompts, *self._multiplex_mnc_shape)
 
         # Produce final output mask & quality predictions
@@ -537,14 +549,14 @@ class MultiplexEncoderVideo(nn.Module):
 
     # .................................................................................................................
 
-    def __init__(self, features_per_token: int = 256, multiplex_count: int = 16):
+    def __init__(self, features_per_token: int = 256, multiplex_channels: int = 16):
 
         # Inherit from parent
         super().__init__()
 
         # Embeddings used to represent 'active' and 'inactive' multiplex indexes
-        self.embed_active = nn.Parameter(torch.empty((1, multiplex_count, 1, features_per_token)))
-        self.embed_inactive = nn.Parameter(torch.empty((1, multiplex_count, 1, features_per_token)))
+        self.embed_active = nn.Parameter(torch.empty((1, multiplex_channels, 1, features_per_token)))
+        self.embed_inactive = nn.Parameter(torch.empty((1, multiplex_channels, 1, features_per_token)))
 
     def forward(self, mask_tokens_bnc: Tensor, num_active_multiplex: int = 1):
 

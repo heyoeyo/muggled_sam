@@ -15,6 +15,7 @@ from .image_projection_model import SAMV3p1ImageProjection
 from .coordinate_encoder_model import SAMV3p1CoordinateEncoder
 from .prompt_encoder_model import SAMV3p1PromptEncoder
 from .mask_decoder_model import SAMV3p1MaskDecoder
+from .multiplex_video_masking_model import SAMV3p1MultiplexVideoMasking
 from .memory_encoder_model import SAMV3p1MemoryEncoder
 from .memory_image_fusion_model import SAMV3p1MemoryImageFusion
 from .text_encoder_model import SAMV3p1TextEncoder
@@ -99,15 +100,12 @@ def make_samv3p1_from_original_state_dict(
     # Image encoding & masking
     sam_model.image_encoder.load_state_dict(new_state_dict[SAM3ModuleType.image_encoder], strict_load)
     sam_model.image_projection.load_state_dict(new_state_dict[SAM3ModuleType.image_projection], strict_load)
-    sam_model.image_coordinate_encoder.load_state_dict(
-        new_state_dict[SAM3ModuleType.image_coordinate_encoder], strict_load
-    )
-    sam_model.video_coordinate_encoder.load_state_dict(
-        new_state_dict[SAM3ModuleType.video_coordinate_encoder], strict_load
-    )
+    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM3ModuleType.coordinate_encoder], strict_load)
     sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM3ModuleType.prompt_encoder], strict_load)
-    sam_model.image_mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.image_mask_decoder], strict_load)
-    sam_model.video_mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.video_mask_decoder], strict_load)
+    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.mask_decoder], strict_load)
+    sam_model.multiplex_video_masking.load_state_dict(
+        new_state_dict[SAM3ModuleType.multiplex_video_masking], strict_load
+    )
 
     # Video components
     sam_model.memory_encoder.load_state_dict(new_state_dict[SAM3ModuleType.memory_encoder], strict_load)
@@ -191,9 +189,9 @@ def make_sam_v3p1(
     imgencoder_window_size=24,
     maskdecoder_num_blocks=2,
     maskdecoder_num_heads=8,
-    maskdecoder_num_img_mask_tokens=4,
-    maskdecoder_num_vid_mask_tokens=3,
-    video_multiplex_count=16,
+    maskdecoder_num_mask_tokens=4,
+    maskdecoder_num_mplex_mask_tokens=3,
+    maskdecoder_multiplex_channels=16,
     memencoder_num_downsample_layers=4,
     memencoder_num_mixer_layers=2,
     memimgfusion_num_fusion_layers=4,
@@ -236,24 +234,24 @@ def make_sam_v3p1(
         imgencoder_window_size,
     )
     imgproj_model = SAMV3p1ImageProjection(imgencoder_features, features_per_prompt_token, features_per_detection_token)
-    img_coordenc_model = SAMV3p1CoordinateEncoder(features_per_prompt_token)
-    vid_coordenc_model = SAMV3p1CoordinateEncoder(features_per_prompt_token)
+    coordenc_model = SAMV3p1CoordinateEncoder(features_per_prompt_token)
     promptenc_model = SAMV3p1PromptEncoder(features_per_prompt_token)
-    image_maskdec_model = SAMV3p1MaskDecoder(
+    maskdec_model = SAMV3p1MaskDecoder(
         features_per_prompt_token,
         features_per_decoder_token,
         maskdecoder_num_blocks,
         maskdecoder_num_heads,
-        maskdecoder_num_img_mask_tokens,
-        multiplex_count=1,
+        maskdecoder_num_mask_tokens,
+        multiplex_channels=1,
     )
-    video_maskdec_model = SAMV3p1MaskDecoder(
+    mplex_masking_model = SAMV3p1MultiplexVideoMasking(
         features_per_prompt_token,
         features_per_decoder_token,
         maskdecoder_num_blocks,
         maskdecoder_num_heads,
-        maskdecoder_num_vid_mask_tokens,
-        multiplex_count=video_multiplex_count,
+        maskdecoder_num_mplex_mask_tokens,
+        num_output_masks=maskdecoder_num_mask_tokens,
+        multiplex_channels=maskdecoder_multiplex_channels,
     )
 
     # Video components
@@ -262,7 +260,7 @@ def make_sam_v3p1(
         features_per_memory_token,
         num_downsample_layers=memencoder_num_downsample_layers,
         num_mixer_layers=memencoder_num_mixer_layers,
-        multiplex_count=video_multiplex_count,
+        multiplex_channels=maskdecoder_multiplex_channels,
     )
     memfuse_model = SAMV3p1MemoryImageFusion(
         features_per_prompt_token,
@@ -293,11 +291,10 @@ def make_sam_v3p1(
     return SAMV3p1Model(
         imgenc_model,
         imgproj_model,
-        img_coordenc_model,
-        vid_coordenc_model,
+        coordenc_model,
         promptenc_model,
-        image_maskdec_model,
-        video_maskdec_model,
+        maskdec_model,
+        mplex_masking_model,
         memenc_model,
         memfuse_model,
         txtenc_model,

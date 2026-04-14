@@ -20,8 +20,8 @@ def get_model_config_from_state_dict(state_dict):
     imgenc_num_stages, imgenc_window_size = get_image_encoder_freqs_data(state_dict)
 
     # Figure out separate mask token counts
-    video_multiplex_count = get_mask_decoder_multiplex_count(state_dict)
-    num_img_mask_tokens, num_vid_mask_tokens = get_num_output_mask_tokens(state_dict, video_multiplex_count)
+    video_multiplex_channels = get_mask_decoder_multiplex_channels(state_dict)
+    num_mask_tokens, num_mplex_mask_tokens = get_num_output_mask_tokens(state_dict, video_multiplex_channels)
 
     # Generally it's not possible to determine the number of heads from weights directly
     hardcoded_maskdec_num_heads = 8
@@ -55,9 +55,9 @@ def get_model_config_from_state_dict(state_dict):
         "imgencoder_window_size": imgenc_window_size,
         "maskdecoder_num_blocks": get_mask_decoder_block_count(state_dict),
         "maskdecoder_num_heads": hardcoded_maskdec_num_heads,
-        "maskdecoder_num_img_mask_tokens": num_img_mask_tokens,
-        "maskdecoder_num_vid_mask_tokens": num_vid_mask_tokens,
-        "video_multiplex_count": video_multiplex_count,
+        "maskdecoder_num_mask_tokens": num_mask_tokens,
+        "maskdecoder_num_mplex_mask_tokens": num_mplex_mask_tokens,
+        "maskdecoder_multiplex_channels": video_multiplex_channels,
         "memencoder_num_downsample_layers": get_memory_encoder_downsample_layer_count(state_dict),
         "memencoder_num_mixer_layers": get_memory_encoder_mixer_layer_count(state_dict),
         "memimgfusion_num_fusion_layers": get_memory_image_fusion_layer_count(state_dict),
@@ -275,7 +275,7 @@ def get_features_per_prompt_token(state_dict):
 # .....................................................................................................................
 
 
-def get_num_output_mask_tokens(state_dict, multiplex_count: int = 16):
+def get_num_output_mask_tokens(state_dict, multiplex_channels: int = 16):
 
     target_key_1 = "tracker.model.interactive_sam_mask_decoder.mask_tokens.weight"
     assert (
@@ -290,7 +290,7 @@ def get_num_output_mask_tokens(state_dict, multiplex_count: int = 16):
     num_image_mask_tokens, _ = state_dict[target_key_1].shape
     num_total_video_mask_tokens, _ = state_dict[target_key_2].shape
 
-    num_video_tokens = num_total_video_mask_tokens // multiplex_count
+    num_video_tokens = num_total_video_mask_tokens // multiplex_channels
 
     return int(num_image_mask_tokens), int(num_video_tokens)
 
@@ -324,11 +324,11 @@ def get_mask_decoder_block_count(state_dict):
 # .....................................................................................................................
 
 
-def get_mask_decoder_multiplex_count(state_dict):
+def get_mask_decoder_multiplex_channels(state_dict):
     target_key = "tracker.model.sam_mask_decoder.iou_token.weight"
-    assert target_key in state_dict.keys(), f"Error determining video multiplex count! Couldn't find key: {target_key}"
-    multiplex_count, _ = state_dict[target_key].shape
-    return int(multiplex_count)
+    assert target_key in state_dict.keys(), f"Error determining multiplex channels! Couldn't find key: {target_key}"
+    multiplex_channels, _ = state_dict[target_key].shape
+    return int(multiplex_channels)
 
 
 # ---------------------------------------------------------------------------------------------------------------------

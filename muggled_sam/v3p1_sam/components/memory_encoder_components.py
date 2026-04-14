@@ -46,7 +46,7 @@ class MaskDownsampler(nn.Module):
         self,
         features_per_image_token: int = 256,
         num_layers: int = 4,
-        multiplex_count: int = 16,
+        multiplex_channels: int = 16,
         downsample_per_layer: int = 2,
         kernel_size: int = 3,
     ):
@@ -59,7 +59,7 @@ class MaskDownsampler(nn.Module):
         # -> Now expect 'multiplexed' input (2*16 channels by default)
         # -> Add 4x as many channels per layer compared to SAMv2/v3 (presumably to help encode combined mask data)
         channel_upsample_factor = downsample_per_layer**2
-        channel_seq = [2 * multiplex_count]
+        channel_seq = [2 * multiplex_channels]
         channel_seq.extend(16 * channel_upsample_factor**idx for idx in range(num_layers))
 
         # For clarity
@@ -84,7 +84,7 @@ class MaskDownsampler(nn.Module):
 
         # Store run-time variables
         self._downsample_factor = int(downsample_per_layer**num_layers)
-        self._multiplex_count = multiplex_count
+        self._multiplex_channels = multiplex_channels
         self._in_channel_count = channel_seq[0]
 
         # Hard-coded scaling/offset values from original implementation, see:
@@ -154,8 +154,8 @@ class MaskDownsampler(nn.Module):
         # Generate zero padding so we have the right number of multiplex entries (possibly with batch size > 1)
         # -> For example, for a multiplex of 16 (default), if we get 40 masks, we
         #    need to zero pad to 48 entries, so we can form a 3x16 tensor (batch size of 3)
-        num_multiplex_batches = torch.ceil(torch.tensor(mask_m / self._multiplex_count)).int()
-        num_zero_pad = (num_multiplex_batches * self._multiplex_count) - mask_m
+        num_multiplex_batches = torch.ceil(torch.tensor(mask_m / self._multiplex_channels)).int()
+        num_zero_pad = (num_multiplex_batches * self._multiplex_channels) - mask_m
         zero_pad_entries = torch.zeros((mask_b, num_zero_pad, hires_h, hires_w), device=device, dtype=dtype)
 
         # Pad, reshape (if needed) and merge mask with multiplex flags, following (strange) format introduced in v3.1
@@ -163,7 +163,7 @@ class MaskDownsampler(nn.Module):
         padded_hires_mask = torch.concat((hires_mask, zero_pad_entries), dim=1)
         padded_prompt_flags = torch.concat((is_prompt_flags, zero_pad_entries), dim=1)
         if num_multiplex_batches != mask_b:
-            batched_shape = (num_multiplex_batches, self._multiplex_count, hires_h, hires_w)
+            batched_shape = (num_multiplex_batches, self._multiplex_channels, hires_h, hires_w)
             padded_hires_mask = padded_hires_mask.reshape(*batched_shape)
             padded_prompt_flags = padded_prompt_flags.reshape(*batched_shape)
         padded_hires_mask = torch.concat((padded_hires_mask, padded_prompt_flags), dim=1)

@@ -21,6 +21,7 @@ from .image_projection_model import SAMV3p1ImageProjection
 from .coordinate_encoder_model import SAMV3p1CoordinateEncoder
 from .prompt_encoder_model import SAMV3p1PromptEncoder
 from .mask_decoder_model import SAMV3p1MaskDecoder
+from .multiplex_video_masking_model import SAMV3p1MultiplexVideoMasking
 from .memory_encoder_model import SAMV3p1MemoryEncoder
 from .memory_image_fusion_model import SAMV3p1MemoryImageFusion
 from .text_encoder_model import SAMV3p1TextEncoder
@@ -45,8 +46,6 @@ class SAMV3p1Model(nn.Module):
     segmentation (e.g. SAMv1 task), video segmentation (e.g SAMv2 task) and detection (SAMv3 task).
     All tasks share the same base image encoder, but each uses different projections of the
     encoded image tokens and generally each has fully separate components.
-    Internally, the v1/v2 tasks are denoted by 'image' vs. 'video', for example:
-        'image_coordinate_encoder' vs. 'video_coordinate_encoder'
 
     These separate models lead to very different use cases and as such, the functionality of
     this model comes from calling specific methods for different use cases
@@ -61,11 +60,10 @@ class SAMV3p1Model(nn.Module):
         self,
         image_encoder_model: SAMV3p1ImageEncoder,
         image_projection_model: SAMV3p1ImageProjection,
-        image_coordinate_encoder_model: SAMV3p1CoordinateEncoder,
-        video_coordinate_encoder_model: SAMV3p1CoordinateEncoder,
+        coordinate_encoder_model: SAMV3p1CoordinateEncoder,
         prompt_encoder_model: SAMV3p1PromptEncoder,
-        image_mask_decoder_model: SAMV3p1MaskDecoder,
-        video_mask_decoder_model: SAMV3p1MaskDecoder,
+        mask_decoder_model: SAMV3p1MaskDecoder,
+        multiplex_video_masking_model: SAMV3p1MultiplexVideoMasking,
         memory_encoder_model: SAMV3p1MemoryEncoder,
         memory_image_fusion_model: SAMV3p1MemoryImageFusion,
         text_encoder_model: SAMV3p1TextEncoder,
@@ -85,11 +83,10 @@ class SAMV3p1Model(nn.Module):
         # Store base SAM components
         self.image_encoder = image_encoder_model
         self.image_projection = image_projection_model
-        self.image_coordinate_encoder = image_coordinate_encoder_model
-        self.video_coordinate_encoder = video_coordinate_encoder_model
+        self.coordinate_encoder = coordinate_encoder_model
         self.prompt_encoder = prompt_encoder_model
-        self.image_mask_decoder = image_mask_decoder_model
-        self.video_mask_decoder = video_mask_decoder_model
+        self.mask_decoder = mask_decoder_model
+        self.multiplex_video_masking = multiplex_video_masking_model
 
         # Video tracking components caried over from SAMv2
         self.memory_encoder = memory_encoder_model
@@ -139,7 +136,7 @@ class SAMV3p1Model(nn.Module):
         # Combine encodings to generate mask output
         patch_grid_hw = encoded_image.shape[2:]
         grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-        mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.image_coordinate_encoder(
+        mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.coordinate_encoder(
             encoded_image, encoded_prompts, grid_posenc, mask_hint
         )
 
@@ -178,9 +175,9 @@ class SAMV3p1Model(nn.Module):
         """
 
         with _inference_mode(self._infmode):
-            boxes_tensor = self.image_coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
-            fg_tensor, bg_tensor = self.image_coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
-            box_posenc, fg_posenc, bg_posenc = self.image_coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
+            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
+            fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
+            box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
             encoded_prompts = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
 
         return encoded_prompts
@@ -263,8 +260,8 @@ class SAMV3p1Model(nn.Module):
         patch_grid_hw = v1_encimgs[0].shape[2:]
 
         with _inference_mode(self._infmode):
-            grid_posenc = self.image_coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds_mnhw, iou_preds_mn, _, _ = self.image_mask_decoder(
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
+            mask_preds_mnhw, iou_preds_mn, _, _ = self.mask_decoder(
                 v1_encimgs, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 
@@ -306,11 +303,11 @@ class SAMV3p1Model(nn.Module):
             v1_encimgs, v2_encimgs, _ = encoded_image_features_list
             v1_lowres_imgenc = v1_encimgs[0]
             token_hw = v1_lowres_imgenc.shape[2:]
-            device, dtype = v1_lowres_imgenc.device, v1_lowres_imgenc.dtype
+            device = v1_lowres_imgenc.device
 
             # Generate mask prediction from image/prompt encodings, as usual
-            grid_posenc = self.image_coordinate_encoder.get_grid_position_encoding(token_hw)
-            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.image_mask_decoder(
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
+            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.mask_decoder(
                 v1_encimgs,
                 encoded_prompts,
                 grid_posenc,
@@ -320,29 +317,22 @@ class SAMV3p1Model(nn.Module):
 
             # Fill in missing index with 'best' based on IoU
             if mask_index_select is None:
-                mask_index_select = self.video_mask_decoder.get_best_mask_index(iou_preds_mn)
+                mask_index_select = self.get_best_mask_index(iou_preds_mn)
 
             # Make sure we have a slice/tensor-style index
             if isinstance(mask_index_select, int):
                 mask_index_select = torch.tensor([mask_index_select], dtype=torch.int64, device=device)
 
-            # For clarity
-            v2_lowres_imgenc = v2_encimgs[0]
-            best_mask_pred_mnhw = mask_preds_mnhw[:, mask_index_select, :, :]
+            # For clarity. Get 'best' result (should only be 1) and shuffle dimensions around
             is_prompt_enc = True
+            v2_lowres_imgenc = v2_encimgs[0]
+            best_mask_pred_1mhw = mask_preds_mnhw[:, mask_index_select, :, :].squeeze(1).unsqueeze(0)
+            best_obj_ptr_1mc = obj_ptrs_mnc[:, mask_index_select, :].squeeze(1).unsqueeze(0)  # MxNxC -> Mx1xC -> 1xMxC
 
             # Encode new memory features
-            memory_encoding = self.memory_encoder(v2_lowres_imgenc, best_mask_pred_mnhw, obj_score_m1, is_prompt_enc)
+            memory_encoding = self.memory_encoder(v2_lowres_imgenc, best_mask_pred_1mhw, obj_score_m1, is_prompt_enc)
 
-            # Add missing 'multiplex' entries to pointer (image mask decoder doesn't generate these!)
-            best_obj_ptr_bmc = obj_ptrs_mnc[:, mask_index_select, :].squeeze(1).unsqueeze(0)
-            ptr_b, ptr_m, ptr_c = best_obj_ptr_bmc.shape
-            pad_ptr_bmc = torch.zeros((ptr_b, 16 - ptr_m, ptr_c), device=device, dtype=dtype)
-            best_obj_ptr_bmc = torch.concat((best_obj_ptr_bmc, pad_ptr_bmc), dim=1)
-
-        # v3.1 uses both the memory encoding & low-res frame tokens, so bundle them together
-        bundled_mem_v3p1 = (v2_lowres_imgenc, memory_encoding)
-        return best_mask_pred_mnhw, bundled_mem_v3p1, best_obj_ptr_bmc
+        return best_mask_pred_1mhw, memory_encoding, best_obj_ptr_1mc
 
     # .................................................................................................................
 
@@ -350,7 +340,7 @@ class SAMV3p1Model(nn.Module):
         self,
         encoded_image_features_list: list[Tensor],
         mask_image: ndarray | Tensor,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[tuple[Tensor, Tensor], Tensor]:
         """
         Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
         to begin tracking an object.
@@ -409,13 +399,12 @@ class SAMV3p1Model(nn.Module):
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
             obj_score_b1 = torch.full((mask_b, 1), 10.0, device=device, dtype=dtype)
             memory_encoding = self.memory_encoder(v2_lowres_imgenc, mask_tensor, obj_score_b1, is_prompt_encoding=True)
-            bundled_mem_v3p1 = (v2_lowres_imgenc, memory_encoding)
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
-            mem_b, mem_c, _, _ = memory_encoding.shape
-            blank_ptr_bmc = torch.zeros((1, 16, mem_c), device=device, dtype=dtype)
+            mem_b, mem_c, _, _ = memory_encoding[1].shape
+            blank_ptr_bmc = torch.zeros((mem_b, 1, mem_c), device=device, dtype=dtype)
 
-        return bundled_mem_v3p1, blank_ptr_bmc
+        return memory_encoding, blank_ptr_bmc
 
     # .................................................................................................................
 
@@ -427,7 +416,7 @@ class SAMV3p1Model(nn.Module):
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
         num_multiplex_objects: int = 1,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, tuple[Tensor, Tensor], Tensor]:
         """
         Function which makes segmentation predictions for consecutive frames of
         an input video. It takes in the encoded video frame data along with prior
@@ -446,12 +435,12 @@ class SAMV3p1Model(nn.Module):
                values below 0 indicate lost tracking. Has shape: Mx1 (M multiplex outputs)
             -> best_mask_index is the index of the highest iou score. Has shape: M (one index for each multiplex mask)
             -> mask_predictions are the same as with image segmentation, has shape: Mx4xHxW
-            -> memory_encoding should be passed back in on future frames, has shape: BxFxH'xW'
-            -> best_object_pointer should be passed back in on future frames, has shape: 1xMxF
+            -> memory_encoding should be passed back in on future frames, it's a 2-tuple both with shape: BxCxH'xW'
+            -> best_object_pointer should be passed back in on future frames, has shape: 1xMxC
 
-            The HxW of masks will be 1/4 of the input height and width (256x256 for default 1024 sizing).
-            The memory encoding H'xW' is 4 times smaller than the mask sizing (64x64 by default).
-            The memory & pointer features F are model configs (256 by default)
+            The memory encoding shape H'xW' is the same size as the image encoding (72x72 by default).
+            The HxW of masks will be 4x the size of the memory encodings (288x288 by default)
+            The memory & pointer features C are model configs (256 by default)
         """
 
         with _inference_mode(self._infmode):
@@ -469,68 +458,30 @@ class SAMV3p1Model(nn.Module):
                 previous_object_pointers,
             )
 
-            # Run mask decoder on memory-fused features
+            # Run (video) mask decoder on memory-fused features
             # Called '_forward_sam_heads' in original code (specifically the 'Multiplexed propagation path' branch)
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L785-L787
-            patch_grid_hw = memfused_encimg.shape[-2:]
-            grid_posenc = self.video_coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.video_mask_decoder(
-                [memfused_encimg, *hires_imgenc],
-                self.prompt_encoder.create_video_no_prompt_encoding(),
-                grid_posenc,
-                mask_hint=None,
-                blank_promptless_output=False,
-                num_multiplex_objects=num_multiplex_objects,
+            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.multiplex_video_masking(
+                memfused_encimg, hires_imgenc, num_multiplex_objects
             )
 
-            # The video mask decoder generates a 'multiplexed mask' output (16x3x288x288 masks by default)
-            # -> This is used for batched mask generation (called 'multiplexing'), introduced in SAMv3.1
-            # -> We don't want to encode junk multiplex masks, so we remove them before memory encoding
-            # -> This is referred to as 'demuxing' in the original code:
-            # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L819-L822
-            # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/multiplex_utils.py#L391
-            total_multiplex_count = mask_preds_mnhw.shape[0]
-            mask_preds_mnhw = mask_preds_mnhw[:num_multiplex_objects]
-            iou_preds_mn = iou_preds_mn[:num_multiplex_objects]
-            obj_ptrs_mnc = obj_ptrs_mnc[:num_multiplex_objects]
-            obj_score_m1 = obj_score_m1[:num_multiplex_objects]
-
-            # Each mask prediction contains multiple (3 by default) options, here we select which to use
-            m_idx = torch.arange(num_multiplex_objects, device=iou_preds_mn.device)
-            best_idx = self.video_mask_decoder.get_best_mask_index(iou_preds_mn)
-
-            # For clarity
-            best_mask_1mhw = mask_preds_mnhw[m_idx, best_idx].unsqueeze(0)
-            best_objptr_1mc = obj_ptrs_mnc[m_idx, best_idx].unsqueeze(0)
-            is_prompt_enc = False
+            # Index out 'ambiguity' entries
+            best_idx_mplex, best_mask_1mhw, best_iou_pred_1m, best_objptr_1mc = (
+                self.multiplex_video_masking.get_best_decoder_results(mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc)
+            )
 
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_1mhw, obj_score_m1, is_prompt_enc)
-            bundled_mem_v3p1 = (lowres_imgenc, memory_encoding)
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_1mhw, obj_score_m1, is_prompt_encoding=False)
 
-            # Pad pointer back to fit 'multiplex' shape (needed for memory-image-fusion)
-            # -> It may make more sense to do this padding on the memory-image-fusion model,
-            #    however, these values are stored and re-used repeatedly. Doing the padding
-            #    here means it only needs to be done once (rather than everytime it's used elsewhere)
-            device, dtype = best_objptr_1mc.device, best_objptr_1mc.dtype
-            ptr_b, ptr_m, ptr_c = best_objptr_1mc.shape
-            pad_ptr = torch.zeros((ptr_b, total_multiplex_count - ptr_m, ptr_c), device=device, dtype=dtype)
-            best_objptr_1mc = torch.concat((best_objptr_1mc, pad_ptr), dim=1)
-
-            # Pad masks to have a 4th (blank) entry for inter-operability with SAM v2/v3.0 and interactive-mode
-            mask_m, _, mask_h, mask_w = mask_preds_mnhw.shape
-            pad_masks = torch.full((mask_m, 1, mask_h, mask_w), -10.0, device=device, dtype=dtype)
-            mask_preds_mnhw = torch.concat((mask_preds_mnhw, pad_masks), dim=1)
-
-        return obj_score_m1, best_idx, mask_preds_mnhw, bundled_mem_v3p1, best_objptr_1mc
+        return obj_score_m1, best_idx_mplex, mask_preds_mnhw, memory_encoding, best_objptr_1mc
 
     # .................................................................................................................
 
     def get_best_mask_index(self, iou_predictions: Tensor) -> int:
         """Returns the index of the highest IoU prediction score"""
-        return self.image_coordinate_encoder.get_best_mask_index(iou_predictions)
+        return self.mask_decoder.get_best_mask_index(iou_predictions)
 
     # .................................................................................................................
 
