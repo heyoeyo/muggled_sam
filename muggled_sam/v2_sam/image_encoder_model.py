@@ -140,17 +140,28 @@ class SAMV2ImageEncoder(nn.Module):
 
     def prepare_image(
         self,
-        image_bgr: ndarray,
+        image_bgr: ndarray | Tensor,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
-        pad_to_square: bool = False,
     ) -> Tensor:
         """
         Helper used to convert opencv-formatted images (e.g. from loading: cv2.imread(path_to_image)
         into the format needed by the image encoder model (includes scaling and RGB normalization steps)
+
+        Note: As a special case, a image tensor may be provided directly, with shape BxCxHxW.
+        This is meant as a pass-thru option to avoid requiring numpy arrays, but this will
+        skip all pre-processing steps so they must be done manually!
+
         Returns:
             image_as_tensor_bchw
         """
+
+        # Allow tensors as inputs
+        if isinstance(image_bgr, torch.Tensor):
+            image_tensor_bchw = image_bgr.to(device=self.mean_rgb.device, dtype=self.mean_rgb.dtype)
+            if image_tensor_bchw.ndim == 3:
+                image_tensor_bchw = image_tensor_bchw.unsqueeze(0)
+            return image_tensor_bchw
 
         # Fill in default sizing if not given
         if max_side_length is None:
@@ -184,14 +195,6 @@ class SAMV2ImageEncoder(nn.Module):
 
         # Perform mean/scale normalization
         image_tensor_bchw = (image_tensor_bchw - self.mean_rgb) * self.stdev_scale_rgb
-
-        # The original SAM implementation padded the short side of the image to form a square
-        # -> This results in more processing and isn't required in this implementation!
-        if pad_to_square:
-            pad_left, pad_top = 0, 0
-            pad_bottom = max_side_length - scaled_h
-            pad_right = max_side_length - scaled_w
-            image_tensor_bchw = nn.functional.pad(image_tensor_bchw, (pad_left, pad_right, pad_top, pad_bottom))
 
         return image_tensor_bchw
 

@@ -433,6 +433,34 @@ class SAMV2Model(nn.Module):
 
     # .................................................................................................................
 
+    def prepare_image_batch(
+        self,
+        images_bgr_list: list[ndarray],
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> Tensor:
+        """
+        Helper used to convert BGR image (from opencv) into the tensor format needed for image encoding
+        Expects a list of numpy arrays (BGR images) as input. Returns a single tensor of shape: BxCxHxW
+        """
+
+        # Prepare each image individually
+        img_tensors_list = []
+        for image_bgr in images_bgr_list:
+            img_tensor_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
+            img_tensors_list.append(img_tensor_bchw)
+
+        # Check that all images have the same size if square sizing isn't used
+        if not use_square_sizing:
+            all_h_list = [img.shape[2] for img in img_tensors_list]
+            all_w_list = [img.shape[3] for img in img_tensors_list]
+            assert all(all_h_list[0] == h for h in all_h_list), "Mismatched image heights (different aspect ratios)"
+            assert all(all_w_list[0] == w for w in all_w_list), "Mismatched image widths (different aspect ratios)"
+
+        return torch.concat(img_tensors_list, dim=0)
+
+    # .................................................................................................................
+
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         """
         Helper used to toggle internal 'with torch.inference_mode' on/off.

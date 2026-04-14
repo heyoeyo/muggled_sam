@@ -108,7 +108,7 @@ class SAMV3p1MaskDecoder(nn.Module):
         self,
         encoded_image_tokens_list_bchw: Tensor,
         encoded_prompts_bnc: Tensor,
-        grid_positional_encoding: Tensor,
+        image_posenc_bchw: Tensor,
         mask_hint: Tensor | None = None,
         blank_promptless_output: bool = True,
         num_multiplex_objects: int = 1,
@@ -148,6 +148,21 @@ class SAMV3p1MaskDecoder(nn.Module):
         # For clarity
         batch_size_prompts, num_prompts, enc_dim = encoded_prompts_bnc.shape
         lowres_tokens, hires_tokens_x2, hires_tokens_x4 = encoded_image_tokens_list_bchw
+        batch_size_image = lowres_tokens.shape[0]
+
+        # Handle batched inputs
+        if batch_size_image > 1 or batch_size_prompts > 1:
+            if batch_size_prompts == 1:
+                encoded_prompts_bnc = encoded_prompts_bnc.expand(batch_size_image, -1, -1)
+            if batch_size_image == 1:
+                lowres_tokens = lowres_tokens.expand(batch_size_prompts, -1, -1, -1)
+                hires_tokens_x2 = hires_tokens_x2.expand(batch_size_prompts, -1, -1, -1)
+                hires_tokens_x4 = hires_tokens_x4.expand(batch_size_prompts, -1, -1, -1)
+                image_posenc_bchw = image_posenc_bchw.expand(batch_size_prompts, -1, -1, -1)
+            batch_size_prompts, batch_size_image = encoded_prompts_bnc.shape[0], lowres_tokens.shape[0]
+            assert (
+                batch_size_prompts == batch_size_image
+            ), "Batch size mismatch! Cannot use different image/prompt batch sizes"
 
         # Concatenate learned 'cls' tokens, which will be prepended to prompts
         mask_tokens = self.multiplex_encoder(self.cls_mask_tokens, num_multiplex_objects)
@@ -160,14 +175,10 @@ class SAMV3p1MaskDecoder(nn.Module):
         slice_iou_tokens = slice(num_obj_tokens, num_obj_tokens + num_iou_tokens)
         slice_mask_tokens = slice(slice_iou_tokens.stop, cls_tokens_bnc.shape[1])
 
-        # Expand per-image data in batch direction to be per-mask, as well as the position encoding
-        img_tokens_bchw = self.maskhint_encoder(lowres_tokens, mask_hint)
-        img_tokens_bchw = torch.repeat_interleave(img_tokens_bchw, batch_size_prompts, dim=0)
-        img_posenc_bchw = torch.repeat_interleave(grid_positional_encoding, batch_size_prompts, dim=0)
-
         # Cross-encode image tokens with prompt tokens
+        img_tokens_bchw = self.maskhint_encoder(lowres_tokens, mask_hint)
         prompt_tokens = torch.cat((cls_tokens_bnc, encoded_prompts_bnc), dim=1)
-        encoded_prompt_tokens, encoded_img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, img_posenc_bchw)
+        encoded_prompt_tokens, encoded_img_tokens = self.transformer(prompt_tokens, img_tokens_bchw, image_posenc_bchw)
 
         # Extract the (now-encoded) 'cls' tokens by undoing the earlier cls concatenation step
         obj_token_out = encoded_prompt_tokens[:, slice_obj_tokens, :]

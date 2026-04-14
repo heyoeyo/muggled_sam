@@ -121,7 +121,7 @@ class SAMV3p1ImageEncoder(nn.Module):
 
     def prepare_image(
         self,
-        image_bgr: ndarray,
+        image_bgr: ndarray | Tensor,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
     ) -> Tensor:
@@ -139,9 +139,20 @@ class SAMV3p1ImageEncoder(nn.Module):
 
         Consider using the '.prepare_image_like_original' function if numerical consistency is needed
 
+        Note: As a special case, a image tensor may be provided directly, with shape BxCxHxW.
+        This is meant as a pass-thru option to avoid requiring numpy arrays, but this will
+        skip all pre-processing steps so they must be done manually!
+
         Returns:
             image_tensor_bchw
         """
+
+        # Allow tensors as inputs
+        if isinstance(image_bgr, torch.Tensor):
+            image_tensor_bchw = image_bgr.to(device=self.mean_rgb.device, dtype=self.mean_rgb.dtype)
+            if image_tensor_bchw.ndim == 3:
+                image_tensor_bchw = image_tensor_bchw.unsqueeze(0)
+            return image_tensor_bchw
 
         # Fill in default sizing if not given
         if max_side_length is None:
