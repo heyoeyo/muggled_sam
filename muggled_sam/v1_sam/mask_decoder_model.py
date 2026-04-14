@@ -106,10 +106,6 @@ class SAMV1MaskDecoder(nn.Module):
         # For clarity
         batch_size_prompts, num_prompts, enc_dim = encoded_prompts_bnc.shape
 
-        # Special case, return blank masks if no prompt is given
-        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
-            return self.maskgen.make_blank_results(encoded_image_bchw, batch_size_prompts)
-
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_iou_token, self.cls_mask_tokens], dim=0).unsqueeze(0)
         cls_tokens = cls_tokens.expand(batch_size_prompts, -1, -1)
@@ -132,6 +128,12 @@ class SAMV1MaskDecoder(nn.Module):
         # Produce final output mask & quality predictions
         mask_preds = self.maskgen(img_tokens_bchw, mask_tokens_out)
         iou_preds = self.iou_token_mlp(iou_token_out)
+
+        # Special case. Wipe out outputs if no prompt is given
+        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
+            mask_preds = 0 * mask_preds - 100.0
+            iou_preds = 0 * iou_preds
+            encoded_cls_tokens = 0 * encoded_cls_tokens
 
         return mask_preds, iou_preds, encoded_cls_tokens
 
@@ -198,28 +200,6 @@ class MaskGen(nn.Module):
 
         # Take dot product (along channel dimension) of cls tokens with image patches for final masks
         return torch.einsum("bnc, bchw -> bnhw", encoded_mask_tokens, upscaled_img_tokens)
-
-    # .................................................................................................................
-
-    def make_blank_results(self, image_tokens_bchw: Tensor, batch_size_prompts: int) -> tuple[Tensor, Tensor, Tensor]:
-        """Helper used to generate a 'blank' mask, meant for cases where inputs aren't available"""
-
-        # For clarity
-        _, c, h, w = image_tokens_bchw.shape
-
-        # Due to upscaler layer, the normal mask output should be 4 times larger than the image encoding size!
-        mask_h, mask_w = (4 * h, 4 * w)
-        mask_shape = (batch_size_prompts, 4, mask_h, mask_w)
-        iou_shape = (batch_size_prompts, 4)
-        cls_shape = (batch_size_prompts, 5, c)
-
-        # Fill in empty mask and IoU prediction values
-        device, dtype = self.device_info.device, self.device_info.dtype
-        blank_mask_preds = torch.full(mask_shape, -100, device=device, dtype=dtype, requires_grad=False)
-        blank_iou_preds = torch.ones(iou_shape, device=device, dtype=dtype, requires_grad=False)
-        blank_cls_tokens = torch.zeros(cls_shape, device=device, dtype=dtype, requires_grad=False)
-
-        return blank_mask_preds, blank_iou_preds, blank_cls_tokens
 
     # .................................................................................................................
 

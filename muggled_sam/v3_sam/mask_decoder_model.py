@@ -113,12 +113,6 @@ class SAMV3MaskDecoder(nn.Module):
         batch_size_prompts, num_prompts, enc_dim = encoded_prompts_bnc.shape
         lowres_tokens, hires_tokens_x2, hires_tokens_x4 = encoded_image_tokens_list_bchw
 
-        # Special case, return blank masks if no prompt is given
-        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
-            mask_preds, iou_preds = self.maskgen.make_blank_results(lowres_tokens, batch_size_prompts)
-            obj_score, obj_ptrs = self.objptrgen.make_blank_results(self.cls_mask_tokens, batch_size_prompts)
-            return mask_preds, iou_preds, obj_ptrs, obj_score
-
         # Concatenate learned 'cls' tokens to prompts
         cls_tokens = torch.cat([self.cls_obj_token, self.cls_iou_token, self.cls_mask_tokens], dim=0)
         cls_tokens = cls_tokens.unsqueeze(0).expand(batch_size_prompts, -1, -1)
@@ -145,6 +139,13 @@ class SAMV3MaskDecoder(nn.Module):
 
         # Generate 'object pointer' output
         obj_score, obj_ptrs = self.objptrgen(obj_token_out, mask_tokens_out)
+
+        # Special case. Wipe out outputs if no prompt is given
+        if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
+            mask_preds = 0 * mask_preds - 100.0
+            iou_preds = 0 * iou_preds
+            obj_ptrs = 0 * obj_ptrs
+            obj_score = 0 * obj_score - 10
 
         return mask_preds, iou_preds, obj_ptrs, obj_score
 
@@ -262,26 +263,6 @@ class MaskGen(nn.Module):
 
         # Take dot product (along channel dimension) of cls tokens with image patches for final masks
         return torch.einsum("bnc, bchw -> bnhw", encoded_mask_tokens, upscaled_img_tokens)
-
-    # .................................................................................................................
-
-    def make_blank_results(self, image_tokens_bchw: Tensor, batch_size_of_prompts: int) -> tuple[Tensor, Tensor]:
-        """Helper used to generate a 'blank' mask, meant for cases where inputs aren't available"""
-
-        # For clarity
-        _, c, h, w = image_tokens_bchw.shape
-
-        # Due to upscaler layer, the normal mask output should be 4 times larger than the image encoding size!
-        mask_h, mask_w = (4 * h, 4 * w)
-        mask_shape = (batch_size_of_prompts, 4, mask_h, mask_w)
-        iou_shape = (batch_size_of_prompts, 4)
-
-        # Fill in empty mask and IoU prediction values
-        device, dtype = self.device_info.device, self.device_info.dtype
-        blank_mask_preds = torch.full(mask_shape, -100, device=device, dtype=dtype, requires_grad=False)
-        blank_iou_preds = torch.ones(iou_shape, device=device, dtype=dtype, requires_grad=False)
-
-        return blank_mask_preds, blank_iou_preds
 
     # .................................................................................................................
 
@@ -473,14 +454,6 @@ class ObjectPointerGen(nn.Module):
         objptrs = torch.stack(objptrs_list)
 
         return objscore, objptrs
-
-    # .................................................................................................................
-
-    def make_blank_results(self, mask_tokens: Tensor, batch_size_of_prompts: int) -> tuple[Tensor, Tensor]:
-        """Helper used to produce 'no object' output when needing blank results"""
-        no_obj_score = torch.tensor(-10).to(mask_tokens)
-        no_obj_ptr = self.no_ptr.expand_as(mask_tokens).expand(batch_size_of_prompts, -1, -1)
-        return no_obj_score, no_obj_ptr
 
     # .................................................................................................................
 
