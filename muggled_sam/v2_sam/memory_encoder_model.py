@@ -68,7 +68,11 @@ class SAMV2MemoryEncoder(nn.Module):
     # .................................................................................................................
 
     def forward(
-        self, lowres_image_encoding: Tensor, mask_prediction: Tensor, object_score: Tensor, is_prompt_encoding=False
+        self,
+        lowres_image_encoding: Tensor,
+        mask_prediction: Tensor,
+        object_score: Tensor | None,
+        is_prompt_encoding: bool=False,
     ) -> Tensor:
         """
         Takes the lowest-resolution image encoding of SAMv2 and combines it
@@ -105,6 +109,7 @@ class SAMV2MemoryEncoder(nn.Module):
         memory_encoding = self.out_proj(memory_encoding)
 
         # Special encoding for missing objects (specific to version 2.1)
-        memory_encoding = self.missing_obj_encoder(memory_encoding, object_score)
+        if object_score is not None:
+            memory_encoding = self.missing_obj_encoder(memory_encoding, object_score)
 
         return memory_encoding

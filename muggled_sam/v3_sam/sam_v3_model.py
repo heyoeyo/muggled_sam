@@ -365,12 +365,9 @@ class SAMV3Model(nn.Module):
             assert mask_tensor.ndim == 4, "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
             assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
 
-            # Hard-code the object score as being 'high/confident', since we assume the given mask is accurate
-            obj_score = torch.tensor(100.0, device=device, dtype=dtype)
-
             # Scale input to correct size before encoding
             mask_tensor = nn.functional.interpolate(mask_tensor, size=(4 * token_h, 4 * token_w))
-            memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, obj_score, is_prompt_encoding=True)
+            memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, None, is_prompt_encoding=True)
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
             mem_b, mem_c, _, _ = memory_encoding.shape

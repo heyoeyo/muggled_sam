@@ -397,8 +397,7 @@ class SAMV3p1Model(nn.Module):
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            obj_score_b1 = torch.full((mask_b, 1), 10.0, device=device, dtype=dtype)
-            memory_encoding = self.memory_encoder(v2_lowres_imgenc, mask_tensor, obj_score_b1, is_prompt_encoding=True)
+            memory_encoding = self.memory_encoder(v2_lowres_imgenc, mask_tensor, None, is_prompt_encoding=True)
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
             mem_b, mem_c, _, _ = memory_encoding[1].shape
