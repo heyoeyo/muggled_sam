@@ -70,7 +70,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         self,
         lowres_image_encoding_bchw: Tensor,
         mask_prediction_1mhw: Tensor,
-        object_score_m1: Tensor | None,
+        object_score_m: Tensor | None,
         is_prompt_encoding: bool = False,
     ) -> tuple[Tensor, Tensor]:
         """
@@ -112,8 +112,8 @@ class SAMV3p1MemoryEncoder(nn.Module):
         memory_encoding = self.channel_mixer(memory_encoding)
 
         # Special encoding for missing objects
-        if object_score_m1 is not None:
-            memory_encoding = self.missing_obj_encoder(memory_encoding, object_score_m1)
+        if object_score_m is not None:
+            memory_encoding = self.missing_obj_encoder(memory_encoding, object_score_m)
 
         return (lowres_image_encoding_bchw, memory_encoding)
 
@@ -137,14 +137,14 @@ class NoObjectEncoder(nn.Module):
         super().__init__()
         self.no_object_embed = nn.Parameter(torch.empty(1, multiplex_channels, features_per_memory_token))
 
-    def forward(self, memory_encoding_bchw: Tensor, object_score_m1: Tensor) -> Tensor:
+    def forward(self, memory_encoding_bchw: Tensor, object_score_m: Tensor) -> Tensor:
         """
         Adds a learned embedding to memory encodings whenever
         the object score is below 0, otherwise encodings are unchanged.
 
         Shapes for reference:
           memory_encoding_bchw is expected to have shape: BxCxHxW
-          object_score has shape: Mx1 (M multiplex)
+          object_score has shape: M (M multiplex entries)
           output has same shape as memory_encoding (BxCxHxW)
 
         Returns:
@@ -152,17 +152,18 @@ class NoObjectEncoder(nn.Module):
         """
 
         # Pad score to match multiplex shape if needed
-        num_scores, _ = object_score_m1.shape
+        num_scores = object_score_m.shape[0]
         num_multiplex = self.no_object_embed.shape[1]
         if num_scores < num_multiplex:
-            device, dtype = object_score_m1.device, object_score_m1.dtype
-            pad_score = torch.full((num_multiplex - num_scores, 1), -1, device=device, dtype=dtype)
-            object_score_m1 = torch.concat((object_score_m1, pad_score), dim=0)
+            device, dtype = object_score_m.device, object_score_m.dtype
+            pad_score = torch.full([num_multiplex - num_scores], -1, device=device, dtype=dtype)
+            object_score_m = torch.concat((object_score_m, pad_score), dim=0)
 
         # Add embedding to every pixel of memory encoding if no object is present, otherwise 'add' zero
         # -> This is done in a somewhat strange way to account for batching!
-        no_object_present = (object_score_m1 < 0.0).unsqueeze(0).to(dtype=self.no_object_embed.dtype)
-        additive_embed_bc = (no_object_present * self.no_object_embed).sum(dim=1)  # Sum along multiplex channels
+        obj_score_1m1 = object_score_m.unsqueeze(-1).unsqueeze(0)
+        no_obj_present = (obj_score_1m1 < 0.0).to(dtype=self.no_object_embed.dtype)
+        additive_embed_bc = (no_obj_present * self.no_object_embed).sum(dim=1)  # Sum along multiplex channels
         additive_embed_bchw = additive_embed_bc.unsqueeze(-1).unsqueeze(-1)
         return memory_encoding_bchw + additive_embed_bchw
 

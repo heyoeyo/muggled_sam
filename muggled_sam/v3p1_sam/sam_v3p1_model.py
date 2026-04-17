@@ -307,7 +307,7 @@ class SAMV3p1Model(nn.Module):
 
             # Generate mask prediction from image/prompt encodings, as usual
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
-            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.mask_decoder(
+            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m = self.mask_decoder(
                 v1_encimgs,
                 encoded_prompts,
                 grid_posenc,
@@ -330,7 +330,7 @@ class SAMV3p1Model(nn.Module):
             best_obj_ptr_1mc = obj_ptrs_mnc[:, mask_index_select, :].squeeze(1).unsqueeze(0)  # MxNxC -> Mx1xC -> 1xMxC
 
             # Encode new memory features
-            memory_encoding = self.memory_encoder(v2_lowres_imgenc, best_mask_pred_1mhw, obj_score_m1, is_prompt_enc)
+            memory_encoding = self.memory_encoder(v2_lowres_imgenc, best_mask_pred_1mhw, obj_score_m, is_prompt_enc)
 
         return best_mask_pred_1mhw, memory_encoding, best_obj_ptr_1mc
 
@@ -389,10 +389,10 @@ class SAMV3p1Model(nn.Module):
 
             # Make sure we get N = 1
             mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
-            if mask_b == 1 and mask_n > 1:
+            if mask_b > 1 and mask_n == 1:
                 mask_tensor = mask_tensor.permute(1, 0, 2, 3)
                 mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
-            assert mask_n == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
+            assert mask_b == 1, "Mask shape error! Expecting batch size of 1, eg. 1xMxHxW"
 
             # Encode new memory features
             # Called '_encode_new_memory' in original code
@@ -431,7 +431,7 @@ class SAMV3p1Model(nn.Module):
         Returns:
             object_score, best_mask_index, mask_predictions, memory_encoding, best_object_pointer
             -> object_score score is an indicator of whether an object is present
-               values below 0 indicate lost tracking. Has shape: Mx1 (M multiplex outputs)
+               values below 0 indicate lost tracking. Has shape: M (M multiplex outputs)
             -> best_mask_index is the index of the highest iou score. Has shape: M (one index for each multiplex mask)
             -> mask_predictions are the same as with image segmentation, has shape: Mx4xHxW
             -> memory_encoding should be passed back in on future frames, it's a 2-tuple both with shape: BxCxH'xW'
@@ -460,7 +460,7 @@ class SAMV3p1Model(nn.Module):
             # Run (video) mask decoder on memory-fused features
             # Called '_forward_sam_heads' in original code (specifically the 'Multiplexed propagation path' branch)
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L785-L787
-            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1 = self.multiplex_video_masking(
+            mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m = self.multiplex_video_masking(
                 memfused_encimg, hires_imgenc, num_multiplex_objects
             )
 
@@ -472,9 +472,9 @@ class SAMV3p1Model(nn.Module):
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_1mhw, obj_score_m1, is_prompt_encoding=False)
+            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_1mhw, obj_score_m, is_prompt_encoding=False)
 
-        return obj_score_m1, best_idx_mplex, mask_preds_mnhw, memory_encoding, best_objptr_1mc
+        return obj_score_m, best_idx_mplex, mask_preds_mnhw, memory_encoding, best_objptr_1mc
 
     # .................................................................................................................
 

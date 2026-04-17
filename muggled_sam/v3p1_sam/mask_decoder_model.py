@@ -138,7 +138,7 @@ class SAMV3p1MaskDecoder(nn.Module):
             -> Mask prediction has shape: BxNxHxW (N 'ambiguity' masks, 4 by default)
             -> IoU has shape: BxN
             -> Object pointer has shape: BxNxF (F is features per token, default 256)
-            -> Object score has shape Bx1 and indicates (score > 0) if an object is masked
+            -> Object score has shape B and indicates (score > 0) if an object is masked
             -> Mask H & W are 4x the size of the image patch encoding size
             -> The 0-th mask was originally intended to be used in cases with
                many prompts, and not to be used with single points/box prompts
@@ -193,23 +193,23 @@ class SAMV3p1MaskDecoder(nn.Module):
         iou_preds_bmn = self.iou_token_mlp(iou_token_out)
 
         # Generate 'object score' and 'object pointer' outputs (meant for video segmentation)
-        obj_score_bm1, obj_ptrs_bmnc = self.objptrgen(obj_token_out, mask_tokens_bmnc)
+        obj_score_bm, obj_ptrs_bmnc = self.objptrgen(obj_token_out, mask_tokens_bmnc)
 
         # Combine batch and multiplex dimensions together for compatibility with SAMv1/v2/v3
         # -> Multiplexing is still supported as a batch operation this way
         mask_preds_mnhw = mask_preds_bmnhw.flatten(0, 1)
         iou_preds_mn = iou_preds_bmn.flatten(0, 1)
         obj_ptrs_mnc = obj_ptrs_bmnc.flatten(0, 1)
-        obj_score_m1 = obj_score_bm1.flatten(0, 1)
+        obj_score_m = obj_score_bm.flatten(0, 1)
 
         # Special case. Wipe out outputs if no prompt is given
         if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
             mask_preds_mnhw = 0 * mask_preds_mnhw - 100.0
             iou_preds_mn = 0 * iou_preds_mn
             obj_ptrs_mnc = 0 * obj_ptrs_mnc
-            obj_score_m1 = 0 * obj_score_m1 - 10
+            obj_score_m = 0 * obj_score_m - 10
 
-        return mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m1
+        return mask_preds_mnhw, iou_preds_mn, obj_ptrs_mnc, obj_score_m
 
     # .................................................................................................................
 
@@ -524,7 +524,7 @@ class ObjectPointerGen(nn.Module):
 
         Returns:
             object_score, object_pointers
-            -> score shape is: Bx1
+            -> score shape is: BxM
             -> pointer shape is: Bx4xF
             -> For B batch size, F features per token (256 by default)
         """
@@ -538,7 +538,7 @@ class ObjectPointerGen(nn.Module):
         is_valid_bm11 = (objscore_bm1 > 0)[:, :, :, None].to(dtype=encoded_mask_tokens_bmnc.dtype)
         objptrs_bmnc = (objptrs_bmnc * is_valid_bm11) + (self.no_ptr_proj(objptrs_bmnc) * (1.0 - is_valid_bm11))
 
-        return objscore_bm1, objptrs_bmnc
+        return objscore_bm1.squeeze(-1), objptrs_bmnc
 
     # .................................................................................................................
 

@@ -253,36 +253,34 @@ class MemoryConcatenator(nn.Module):
             posenc_list.append(maskmem_pos)
             imgenc_list.append(previmg_enc)
 
-        # Build object pointer input if needed
+        # Record prompt pointers if present
         num_ptr_tokens = 0
-        num_prompt_pointers = len(prompt_object_pointers)
-        num_prev_pointers = len(previous_frame_object_pointers)
-        have_pointers = (num_prompt_pointers + num_prev_pointers) > 0
-        if have_pointers:
+        if len(prompt_object_pointers) > 0:
+            prompt_ptr_tokens_bnc, prompt_ptr_posenc_bnc = self.ptrposenc(
+                tuple(prompt_object_pointers), previous_is_recent_first, is_prompt_encoding=True
+            )
+            memory_list.append(prompt_ptr_tokens_bnc)
+            posenc_list.append(prompt_ptr_posenc_bnc)
+            num_ptr_tokens += prompt_ptr_tokens_bnc.shape[1]
 
-            # Combine all pointers and figure out token shaping (pointers are 'vectors' shaped: BxMxC)
-            ptr_tokens = torch.concat(list(prompt_object_pointers) + list(previous_frame_object_pointers), dim=1)
-            ptr_b, num_ptr_tokens, ptr_c = ptr_tokens.shape
+        # Record previous frame pointers if present
+        if len(previous_frame_object_pointers) > 0:
+            prev_ptr_tokens_bnc, prev_posenc_bnc = self.ptrposenc(
+                tuple(previous_frame_object_pointers), previous_is_recent_first, is_prompt_encoding=False
+            )
+            num_ptr_tokens += prev_ptr_tokens_bnc.shape[1]
+            memory_list.append(prev_ptr_tokens_bnc)
+            posenc_list.append(prev_posenc_bnc)
 
-            # Compute position encodings for pointer tokens
-            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, previous_is_recent_first)
-            if ptr_b > 1:
-                ptrs_posenc = ptrs_posenc.expand(ptr_b, -1, -1)
-            assert (
-                num_ptr_tokens == ptrs_posenc.shape[1]
-            ), f"Obj. pointer position encoding error! Mismatching shapes: {ptr_tokens.shape} vs. {ptrs_posenc.shape}"
-
-            # Add pointer encodings to total memory/position-encoding tokens
-            memory_list.append(ptr_tokens)
-            posenc_list.append(ptrs_posenc)
-
-            # Pad image tokens with 'blank' pointers so size matches memory
-            pad_img_ptrs = torch.zeros_like(ptr_tokens)
-            imgenc_list.append(pad_img_ptrs)
-
-        # Stack memory & object pointer tokens (and positional encodings) into large BxNxC tensor
+        # Stack tokens into large BxNxC tensors
         memory_tokens = torch.cat(memory_list, dim=1)
         memory_posenc = torch.cat(posenc_list, dim=1)
+
+        # Pad previous-image tokens to match memory size (bigger due to pointers)
+        mem_b, mem_n, mem_c = memory_tokens.shape
+        device, dtype = memory_tokens.device, memory_tokens.dtype
+        pad_img_ptrs = torch.zeros((mem_b, num_ptr_tokens, mem_c), device=device, dtype=dtype)
+        imgenc_list.append(pad_img_ptrs)
         prev_image_tokens = torch.cat(imgenc_list, dim=1)
 
         return prev_image_tokens, memory_tokens, memory_posenc, num_ptr_tokens
@@ -381,48 +379,67 @@ class ObjectPointerPosEnc(nn.Module):
 
     def forward(
         self,
-        num_prompt_pointers: int,
-        num_previous_frame_pointers: int,
-        previous_is_recent_first: bool = True,
-    ) -> Tensor:
+        pointer_tokens_bnc_list: list[Tensor],
+        is_recent_first: bool,
+        is_prompt_encoding: bool,
+    ) -> tuple[Tensor, Tensor]:
         """
-        Creates a position encoding tensor of shape: 1xNxF
-        -> N is total number of tokens (equal to 4 times the total number of pointers, by default)
-        -> F is features per memory token (256 by default)
+        Concatenates pointer tokens and creates a corresponding position encoding.
+
+        Returns:
+            pointer_tokens_bnc, pointer_position_encoding_bnc
+            -> Both shapes are BxNxC, B batch size, N total token count and C features
+
+        Note that the position encoding in this implementation deviates from the original
+        as it does not include the frame indexing information used by the original.
+        However, pointers (and the position encodings) have very little effect on tracking,
+        so this usually shouldn't cause any issues.
+
+        Difference for prompt tokens:
+            -> The position index is always set to 0 in this implementation
+            -> The original implementation does NOT (generally) do this!!!
+            -> Instead the index is based on how many frames have past since the prompt (i.e. steadily increases)
+        https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L162
+
+        Difference for previous frame tokens:
+            -> The position index is set based on the list indexing of each pointer in this implementation
+            -> In this implementation, indexes are always normalized to a max value of 1
+            -> In original, pointer indexing is based on number of frames since the pointer was created
+            -> In original, indexes are normalized based on a fixed (configurable) value corresponding
+               to the maximum pointer count (default 16). The max value will be 1 only when 16 pointers stored
+            -> In practice, the two approaches will be similar once 16+ frames have passed
+        https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L167-L170
         """
 
-        # Set position index of all 'prompt pointers' to 0
-        # -> The original implementation does NOT (generally) do this!!!
-        # -> Instead the index is based on how many frames have past since the prompt (i.e. steadily increases)
-        # -> Here using fixed (0) value because it's much simpler and mirrors memory encoding approach
-        # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L162
-        total_ptrs = num_prompt_pointers + num_previous_frame_pointers
-        pos_norm_tensor = torch.zeros(total_ptrs, dtype=self.device_info.dtype, device=self.device_info.device)
+        # For clarity
+        total_num_tokens = len(pointer_tokens_bnc_list)
+        device, dtype = self.device_info.device, self.device_info.dtype
 
-        # Set position index of all 'previous frame pointers' based on their list indexing
-        # -> This is also different from the original implementation, though not significantly!
-        # -> In original, pointer indexing is based on number of frames since the pointer was created.
-        #    In basic usage, this is the same as the approach used here, but in the original
-        #    it is possible for pointers to be given with indexing not based on consecutive frame sequencing
-        # -> In original, indexes are normalized based on a fixed (configurable) value corresponding
-        #    to the maximum pointer count (default 16). Here they're normalized based on the given
-        #    pointer count. This approach will match the original once the number of given pointers
-        #    reaches a set maximum (until then, this approach over-estimates pointer spacing in time)
-        # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L167-L170
-        first_prev_idx = 1.0 / max(total_ptrs - 1, 1)
-        start_idx, end_idx = (first_prev_idx, 1.0) if previous_is_recent_first else (1.0, first_prev_idx)
-        pos_norm_tensor[num_prompt_pointers:] = torch.linspace(start_idx, end_idx, num_previous_frame_pointers)
+        # Generate position encoding per-pointer entry
+        # -> Have to do this in a loop, because each entry needs a different scaling factor
+        #    but not all entries have the same shape (i.e. they can't be stacked/concatenated easily)
+        posenc_nc_list = []
+        for idx, tokens_bnc in enumerate(pointer_tokens_bnc_list):
 
-        # Compute 1D sinusoidal position embeddings from pointer indices
-        # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_utils.py#L327
-        pos_embed_base = pos_norm_tensor.unsqueeze(-1) * self.posenc_scale_factor
-        pos_embed = torch.cat([pos_embed_base.sin(), pos_embed_base.cos()], dim=-1)
+            # Compute pointer indexing (depends on prompts vs. non-prompts)
+            idx_numer = 1 + idx if is_recent_first else (total_num_tokens - idx)
+            posenc_base_value = idx_numer / total_num_tokens if not is_prompt_encoding else 0
+            _, num_ptrs, _ = tokens_bnc.shape
+            posenc_tensor_nc = torch.full((num_ptrs, 1), posenc_base_value, device=device, dtype=dtype)
 
-        # Apply projection to reduce image token channel count to memory token channel count
-        # -> Result has shape: NxF, where N is total number of pointers, F is features per memory token (256 by default)
-        ptrs_posenc = self.pointer_pos_proj(pos_embed)
+            # Compute 1D sinusoidal position embeddings from pointer indices
+            # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_utils.py#L327
+            posenc_tensor_nc = posenc_tensor_nc * self.posenc_scale_factor
+            posenc_tensor_nc = torch.cat([posenc_tensor_nc.sin(), posenc_tensor_nc.cos()], dim=-1)
+            posenc_nc_list.append(posenc_tensor_nc)
 
-        # Add batch dimension for final output, shape: BxNxF
-        return ptrs_posenc.unsqueeze(0)
+        # Merge all pointers into a single tensor as well as position encodings
+        out_ptrs_bnc = torch.concat(pointer_tokens_bnc_list, dim=1)
+        out_posenc_bnc = torch.concat(posenc_nc_list, dim=0).unsqueeze(0)
+        out_posenc_bnc = self.pointer_pos_proj(out_posenc_bnc)
+        if out_ptrs_bnc.shape[0] > 1:
+            out_posenc_bnc = out_posenc_bnc.expand(out_ptrs_bnc.shape[0], -1, -1)
+
+        return out_ptrs_bnc, out_posenc_bnc
 
     # .................................................................................................................
