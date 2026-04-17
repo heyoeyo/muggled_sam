@@ -778,11 +778,18 @@ class SAMV3DetectorModel(nn.Module):
 
             # Return 'blank' results if we don't get any exemplars
             # -> Not required (model still works with no exemplars), but blanked results make more sense
-            no_exemplars = encoded_exemplars_bnc.shape[1] == 0
+            exm_b, exm_n, _ = encoded_exemplars_bnc.shape
+            no_exemplars = exm_n == 0
             if no_exemplars and blank_no_exemplar_outputs:
                 blk_tok, blk_box, blk_score, blk_pres = self.exemplar_detector.create_blank_output(lowres_imgenc_bchw)
                 blk_masks, _ = self.exemplar_segmentation.create_blank_output(blk_tok, lowres_imgenc_bchw)
                 return blk_masks, blk_box, blk_score, blk_pres
+
+            # Batch image encodings if exemplars are batched
+            if exm_b > 1 and lowres_imgenc_bchw.shape[0] == 1:
+                lowres_imgenc_bchw = lowres_imgenc_bchw.expand(exm_b, -1, -1, -1)
+                hiresx2_imgenc_bchw = hiresx2_imgenc_bchw.expand(exm_b, -1, -1, -1)
+                hiresx4_imgenc_bchw = hiresx4_imgenc_bchw.expand(exm_b, -1, -1, -1)
 
             # Mix exemplar data into image tokens
             fused_imgexm_tokens_bchw = self.image_exemplar_fusion(

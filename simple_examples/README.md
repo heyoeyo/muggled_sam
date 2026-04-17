@@ -23,7 +23,7 @@ This script contains the most basic usage of the SAM models, which is to segment
 
 _(Supports SAMv1, SAMv2, SAMv3)_
 
-This is an extension of the basic image segmentation script, modified to show how an image batch can be processed. Processing a batch of images is the same as processing multiple images, one after another, except batching can be slightly faster when using a GPU. For simplicity, this example just repeats a single image to form a batch, but normally many images would be loaded in and processed together.
+This is an extension of the basic image segmentation script, modified to show how multiple images can be processed in parallel as a batch. Processing a batch of images is the same as processing multiple images, one after another, except batching can be slightly faster when using a GPU. The main downside of batching is higher VRAM requirements.
 
 
 ## Model Distillation
@@ -39,6 +39,14 @@ _(Supports SAMv3)_
 
 This script contains the most basic usage of the SAMv3 detection functionality. It allows multiple objects to be detected using a single text prompt or by specifying a part of the image (using points or bounding boxes) as a reference for what to detect.
 
+
+## Object Detection with batches
+
+_(Supports SAMv3)_
+
+This is a variation on the original detection example, showing how to do batched detections. For the sake of simplicity this example batches together text prompts, but it's also possible to batch point/box prompts (it's just messier to define).
+
+Batching is equivalent to running a `for` loop over all prompts, but works by loading everything as a single input and computing all results 'in parallel'. This has the advantage of reducing the amount of CPU-to-GPU communication (slight inference speed up) at the expense of increasing VRAM usage (about 250MB per single word text prompt on float16).
 
 ## Object Detection (cross-image)
 
