@@ -8,41 +8,41 @@ This folder contains several scripts that contain minimal/simplified examples of
 
 ## Auto Mask Generator
 
-_(Supports SAMv1, SAMv2, SAMv3)_
+_(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/auto_mask_generator.py)
 
 This script runs the SAM model as an 'auto-mask generator', similar to the capability provided by the [original repo implementation](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/automatic_mask_generator.py#L36). It works by running the SAM model with a (dense) grid of single point prompts to generate masks from all parts of the image, while filtering bad/overlapping results. This version provides a visualization (if enabled in the settings) of the results as they're being generated.
 
 
 ## Image Segmentation
 
-_(Supports SAMv1, SAMv2, SAMv3)_
+_(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/image_segmentation.py)
 
 This script contains the most basic usage of the SAM models, which is to segment an image based on a set of provided prompts (bounding boxes, foreground points, background points or masks).
 
 ## Image Segmentation with Batches
 
-_(Supports SAMv1, SAMv2, SAMv3)_
+_(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/image_segmentation_batches.py)
 
 This is an extension of the basic image segmentation script, modified to show how multiple images can be processed in parallel as a batch. Processing a batch of images is the same as processing multiple images, one after another, except batching can be slightly faster when using a GPU. The main downside of batching is higher VRAM requirements.
 
 
 ## Model Distillation
 
-_(Supports SAMv1, SAMv2, SAMv3)_
+_(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/model_distillation.py)
 
 This script shows a basic example of how to do model distillation (e.g. unsupervised training). In this case the script does distillation of the image encoder only, but can be easily modified to train other model components. Distillation uses a teacher model (meant to be an original SAM model) to provide 'ground-truth' data for training a student model (meant to be a smaller version of the teacher). Smaller versions of SAMv3 can be made using the [pruning scripts](https://github.com/heyoeyo/muggled_sam/tree/main/training#pruning) of this repo. Training also requires example images, a good source for these is coco128 which can be downloaded from [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0) (see assets > coco128.zip).
 
 
 ## Object Detection
 
-_(Supports SAMv3)_
+_(Supports SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection.py)
 
 This script contains the most basic usage of the SAMv3 detection functionality. It allows multiple objects to be detected using a single text prompt or by specifying a part of the image (using points or bounding boxes) as a reference for what to detect.
 
 
 ## Object Detection with batches
 
-_(Supports SAMv3)_
+_(Supports SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection_batches.py)
 
 This is a variation on the original detection example, showing how to do batched detections. For the sake of simplicity this example batches together text prompts, but it's also possible to batch point/box prompts (it's just messier to define).
 
@@ -50,14 +50,14 @@ Batching is equivalent to running a `for` loop over all prompts, but works by lo
 
 ## Object Detection (cross-image)
 
-_(Supports SAMv3)_
+_(Supports SAMv3)_  - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection_cross_image.py)
 
 This is a variation of the object detection example where an object from a 'reference' image is used to detect objects in a separate 'target' image.
 
 
 ## Speed Benchmarking
 
-_(Supports SAMv1, SAMv2, SAMv3)_
+_(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/speed_benchmarking.py)
 
 This script runs each of the image segmentation components repeatedly while timing the average execution speed. It can be used to get a sense of how fast each of the different model variants will run and supports changing the image size used by the model. For example, here are some examples results (using an RTX 3090) for SAMv1, v2 & v3 models at different input image sizes, using bfloat16 & square image sizing:
 
@@ -91,7 +91,7 @@ For reference, here's the VRAM usage (with bfloat16) of various models as report
 
 ## Speed Benchmarking (Detections)
 
-_(Supports SAMv3)_
+_(Supports SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/speed_benchmarking_detection.py)
 
 This script repeatedly runs the components associated with SAMv3 object detection while timing the execution speed. The time taken for each of the major steps (image encoding, exemplar encoding and generating detections) is printed out as the script runs. For example, here are the results using an RTX 3090 on bfloat16 running at the default 1008px as well as 504px, with and without compilation for comparison. A single box, point and text prompt are being used in all cases (using more or fewer prompts will affect timing). All times are in milliseconds:
 
@@ -109,7 +109,7 @@ For reference, nvidia-smi reports VRAM usage as 2530MiB (@1008px, bfloat16) and 
 
 ## Video Segmentation
 
-_(Supports SAMv2, SAMv3)_
+_(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py)
 
 This script provides a basic example of how to implement video segmentation using the SAMv2 or v3 model (V1 does not support video segmentation!). For simplicity, this script assumes that tracking begins with a prompt on the first frame of the video, but any frame could be used. It also only stores results for one object, though again this can be changed to handle multiple objects by creating instances of the video storage data for each object.
 
@@ -131,13 +131,13 @@ Again, the results for the v3 model using 1008px are included as it runs much sl
 
 ## Video Segmentation (from mask)
 
-_(Supports SAMv2, SAMv3)_
+_(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_from_mask.py)
 
 This is a variation of the basic video segmentation example, but uses a mask prompt to begin tracking. Both a binary mask and corresponding image (i.e. the RGB image from which the mask was generated) must be provided, and replaces the need to provide box or point prompts. Note that the mask & corresponding image don't need to be from the video! Mixing the mask image and video can give results similar to the [video with image priors](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#video-with-image-priors) experimental script.
 
 ## Video Segmentation (Multi-object)
 
-_(Supports SAMv2, SAMv3)_
+_(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_multiobj.py)
 
 This is an extension of the more basic video segmentation script, which shows how multiple objects can be segmented/tracked through a video. For the sake of demonstration, this example works by having all prompts known ahead of time, but of course they could be generated dynamically (e.g. by an object detection model). No results are saved from this script, but the combined mask results are displayed and the corresponding code for generating the display output can hopefully provide ideas about how to handle the model outputs for other use cases.
 
@@ -146,7 +146,7 @@ https://www.pexels.com/video/horses-running-on-grassland-4215784/
 
 ## Video Segmentation (multiplexed)
 
-_(Supports SAMv3.1 only)_
+_(Supports SAMv3.1 only)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_multiplexed.py)
 
 This is a special variation of multi-object segmentation using 'multiplexing' introduced with the [SAMv3.1 model update](https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md). This allows for up to 16 objects to be tracked 'in parallel' leading to much faster tracking when dealing with large numbers of objects. In this example, tracking begins with object detections (similar to the [tracking from detections](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-from-detections) example) that are then carried forward using multiplexed-tracking. While only the v3.1 model properly supports multiplexing, this script will also run with v3.0 but will instead use regular 'batching' instead of multiplexing, which can be helpful for comparison
 
@@ -154,7 +154,7 @@ For small numbers of objects there isn't a significant speed difference between 
 
 ## Video Segmentation using SAMURAI
 
-_(Supports SAMv2, SAMv3)_
+_(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_samurai.py)
 
 This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be [easy to modify](https://github.com/heyoeyo/muggled_sam/blob/3ed04b646005d1b1242b8d07008573ef00815405/muggled_sam/demo_helpers/samurai.py#L22) if needed.
 
@@ -162,7 +162,7 @@ This demo is set up to track only one object, but can be changed to handle multi
 
 ## Video Segmentation from Detections
 
-_(Supports SAMv3)_
+_(Supports SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_from_detections.py)
 
 This script uses the new detection capabilities of SAMv3 in order to generate initial objects for tracking. It's a bit like a combination of the tracking from masks & multi-object examples above, but ends up being a fully automatic way of doing video segmentation.
 
