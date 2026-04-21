@@ -174,7 +174,7 @@ class SAMV2MaskDecoder(nn.Module):
 
     @staticmethod
     def get_best_decoder_results(
-        mask_preds, iou_preds, obj_ptrs, exclude_0th_index=True
+        mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, exclude_0th_index=True
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Helper used to keep only the 'best' result from the mask decoder predictions.
@@ -185,19 +185,22 @@ class SAMV2MaskDecoder(nn.Module):
             best_index, best_mask_prediction, best_iou_score, best_object_pointer
             -> Best index is a tensor (!) with shape: B (i.e. 1 index for each batch entry)
             -> Mask prediction has shape: Bx1xHxW
-            -> IoU has shape: Bx1
-            -> Object pointer has shape: Bx1xF (F features, 256 by default)
+            -> IoU has shape: B
+            -> Object pointer has shape: Bx1xC (C features, 256 by default)
         """
 
-        # Use highest iou prediction as indicator of the 'best' results
-        # -> Optionally exclude the 0th index, which is normally used when multiple-prompts are given
-        best_idx = 1 + torch.argmax(iou_preds[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds, dim=-1)
+        # Each mask prediction contains multiple (4 by default) options, here we select which to use
+        b_idx = torch.arange(mask_preds_bnhw.shape[0], device=iou_preds_bn.device)
+        best_idx = (
+            1 + torch.argmax(iou_preds_bn[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds_bn, dim=-1)
+        )
 
-        best_mask_pred = mask_preds[:, best_idx, :, :]
-        best_iou_pred = iou_preds[:, best_idx]
-        best_obj_ptr = obj_ptrs[:, best_idx, :]
+        # Index out best entries, while accounting for batch dimension
+        best_mask_b1hw = mask_preds_bnhw[b_idx, best_idx].unsqueeze(1)
+        best_iou_b = iou_preds_bn[b_idx, best_idx]
+        best_objptr_b1c = obj_ptrs_bnc[b_idx, best_idx].unsqueeze(1)
 
-        return best_idx, best_mask_pred, best_iou_pred, best_obj_ptr
+        return best_idx, best_mask_b1hw, best_iou_b, best_objptr_b1c
 
     # .................................................................................................................
 
@@ -451,23 +454,23 @@ class ObjectPointerGen(nn.Module):
 
         Returns:
             object_score, object_pointers
-            -> score shape is: Bx1
-            -> pointer shape is: Bx4xF
-            -> For B batch size, F features per token (256 by default)
+            -> score shape is: B
+            -> pointer shape is: Bx4xC
+            -> For B batch size, C features per token (256 by default)
         """
 
         # Compute object score (indicator of whether there is a valid object being masked)
-        objscore = self.score_mlp(encoded_object_token)
+        objscore_b = self.score_mlp(encoded_object_token).squeeze(-1)
 
         # Get pointer for each batch
         objptrs_list = []
         for batch_idx in range(encoded_mask_tokens.shape[0]):
             tokens = encoded_mask_tokens[batch_idx]
-            ptr = self.pointer_mlp(tokens) if objscore[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
-            objptrs_list.append(ptr)
-        objptrs = torch.stack(objptrs_list)
+            ptr_nc = self.pointer_mlp(tokens) if objscore_b[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
+            objptrs_list.append(ptr_nc)
+        objptrs_bnc = torch.stack(objptrs_list, dim=0)
 
-        return objscore, objptrs
+        return objscore_b, objptrs_bnc
 
     # .................................................................................................................
 

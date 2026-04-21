@@ -330,6 +330,12 @@ class SAMV2Model(nn.Module):
             elif mask_tensor.ndim == 3:
                 mask_tensor = mask_tensor.unsqueeze(1)  # BxHxW -> Bx1xHxW
             assert mask_tensor.ndim == 4, "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
+
+            # Try to force Bx1xHxW shape
+            mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
+            if mask_b == 1 and mask_n > 1:
+                mask_tensor = mask_tensor.permute(1, 0, 2, 3)
+                mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
             assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
 
             # Scale input to correct size before encoding
@@ -338,9 +344,9 @@ class SAMV2Model(nn.Module):
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
             mem_b, mem_c, _, _ = memory_encoding.shape
-            blank_ptr = torch.zeros((1, 1, mem_c * 4), device=device, dtype=dtype)
+            blank_ptr_b1c = torch.zeros((mem_b, 1, mem_c * 4), device=device, dtype=dtype)
 
-        return memory_encoding, blank_ptr
+        return memory_encoding, blank_ptr_b1c
 
     # .................................................................................................................
 

@@ -126,9 +126,13 @@ class SAMV2MemoryImageFusion(nn.Module):
             previous_is_recent_first,
         )
 
-        # Get input shape so we can restore it on output
-        b, _, h, w = lowres_image_tokens_bchw.shape
-        patch_hw = (h, w)
+        # Get input shape so we can restore it on output & handle batching if needed
+        mem_b = memory_tokens.shape[0]
+        img_b, img_c, img_h, img_w = lowres_image_tokens_bchw.shape
+        patch_hw = (img_h, img_w)
+        if mem_b > 1 and img_b == 1:
+            lowres_image_tokens_bchw = lowres_image_tokens_bchw.expand(mem_b, -1, -1, -1)
+            img_b = mem_b
 
         # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
         image_posenc_tokens = self.imgposenc(lowres_image_tokens_bchw)
@@ -140,7 +144,7 @@ class SAMV2MemoryImageFusion(nn.Module):
 
         # Convert back to image-like shape, from: BxNxC -> BxCxHxW
         flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
-        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(b, -1, h, w)
+        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(img_b, img_c, img_h, img_w)
 
     # .................................................................................................................
 
