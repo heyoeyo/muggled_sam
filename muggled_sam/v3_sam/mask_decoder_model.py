@@ -145,20 +145,20 @@ class SAMV3MaskDecoder(nn.Module):
         mask_tokens_out = encoded_cls_tokens[:, 2:, :]
 
         # Produce final output mask & quality predictions
-        mask_preds = self.maskgen(encoded_img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out)
-        iou_preds = self.iou_token_mlp(iou_token_out)
+        mask_preds_bnhw = self.maskgen(encoded_img_tokens, hires_tokens_x2, hires_tokens_x4, mask_tokens_out)
+        iou_preds_bn = self.iou_token_mlp(iou_token_out)
 
         # Generate 'object pointer' output
-        obj_score, obj_ptrs = self.objptrgen(obj_token_out, mask_tokens_out)
+        obj_score_b1, obj_ptrs_bnc = self.objptrgen(obj_token_out, mask_tokens_out)
 
         # Special case. Wipe out outputs if no prompt is given
         if blank_promptless_output and (num_prompts == 0) and (mask_hint is None):
-            mask_preds = 0 * mask_preds - 100.0
-            iou_preds = 0 * iou_preds
-            obj_ptrs = 0 * obj_ptrs
-            obj_score = 0 * obj_score - 10
+            mask_preds_bnhw = 0 * mask_preds_bnhw - 100.0
+            iou_preds_bn = 0 * iou_preds_bn
+            obj_ptrs_bnc = 0 * obj_ptrs_bnc
+            obj_score_b1 = 0 * obj_score_b1 - 10
 
-        return mask_preds, iou_preds, obj_ptrs, obj_score
+        return mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, obj_score_b1
 
     # .................................................................................................................
 
@@ -171,7 +171,7 @@ class SAMV3MaskDecoder(nn.Module):
 
     @staticmethod
     def get_best_decoder_results(
-        mask_preds: Tensor, iou_preds: Tensor, obj_ptrs: Tensor, exclude_0th_index: bool = True
+        mask_preds_bnhw: Tensor, iou_preds_bn: Tensor, obj_ptrs_bnc: Tensor, exclude_0th_index: bool = True
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Helper used to keep only the 'best' result from the mask decoder predictions.
@@ -183,18 +183,21 @@ class SAMV3MaskDecoder(nn.Module):
             -> Best index is a tensor (!) with shape: B (i.e. 1 index for each batch entry)
             -> Mask prediction has shape: Bx1xHxW
             -> IoU has shape: Bx1
-            -> Object pointer has shape: Bx1xF (F features, 256 by default)
+            -> Object pointer has shape: Bx1xC (C features, 256 by default)
         """
 
-        # Use highest iou prediction as indicator of the 'best' results
-        # -> Optionally exclude the 0th index, which is normally used when multiple-prompts are given
-        best_idx = 1 + torch.argmax(iou_preds[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds, dim=-1)
+        # Each mask prediction contains multiple (4 by default) options, here we select which to use
+        b_idx = torch.arange(mask_preds_bnhw.shape[0], device=iou_preds_bn.device)
+        best_idx = (
+            1 + torch.argmax(iou_preds_bn[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds_bn, dim=-1)
+        )
 
-        best_mask_pred = mask_preds[:, best_idx, :, :]
-        best_iou_pred = iou_preds[:, best_idx]
-        best_obj_ptr = obj_ptrs[:, best_idx, :]
+        # Index out best entries, while accounting for batch dimension
+        best_mask_b1hw = mask_preds_bnhw[b_idx, best_idx].unsqueeze(1)
+        best_iou_pred_b = iou_preds_bn[b_idx, best_idx]
+        best_objptr_b1c = obj_ptrs_bnc[b_idx, best_idx].unsqueeze(1)
 
-        return best_idx, best_mask_pred, best_iou_pred, best_obj_ptr
+        return best_idx, best_mask_b1hw, best_iou_pred_b, best_objptr_b1c
 
     # .................................................................................................................
 
@@ -448,23 +451,23 @@ class ObjectPointerGen(nn.Module):
 
         Returns:
             object_score, object_pointers
-            -> score shape is: Bx1
+            -> score shape is: B (e.g. 1 number per batch)
             -> pointer shape is: Bx4xF
             -> For B batch size, F features per token (256 by default)
         """
 
         # Compute object score (indicator of whether there is a valid object being masked)
-        objscore = self.score_mlp(encoded_object_token)
+        objscore_b = self.score_mlp(encoded_object_token).squeeze(-1)
 
         # Get pointer for each batch
         objptrs_list = []
         for batch_idx in range(encoded_mask_tokens.shape[0]):
             tokens = encoded_mask_tokens[batch_idx]
-            ptr = self.pointer_mlp(tokens) if objscore[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
+            ptr = self.pointer_mlp(tokens) if objscore_b[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
             objptrs_list.append(ptr)
         objptrs = torch.stack(objptrs_list)
 
-        return objscore, objptrs
+        return objscore_b, objptrs
 
     # .................................................................................................................
 

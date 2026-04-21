@@ -312,7 +312,11 @@ class SAMV3Model(nn.Module):
 
     # .................................................................................................................
 
-    def initialize_from_mask(self, encoded_image_features_list: list[Tensor], mask_image: ndarray | Tensor) -> Tensor:
+    def initialize_from_mask(
+        self,
+        encoded_image_features_list: list[Tensor],
+        mask_image: ndarray | Tensor,
+    ) -> tuple[Tensor, Tensor]:
         """
         Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
         to begin tracking an object.
@@ -338,7 +342,7 @@ class SAMV3Model(nn.Module):
         This doesn't have a substantial impact on the tracking
 
         Returns:
-            memory_encoding
+            memory_encoding, object_pointer
         """
 
         with _inference_mode(self._infmode):
@@ -363,6 +367,12 @@ class SAMV3Model(nn.Module):
             elif mask_tensor.ndim == 3:
                 mask_tensor = mask_tensor.unsqueeze(1)  # BxHxW -> Bx1xHxW
             assert mask_tensor.ndim == 4, "Unsupported mask shape, must be: HxW, HxWxC, BxHxW or Bx1xHxW"
+
+            # Try to force into Bx1xHxW shape
+            mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
+            if mask_b == 1 and mask_n > 1:
+                mask_tensor = mask_tensor.permute(1, 0, 2, 3)
+                mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
             assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
 
             # Scale input to correct size before encoding
@@ -371,9 +381,9 @@ class SAMV3Model(nn.Module):
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
             mem_b, mem_c, _, _ = memory_encoding.shape
-            blank_ptr = torch.zeros((1, 1, mem_c * 4), device=device, dtype=dtype)
+            blank_ptr_b1c = torch.zeros((mem_b, 1, mem_c * 4), device=device, dtype=dtype)
 
-        return memory_encoding, blank_ptr
+        return memory_encoding, blank_ptr_b1c
 
     # .................................................................................................................
 
@@ -384,12 +394,17 @@ class SAMV3Model(nn.Module):
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
+        num_multiplex_objects: int = 1,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Function which makes segmentation predictions for consecutive frames of
         an input video. It takes in the encoded video frame data along with prior
         prompt/previous frame memory data in order to automatically continue
         segmenting some existing object (i.e. without requiring user prompts).
+
+        Note:
+        The 'num_multiplex_objects' is a dummy input included for compatibility
+        with the v3.1 update. It doesn't do anything!
 
         This function corresponds to 'track_step' in the SAMv3 implementation:
         https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L930

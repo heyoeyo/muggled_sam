@@ -77,7 +77,7 @@ class MaskDownsampler(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, mask_prediction: Tensor, target_hw: tuple[int, int], is_prompt_encoding=False) -> Tensor:
+    def forward(self, mask_prediction_bmhw: Tensor, target_hw: tuple[int, int], is_prompt_encoding=False) -> Tensor:
         """
         Encodes mask prediction and resizes it to match the given target height & width.
         The target size is expected to match the image encodings, so that the encoded
@@ -101,18 +101,20 @@ class MaskDownsampler(nn.Module):
 
         # Scale mask up, so that the result after downsampling will match the target sizing
         upsample_hw = [size * self._downsample_factor for size in target_hw]
-        hires_mask = nn.functional.interpolate(
-            mask_prediction,
-            size=upsample_hw,
-            mode="bilinear",
-            align_corners=False,
-        )
+        hires_mask = mask_prediction_bmhw
+        if mask_prediction_bmhw.shape[-2] != upsample_hw[0] or mask_prediction_bmhw.shape[-1] != upsample_hw[1]:
+            hires_mask = nn.functional.interpolate(
+                mask_prediction_bmhw,
+                size=upsample_hw,
+                mode="bilinear",
+                align_corners=False,
+            )
 
         # Prepare mask data & downsample for fusion with image encoding
         hires_mask = (hires_mask > 0.0).to(hires_mask.dtype) if is_prompt_encoding else torch.sigmoid(hires_mask)
         hires_mask = hires_mask * self.mask_scale + self.mask_bias
-        target_hw_mask = self.downsample(hires_mask)
 
+        target_hw_mask = self.downsample(hires_mask)
         return self.out_proj(target_hw_mask)
 
     # .................................................................................................................
