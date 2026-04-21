@@ -29,15 +29,19 @@ device, dtype = "cpu", torch.float32
 if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
-# All coordinates are normalized between 0 and 1. Top left of image is (0,0), bottom-right is (1,1)
+# Detection prompts. Top left (x,y) of image is (0,0), bottom-right is (1,1)
 pos_box_xy1xy2_norm_list = []  # Format is: [[(x1, y1), (x2, y2)]]
 neg_box_xy1xy2_norm_list = []
 pos_point_xy_norm_list = []  # Format is: [(x1, y1)]
 neg_point_xy_norm_list = []
 text_prompt = "person"
-detection_score_threshold = 0.5
-max_side_length = None
+
+# Detection & tracking config
+max_side_length_detect = 1008
+max_side_length_track = 504  # Reduce this to increase speed at the cost of mask quality
 use_square_sizing = True
+detection_score_threshold = 0.5
+display_scale = 0.5
 
 # Read first frame, will use to begin tracking
 vcap = cv2.VideoCapture(video_path)
@@ -54,7 +58,7 @@ sammodel.to(device=device, dtype=dtype)
 detmodel = sammodel.make_detector_model()
 
 # Run initial detection to get objects to track
-init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length, use_square_sizing)
+init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
 init_exemplars = detmodel.encode_exemplars(
     init_encimgs,
     text_prompt,
@@ -65,25 +69,14 @@ init_exemplars = detmodel.encode_exemplars(
 )
 init_masks, _, _, _ = detmodel.generate_detections(init_encimgs, init_exemplars, detection_score_threshold)
 
-# Sanity check & feature warning
+# Sanity check
 num_objects = init_masks.shape[1]
 assert num_objects > 0, "No objects detected! Cannot begin tracking..."
 print(f"Detected {num_objects} initial objects!")
-if num_objects > 16:
-    num_discard = num_objects - 16
-    print(
-        "",
-        "*" * 32,
-        "WARNING:",
-        "Using multiplex tracking with more than 16 objects is not (yet) supported!",
-        f"Excess masks ({num_discard} total) will be discarded...",
-        "(This feature is still a WIP)",
-        "*" * 32,
-        "",
-        sep="\n",
-    )
-    init_masks = init_masks[:, 0:16]
-    num_objects = 16
+
+# Re-encode image at 'tracking' resolution to set up initial memory encoding
+if max_side_length_detect != max_side_length_track:
+    init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
 init_mem, init_ptr = sammodel.initialize_from_mask(init_encimgs, init_masks)
@@ -103,18 +96,18 @@ try:
         ok_frame, frame = vcap.read()
         if not ok_frame:
             break
-        scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
+        scaled_frame = cv2.resize(frame, dsize=None, fx=display_scale, fy=display_scale)
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame, max_side_length, use_square_sizing)
+        encoded_imgs_list, _, _ = sammodel.encode_image(frame, max_side_length_track, use_square_sizing)
         obj_score, best_idx_m, mask_preds_mnhw, mem_enc, obj_ptr = sammodel.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, num_multiplex_objects=num_objects
         )
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()
-        print(f"Took {round(1000 * (t2 - t1))} ms")
+        txt_time_ms = f"{round(1000 * (t2 - t1))} ms"
 
         # Store object results for future frames
         ok_obj_track = obj_score > 0
@@ -123,7 +116,8 @@ try:
             prev_mems.appendleft(mem_enc)
             prev_ptrs.appendleft(obj_ptr)
         else:
-            print("Bad object scores! Implies no objects are being tracked!")
+            print("Bad object scores! No objects are being tracked!")
+        txt_obj_count = f"{total_tracked_objs}/{num_objects} objects"
 
         # For clarity, we index out the 'best' masks while properly handling the multiplex dimension & missing objs
         num_multiplex = mask_preds_mnhw.shape[0]
@@ -142,7 +136,8 @@ try:
         combined_masks_binary = (dispres_mask_1mhw[0] > 0.0).any(dim=0)
         disp_mask = (combined_masks_binary.byte() * 255).cpu().numpy()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
-        cv2.putText(disp_mask, f"{total_tracked_objs} objects", (5, 18), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(disp_mask, txt_time_ms, (5, 18), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(disp_mask, txt_obj_count, (5, 40), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
 
         # Show frame and masks
         sidebyside = stack_func((scaled_frame, disp_mask))

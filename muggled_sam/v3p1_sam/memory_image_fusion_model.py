@@ -82,8 +82,8 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
-        previous_is_recent_first=True,
-        is_prompt_frame=False,
+        previous_is_recent_first: bool = True,
+        is_prompt_frame: bool = False,
     ) -> Tensor:
         """
         Fuses prior memory encodings & object pointers into (low-res) image tokens
@@ -117,9 +117,13 @@ class SAMV3p1MemoryImageFusion(nn.Module):
             previous_is_recent_first,
         )
 
-        # Get input shape so we can restore it on output
-        b, _, h, w = lowres_image_tokens_bchw.shape
-        patch_hw = (h, w)
+        # Get input shape so we can restore it on output & expand to match memory batching if needed
+        mem_b, _, _ = memory_tokens.shape
+        img_b, img_c, img_h, img_w = lowres_image_tokens_bchw.shape
+        patch_hw = (img_h, img_w)
+        if mem_b > 1 and img_b == 1:
+            lowres_image_tokens_bchw = lowres_image_tokens_bchw.expand(mem_b, -1, -1, -1)
+            img_b = mem_b
 
         # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
         image_posenc_tokens = self.imgposenc(lowres_image_tokens_bchw)
@@ -128,7 +132,7 @@ class SAMV3p1MemoryImageFusion(nn.Module):
 
         # Run transformer layers to fuse memory results with image tokens
         encoded_imgtokens_bnc = flat_imgtokens_bnc_with_posenc
-        for lidx, layer in enumerate(self.layers):
+        for layer in self.layers:
             encoded_imgtokens_bnc = layer(
                 patch_hw,
                 encoded_imgtokens_bnc,
@@ -141,7 +145,7 @@ class SAMV3p1MemoryImageFusion(nn.Module):
 
         # Convert back to image-like shape, from: BxNxC -> BxCxHxW
         encoded_imgtokens_bnc = self.out_norm(encoded_imgtokens_bnc)
-        return encoded_imgtokens_bnc.permute(0, 2, 1).reshape(b, -1, h, w)
+        return encoded_imgtokens_bnc.permute(0, 2, 1).reshape(img_b, img_c, img_h, img_w)
 
     # .................................................................................................................
 
@@ -277,6 +281,7 @@ class MemoryConcatenator(nn.Module):
         memory_posenc = torch.cat(posenc_list, dim=1)
 
         # Pad previous-image tokens to match memory size (bigger due to pointers)
+        # https://github.com/facebookresearch/sam3/blob/967fdd651f71ca14949122fed4c918a778ca9334/sam3/model/decoder.py#L1321-L1332
         mem_b, mem_n, mem_c = memory_tokens.shape
         device, dtype = memory_tokens.device, memory_tokens.dtype
         pad_img_ptrs = torch.zeros((mem_b, num_ptr_tokens, mem_c), device=device, dtype=dtype)

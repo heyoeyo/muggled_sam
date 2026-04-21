@@ -324,15 +324,16 @@ class SAMV3p1Model(nn.Module):
                 mask_index_select = torch.tensor([mask_index_select], dtype=torch.int64, device=device)
 
             # For clarity. Get 'best' result (should only be 1) and shuffle dimensions around
-            is_prompt_enc = True
             v2_lowres_imgenc = v2_encimgs[0]
             best_mask_pred_1mhw = mask_preds_mnhw[:, mask_index_select, :, :].squeeze(1).unsqueeze(0)
             best_obj_ptr_1mc = obj_ptrs_mnc[:, mask_index_select, :].squeeze(1).unsqueeze(0)  # MxNxC -> Mx1xC -> 1xMxC
 
             # Encode new memory features
-            memory_encoding = self.memory_encoder(v2_lowres_imgenc, best_mask_pred_1mhw, obj_score_m, is_prompt_enc)
+            memory_encoding, best_ptr_bmc = self.memory_encoder(
+                v2_lowres_imgenc, best_mask_pred_1mhw, best_obj_ptr_1mc, obj_score_m, is_prompt_encoding=True
+            )
 
-        return best_mask_pred_1mhw, memory_encoding, best_obj_ptr_1mc
+        return best_mask_pred_1mhw, memory_encoding, best_ptr_bmc
 
     # .................................................................................................................
 
@@ -397,7 +398,8 @@ class SAMV3p1Model(nn.Module):
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            memory_encoding = self.memory_encoder(v2_lowres_imgenc, mask_tensor, None, is_prompt_encoding=True)
+            blank_ptr, blank_score, is_prompt = None, None, True
+            memory_encoding, _ = self.memory_encoder(v2_lowres_imgenc, mask_tensor, blank_ptr, blank_score, is_prompt)
 
             # Build a 'blank' pointer, since we don't get one without running the mask decoder
             mem_b, mem_c, _, _ = memory_encoding[1].shape
@@ -472,9 +474,11 @@ class SAMV3p1Model(nn.Module):
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_1mhw, obj_score_m, is_prompt_encoding=False)
+            memory_encoding, best_ptr_bmc = self.memory_encoder(
+                lowres_imgenc, best_mask_1mhw, best_objptr_1mc, obj_score_m, is_prompt_encoding=False
+            )
 
-        return obj_score_m, best_idx_mplex, mask_preds_mnhw, memory_encoding, best_objptr_1mc
+        return obj_score_m, best_idx_mplex, mask_preds_mnhw, memory_encoding, best_ptr_bmc
 
     # .................................................................................................................
 

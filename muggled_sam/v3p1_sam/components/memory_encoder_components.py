@@ -84,7 +84,6 @@ class MaskDownsampler(nn.Module):
 
         # Store run-time variables
         self._downsample_factor = int(downsample_per_layer**num_layers)
-        self._multiplex_channels = multiplex_channels
         self._in_channel_count = channel_seq[0]
 
         # Hard-coded scaling/offset values from original implementation, see:
@@ -96,24 +95,24 @@ class MaskDownsampler(nn.Module):
 
     def forward(
         self,
-        mask_prediction_1mhw: Tensor,
+        mask_prediction_bmhw: Tensor,
         target_hw: tuple[int, int],
-        is_prompt_encoding: bool = False,
+        is_prompt_encoding_bm: Tensor,
     ) -> Tensor:
         """
         Encodes mask prediction and resizes it to match the given target height & width.
         The target size is expected to match the image encodings, so that the encoded
         mask data can be 'fused' with image data for forming 'memory encodings'
 
-        If 'is_prompt_encoding' is True, masks will be padded with a special 'multiplex flag'
-        of all 1's before downsampling, indicating that they are prompt masks. If False,
-        the padding is all 0's instead (this is a strange detail of the v3.1 update)
+        Note that the mask predictions should have shape: BxMxHxW, where
+        'B' is the multiplex 'buckets' (aka batchs) and 'M' is the number of
+        multiplexed masks, H & W are height and width. The multiplex sizing is
+        a model config parameter (16 by default), and masks *MUST* be this size
+        as inputs (e.g. Bx16, with default model config)
 
-        Note that the mask predictions should have shape: 1xMxHxW, where
-        M is the number of multiplexed masks, H & W are height and width.
-        Multiplexing is only supported up to 16 masks, however if more than
-        16 masks are given (e.g. M > 16), this model will split the masks
-        into additional batches, resulting in an output with B > 1!
+        The 'is_prompt_encoding_bm' input is expected to be a BxM tensor which represents
+        whether a mask is a prompt encoding (entry value of 1) or not (value of 0). It
+        should have the same BxM as the masks and use the same device/dtype
 
         Returns:
             encoded_mask_bchw
@@ -123,18 +122,12 @@ class MaskDownsampler(nn.Module):
             -> H & W matching the given target_hw
         """
 
-        # Add missing batch and/or multiplex dimensions
-        if mask_prediction_1mhw.ndim == 2:
-            mask_prediction_1mhw = mask_prediction_1mhw.unsqueeze(0).unsqueeze(0)
-        elif mask_prediction_1mhw.ndim == 3:
-            mask_prediction_1mhw = mask_prediction_1mhw.unsqueeze(0)
-
         # Resize mask so that the result after downsampling will match the target sizing
         upsample_hw = [size * self._downsample_factor for size in target_hw]
-        hires_mask = mask_prediction_1mhw
-        if mask_prediction_1mhw.shape[-2] != upsample_hw[0] or mask_prediction_1mhw.shape[-1] != upsample_hw[1]:
+        hires_mask = mask_prediction_bmhw
+        if mask_prediction_bmhw.shape[-2] != upsample_hw[0] or mask_prediction_bmhw.shape[-1] != upsample_hw[1]:
             hires_mask = nn.functional.interpolate(
-                mask_prediction_1mhw,
+                mask_prediction_bmhw,
                 size=upsample_hw,
                 mode="bilinear",
                 align_corners=False,
@@ -142,31 +135,12 @@ class MaskDownsampler(nn.Module):
 
         # Scale masks into -1 to +1 range & build matching flags to indicate masks that are prompt encoding
         hires_mask = torch.sigmoid(hires_mask) * self.mask_scale + self.mask_bias
-        is_prompt_flags = torch.full_like(hires_mask, 1.0 if is_prompt_encoding else 0.0)
 
-        # For convenience
-        device, dtype = hires_mask.device, hires_mask.dtype
-        mask_b, mask_m, hires_h, hires_w = hires_mask.shape
-        assert (
-            mask_b == 1
-        ), f"Batched inputs are not supported (Got B = {mask_b}). Multiplex masks using dimension index 1"
-
-        # Generate zero padding so we have the right number of multiplex entries (possibly with batch size > 1)
-        # -> For example, for a multiplex of 16 (default), if we get 40 masks, we
-        #    need to zero pad to 48 entries, so we can form a 3x16 tensor (batch size of 3)
-        num_multiplex_batches = torch.ceil(torch.tensor(mask_m / self._multiplex_channels)).int()
-        num_zero_pad = (num_multiplex_batches * self._multiplex_channels) - mask_m
-        zero_pad_entries = torch.zeros((mask_b, num_zero_pad, hires_h, hires_w), device=device, dtype=dtype)
-
-        # Pad, reshape (if needed) and merge mask with multiplex flags, following (strange) format introduced in v3.1
+        # Merge mask with multiplex flags, following (strange) format introduced in v3.1
         # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1676-L1691
-        padded_hires_mask = torch.concat((hires_mask, zero_pad_entries), dim=1)
-        padded_prompt_flags = torch.concat((is_prompt_flags, zero_pad_entries), dim=1)
-        if num_multiplex_batches != mask_b:
-            batched_shape = (num_multiplex_batches, self._multiplex_channels, hires_h, hires_w)
-            padded_hires_mask = padded_hires_mask.reshape(*batched_shape)
-            padded_prompt_flags = padded_prompt_flags.reshape(*batched_shape)
-        padded_hires_mask = torch.concat((padded_hires_mask, padded_prompt_flags), dim=1)
+        mask_b, mask_m, hires_h, hires_w = hires_mask.shape
+        is_prompt_bmhw = is_prompt_encoding_bm.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, hires_h, hires_w)
+        padded_hires_mask = torch.concat((hires_mask, is_prompt_bmhw), dim=1)
 
         # Apply downscaling & projection steps
         out_mask_bchw = self.downsample(padded_hires_mask)
