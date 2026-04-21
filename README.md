@@ -66,7 +66,7 @@ Using package managers like [conda](https://docs.conda.io/projects/conda/en/stab
 
 ### Model Weights
 
-Before you can run a model, you'll need to download it's weights. There are 3 supported SAMv1 models (vit-base, vit-large and vit-huge), four v2/v2.1 models (tiny, small, base-plus and large) and 1 SAMv3 model. This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) (config files are not needed, only the checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints). The v3 weights require (as of Dec 2025) signing an agreement before downloading, see the [SAMv3 repo](https://github.com/facebookresearch/sam3?tab=readme-ov-file#getting-started) for more details.
+Before you can run a model, you'll need to download it's weights. There are 3 supported SAMv1 models (vit-base, vit-large and vit-huge), four v2/v2.1 models (tiny, small, base-plus and large) and 1 SAMv3/v3.1 model. This repo uses the exact same weights as the original implementations (or any fine-tuned variant of the original models), which can be downloaded from the **Model Description** section of the [SAMv2 repo](https://github.com/facebookresearch/sam2?tab=readme-ov-file#model-description) (config files are not needed, only the checkpoints) and the **Model Checkpoints** section of the [SAMv1 repo](https://github.com/facebookresearch/segment-anything?tab=readme-ov-file#model-checkpoints). The v3 weights require (as of Dec 2025) signing an agreement before downloading, see the [SAMv3](https://github.com/facebookresearch/sam3?tab=readme-ov-file#getting-started) or [SAMv3.1](https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md#new-checkpoints) repo for more details.
 
 After downloading a model file, you can place it in the `model_weights` folder of this repo or otherwise just keep note of the file path, since you'll need to provide this when running the demo scripts. If you do place the file in the [model_weights](https://github.com/heyoeyo/muggled_sam/tree/main/model_weights) folder, then it will auto-load when running the scripts.
 
@@ -76,22 +76,20 @@ After downloading a model file, you can place it in the `model_weights` folder o
 
 The tables below include direct download links to all of the supported models. **Note:** These are all links to the original repos, none of these files belong to MuggledSAM!
 
-| SAMv3 Model | Size (MB) |
+| SAMv3 Models | Size (MB) |
 | -----| -----|
+| [sam3.1_multiplex](https://huggingface.co/facebook/sam3.1/resolve/main/sam3.1_multiplex.pt?download=true) | 3340 |
 | [sam3](https://huggingface.co/facebook/sam3/resolve/main/sam3.pt?download=true) | 3290 |
-
-| SAMv2.1 Models | Size (MB) |
-| -----| -----|
-| [sam2.1_hiera_tiny](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt) | 160 |
-| [sam2.1_hiera_small](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt) | 185 |
-| [sam2.1_hiera_base_plus](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt) | 325 |
-| [sam2.1_hiera_large](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt) | 900 |
 
 | SAMv2 Models | Size (MB) |
 | -----| -----|
+| [sam2.1_hiera_tiny](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt) | 160 |
 | [sam2_hiera_tiny](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt) | 160 |
+| [sam2.1_hiera_small](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt) | 185 |
 | [sam2_hiera_small](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt) | 185 |
+| [sam2.1_hiera_base_plus](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt) | 325 |
 | [sam2_hiera_base_plus](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt) | 325 |
+| [sam2.1_hiera_large](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt) | 900 |
 | [sam2_hiera_large](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt) | 900 |
 
 | SAMv1 Models | Size (MB) |
@@ -102,7 +100,7 @@ The tables below include direct download links to all of the supported models. *
 
 </details>
 
-### Simple Example
+### Basic Example
 Here's an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
 ```python
 import cv2
@@ -124,7 +122,7 @@ encoded_prompts = model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
 mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
 ```
 
-A similar example exists for [detecting objects](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection.py) (SAMv3 only).
+More examples can be found in the [simple_examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) folder.
 
 ## Run Image
 

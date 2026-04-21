@@ -144,15 +144,13 @@ This is an extension of the more basic video segmentation script, which shows ho
 The prompts that are hard-coded into this example script are set up to track a few horses from a short video by [Adrian Hoparda](https://www.pexels.com/@adrian-hoparda-1684220/) which can be freely downloaded:
 https://www.pexels.com/video/horses-running-on-grassland-4215784/
 
-## Video Segmentation (multiplexing)
+## Video Segmentation (multiplexed)
 
 _(Supports SAMv3.1 only)_
 
-This is a special variation of multi-object segmentation using 'multiplexing' introduced with the [SAMv3.1 model update](https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md). This allows for up to 16 objects to be tracked 'in parallel' leading to much faster tracking when dealing with large numbers of objects.
+This is a special variation of multi-object segmentation using 'multiplexing' introduced with the [SAMv3.1 model update](https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md). This allows for up to 16 objects to be tracked 'in parallel' leading to much faster tracking when dealing with large numbers of objects. In this example, tracking begins with object detections (similar to the [tracking from detections](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-from-detections) example) that are then carried forward using multiplexed-tracking. While only the v3.1 model properly supports multiplexing, this script will also run with v3.0 but will instead use regular 'batching' instead of multiplexing, which can be helpful for comparison
 
-In this example, tracking begins with object detections (similar to the [tracking from detections](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-from-detections) example) that are then carried forward using multiplexed-tracking. For 2 or more objects, this ends up being significantly faster than the default way of handling multi-object tracking (at least compared to SAMv3.0). The downside is that managing the tracking data could be significantly more complex if objects are expected to be added or removed over time (not included in this example).
-
-For now this script only supports tracking of up to 16 (initial) objects. This restriction will be lifted in a future update.
+For small numbers of objects there isn't a significant speed difference between v3.1 multiplexing and using batching with v3. However batching tends to lead to poor mask quality over time due to the way memory is handled. So even for small numbers of objects, the mask quality of multiplexing is an improvement. For larger numbers of objects, multiplexing provides a significant speed up. The downside of all this is that managing the (multiplexed) tracking data can become far more complex if objects are expected to be added or removed over time (not included in this simple example).
 
 ## Video Segmentation using SAMURAI
 

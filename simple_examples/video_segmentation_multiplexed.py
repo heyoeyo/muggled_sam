@@ -53,9 +53,14 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 # Load and set up detector model
 print("Loading model...")
 model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert hasattr(sammodel, "multiplex_video_masking"), "Only SAMv3.1 supports multiplexed video segmentation"
+assert sammodel.name == "samv3", "Only SAMv3.1 supports multiplexed video segmentation!"
 sammodel.to(device=device, dtype=dtype)
 detmodel = sammodel.make_detector_model()
+
+# Warning for non-v3.1 (e.g. v3 which doesn't do multiplexing)
+is_v3p1 = hasattr(sammodel, "multiplex_video_masking")
+if not is_v3p1:
+    print("", "WARNING: Model is not SAMv3.1", "Multiplexing may not be properly supported", "", sep="\n")
 
 # Run initial detection to get objects to track
 init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
