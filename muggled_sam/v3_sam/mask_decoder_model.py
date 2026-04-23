@@ -74,6 +74,9 @@ class SAMV3MaskDecoder(nn.Module):
         self.iou_token_mlp = MLP3Layers(input_channels, num_mask_tokens, use_sigmoid_output=True)
         self.objptrgen = ObjectPointerGen(input_channels)
 
+        # Special-case downsampler for making 'mask hints' used to produce object pointers from mask prompts
+        self.mask_to_ptr_hint_downsampler = nn.Conv2d(1, 1, kernel_size=4, stride=4)
+
     # .................................................................................................................
 
     def forward(
@@ -188,18 +191,94 @@ class SAMV3MaskDecoder(nn.Module):
 
         # Each mask prediction contains multiple (4 by default) options, here we select which to use
         b_idx = torch.arange(mask_preds_bnhw.shape[0], device=iou_preds_bn.device)
-        best_idx = (
-            1 + torch.argmax(iou_preds_bn[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds_bn, dim=-1)
-        )
+        best_n_idx = 1 + iou_preds_bn[:, 1:].argmax(dim=-1) if exclude_0th_index else iou_preds_bn.argmax(dim=-1)
 
         # Index out best entries, while accounting for batch dimension
-        best_mask_b1hw = mask_preds_bnhw[b_idx, best_idx].unsqueeze(1)
-        best_iou_pred_b = iou_preds_bn[b_idx, best_idx]
-        best_objptr_b1c = obj_ptrs_bnc[b_idx, best_idx].unsqueeze(1)
+        best_mask_b1hw = mask_preds_bnhw[b_idx, best_n_idx].unsqueeze(1)
+        best_iou_pred_b = iou_preds_bn[b_idx, best_n_idx]
+        best_objptr_b1c = obj_ptrs_bnc[b_idx, best_n_idx].unsqueeze(1)
 
-        return best_idx, best_mask_b1hw, best_iou_pred_b, best_objptr_b1c
+        return best_n_idx, best_mask_b1hw, best_iou_pred_b, best_objptr_b1c
 
     # .................................................................................................................
+
+    def make_pointer_from_mask(
+        self,
+        encoded_image_tokens_list_bchw: Tensor,
+        padding_point_prompt_b1c: Tensor,
+        image_posenc_bchw: Tensor,
+        mask_b1hw: Tensor,
+    ) -> Tensor:
+        """
+        Awkward helper used specifically for encoding masks used to generate object pointers
+        when initializing SAM video tracking using a mask (as opposed to using a prompt).
+        Expects the 'v2' (aka video) image encodings as an input!
+
+        In practice, making a 'blank' pointer (e.g. all zeros) works fine or even just not making
+        a pointer at all, however this is included for compatibility with the original code:
+        https://github.com/facebookresearch/sam3/blob/86ed77094094e5cabb16b0414ec60c5ba9ce0a0f/sam3/model/sam3_tracker_base.py#L412
+        https://github.com/facebookresearch/sam3/blob/86ed77094094e5cabb16b0414ec60c5ba9ce0a0f/sam3/model/sam3_tracker_base.py#L961-L967
+
+        Returns:
+            object_pointers_b1c ('B' matching input masks)
+        """
+
+        # Resize mask to prepare for special downsample step
+        mask_binary = (mask_b1hw > 0).to(device=mask_b1hw.device, dtype=mask_b1hw.dtype)
+        mask_b, mask_n, mask_h, mask_w = mask_b1hw.shape
+        upscaled_mask = nn.functional.interpolate(
+            mask_binary, size=(4 * mask_h, 4 * mask_w), mode="bilinear", align_corners=False
+        )
+
+        # Move multi-channel inputs to batch dimension if needed (for compatibility with convolution weights)
+        if mask_n > 1 and mask_b == 1:
+            upscaled_mask = upscaled_mask.permute(1, 0, 2, 3)
+            mask_b, mask_n, mask_h, mask_w = upscaled_mask.shape
+        assert mask_n == 1, f"Expecting single channel mask, e.g. Bx1xHxW, got shape: {tuple(upscaled_mask.shape)}"
+
+        # Make sure the padding batch size matches mask input
+        pad_b, pad_n, pad_c = padding_point_prompt_b1c.shape
+        if mask_b > 1 and pad_b == 1:
+            padding_point_prompt_b1c = padding_point_prompt_b1c.expand(mask_b, -1, -1)
+            pad_b, pad_n, pad_c = padding_point_prompt_b1c.shape
+        assert pad_b == mask_b, f"Error expecting prompt batch ({pad_b}) to match mask count ({mask_b})"
+
+        # Sanity check. Make sure we're using the correct image encodings
+        # -> This can happen because there are 2 different encodings for SAMv3
+        # -> The 'tracking' encodings are needed and have a smaller channel count than the 'detection' encodings
+        is_correct_imgenc = encoded_image_tokens_list_bchw[-1].shape[1] < encoded_image_tokens_list_bchw[0].shape[1]
+        if not is_correct_imgenc:
+            print(
+                "",
+                "WARNING:",
+                "Detection image encoding is being used to make object pointers,",
+                "but tracking encoding is required! Pointers will be corrupt...",
+                "",
+                sep="\n",
+            )
+            # Force correct channel count, just to avoid errors
+            lowres_c = encoded_image_tokens_list_bchw[0].shape[1]
+            new_c_list = (lowres_c, lowres_c // 4, lowres_c // 8)
+            encoded_image_tokens_list_bchw = tuple(
+                imgenc[:, :new_c] for imgenc, new_c in zip(encoded_image_tokens_list_bchw, new_c_list)
+            )
+
+        # Run 'regular' mask decoder using special mask hint to get object pointers
+        ptr_mask_hint = self.mask_to_ptr_hint_downsampler(upscaled_mask)
+        _, iou_preds_bn, obj_ptrs_bnc, _ = self(
+            encoded_image_tokens_list_bchw,
+            padding_point_prompt_b1c,
+            image_posenc_bchw,
+            mask_hint=ptr_mask_hint,
+            blank_promptless_output=False,
+        )
+
+        # Pick 'best' pointer for each multiplex/batch entry
+        best_n_idx = 1 + torch.argmax(iou_preds_bn[:, 1:], dim=-1)
+        m_idx = torch.arange(iou_preds_bn.shape[0], device=iou_preds_bn.device, dtype=torch.int64)
+        obj_ptrs_b1c = obj_ptrs_bnc[m_idx, best_n_idx].unsqueeze(1)
+
+        return obj_ptrs_b1c
 
 
 # ---------------------------------------------------------------------------------------------------------------------

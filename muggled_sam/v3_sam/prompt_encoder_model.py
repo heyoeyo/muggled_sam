@@ -111,6 +111,12 @@ class SAMV3PromptEncoder(nn.Module):
 
     # .................................................................................................................
 
+    def create_padding_point_encoding(self, batch_size: int = 1, num_points: int = 1) -> Tensor:
+        """Helper used to create BxNxC shaped padding points"""
+        return self.point_encoder.create_padding_point_encoding(batch_size, num_points)
+
+    # .................................................................................................................
+
     @staticmethod
     def check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
         """Helper used to check if there are any prompts (i.e. check for at least one non-empty list)"""

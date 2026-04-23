@@ -318,7 +318,7 @@ def get_module_type(key: str) -> SAM3ModuleType:
         elif key.startswith("tracker.obj_ptr_proj"):
             return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.mask_downsample"):
-            return SAM3ModuleType.not_used
+            return SAM3ModuleType.mask_decoder
         elif key.startswith("tracker.no_mem"):
             # Catches 'no_mem_embed', 'no_mem_pos_enc'
             return SAM3ModuleType.memory_image_fusion
@@ -549,6 +549,8 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
         new_idx = 2 * layer_idx
         weight_or_bias = get_suffix_terms(key)
         return f"objptrgen.pointer_mlp.layers.{new_idx}.{weight_or_bias}"
+    elif key.startswith("tracker.mask_downsample"):
+        return key.replace("tracker.mask_downsample", "mask_to_ptr_hint_downsampler")
 
     # Remove original prefix for remaining mask decoder keys
     key = key.removeprefix("tracker.sam_mask_decoder.")

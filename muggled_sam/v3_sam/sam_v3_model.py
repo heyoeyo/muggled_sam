@@ -350,7 +350,7 @@ class SAMV3Model(nn.Module):
             # For convenience
             lowres_imgenc, *hires_imgenc = encoded_image_features_list
             device, dtype = lowres_imgenc.device, lowres_imgenc.dtype
-            token_h, token_w = lowres_imgenc.shape[2:]
+            token_hw = lowres_imgenc.shape[2:]
 
             # Force input into a boolean mask & convert to torch tensor
             if isinstance(mask_image, ndarray):
@@ -375,15 +375,18 @@ class SAMV3Model(nn.Module):
                 mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
             assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
 
-            # Scale input to correct size before encoding
-            mask_tensor = nn.functional.interpolate(mask_tensor, size=(4 * token_h, 4 * token_w))
+            # Make special-case pointer from mask, since we don't normally get one without prompting
+            # https://github.com/facebookresearch/sam3/blob/86ed77094094e5cabb16b0414ec60c5ba9ce0a0f/sam3/model/sam3_tracker_base.py#L412
+            pad_prompt_enc = self.prompt_encoder.create_padding_point_encoding()
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
+            ptrs_b1c = self.mask_decoder.make_pointer_from_mask(
+                encoded_image_features_list, pad_prompt_enc, grid_posenc, mask_tensor
+            )
+
+            # Generate memory encoding from mask
             memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, None, is_prompt_encoding=True)
 
-            # Build a 'blank' pointer, since we don't get one without running the mask decoder
-            mem_b, mem_c, _, _ = memory_encoding.shape
-            blank_ptr_b1c = torch.zeros((mem_b, 1, mem_c * 4), device=device, dtype=dtype)
-
-        return memory_encoding, blank_ptr_b1c
+        return memory_encoding, ptrs_b1c
 
     # .................................................................................................................
 
