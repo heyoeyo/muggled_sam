@@ -395,17 +395,19 @@ class SAMV3p1Model(nn.Module):
                 mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
             assert mask_b == 1, "Mask shape error! Expecting batch size of 1, eg. 1xMxHxW"
 
+            # Make special-case pointer from mask, since we don't normally get one without prompting
+            # https://github.com/facebookresearch/sam3/blob/2e0009e23f0ad0fbcbd0488df893d30d5c8c2565/sam3/model/video_tracking_multiplex.py#L963
+            pad_prompt_enc = self.prompt_encoder.create_padding_point_encoding()
+            grid_posenc = self.coordinate_encoder.get_grid_position_encoding((token_h, token_w))
+            ptrs_1mc = self.mask_decoder.make_pointer_from_mask(v1_encimgs, pad_prompt_enc, grid_posenc, mask_tensor)
+
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
-            blank_ptr, blank_score, is_prompt = None, None, True
-            memory_encoding, _ = self.memory_encoder(v2_lowres_imgenc, mask_tensor, blank_ptr, blank_score, is_prompt)
+            no_score, is_prompt = None, True
+            memory_encoding, ptr_bmc = self.memory_encoder(v2_lowres_imgenc, mask_tensor, ptrs_1mc, no_score, is_prompt)
 
-            # Build a 'blank' pointer, since we don't get one without running the mask decoder
-            mem_b, mem_c, _, _ = memory_encoding[1].shape
-            blank_ptr_bmc = torch.zeros((mem_b, 1, mem_c), device=device, dtype=dtype)
-
-        return memory_encoding, blank_ptr_bmc
+        return memory_encoding, ptr_bmc
 
     # .................................................................................................................
 

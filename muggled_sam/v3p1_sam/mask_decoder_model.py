@@ -239,15 +239,75 @@ class SAMV3p1MaskDecoder(nn.Module):
 
         # Use highest iou prediction as indicator of the 'best' results
         # -> Optionally exclude the 0th index, which is normally used when multiple-prompts are given
-        best_idx = 1 + torch.argmax(iou_preds[:, 1:], dim=-1) if exclude_0th_index else torch.argmax(iou_preds, dim=-1)
+        b_idx = torch.arange(iou_preds.shape[0], device=iou_preds.device, dtype=torch.int64)
+        best_n_idx = 1 + iou_preds[:, 1:].argmax(dim=-1) if exclude_0th_index else iou_preds.argmax(dim=-1)
 
-        best_mask_pred = mask_preds[:, best_idx, :, :]
-        best_iou_pred = iou_preds[:, best_idx]
-        best_obj_ptr = obj_ptrs[:, best_idx, :]
+        # Get 'best' entries, while accounting for batching
+        best_mask_pred = mask_preds[b_idx, best_n_idx, :, :].unsqueeze(1)
+        best_iou_pred = iou_preds[b_idx, best_n_idx].unsqueeze(1)
+        best_obj_ptr = obj_ptrs[b_idx, best_n_idx, :].unsqueeze(1)
 
-        return best_idx, best_mask_pred, best_iou_pred, best_obj_ptr
+        return best_n_idx, best_mask_pred, best_iou_pred, best_obj_ptr
 
     # .................................................................................................................
+
+    def make_pointer_from_mask(
+        self,
+        encoded_image_tokens_list_bchw: Tensor,
+        padding_point_prompt_m1c: Tensor,
+        image_posenc_bchw: Tensor,
+        mask_1mhw: Tensor,
+    ) -> Tensor:
+        """
+        Awkward helper used specifically for encoding masks used to generate object pointers
+        when initializing SAM video tracking using a mask (as opposed to using a prompt).
+        Expects the 'v1' (aka interactive) image encodings as an input!
+
+        In practice, making a 'blank' pointer (e.g. all zeros) works fine or even just not making
+        a pointer at all, however this is included for compatibility with the original code:
+        https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L963
+        https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L712-L782
+
+        Returns:
+            object_pointers_1mc ('M' matching input masks)
+        """
+
+        # Resize mask to prepare for special downsample step
+        mask_binary = (mask_1mhw > 0).to(device=mask_1mhw.device, dtype=mask_1mhw.dtype)
+        mask_b, mask_n, mask_h, mask_w = mask_1mhw.shape
+        upscaled_mask = nn.functional.interpolate(
+            mask_binary, size=(4 * mask_h, 4 * mask_w), mode="bilinear", align_corners=False
+        )
+
+        # Move multi-channel inputs to batch dimension if needed (for compatibility with convolution weights)
+        if mask_n > 1 and mask_b == 1:
+            upscaled_mask = upscaled_mask.permute(1, 0, 2, 3)
+            mask_b, mask_n, mask_h, mask_w = upscaled_mask.shape
+        assert mask_n == 1, f"Expecting single channel mask, e.g. Bx1xHxW, got shape: {tuple(upscaled_mask.shape)}"
+
+        # Make sure the padding batch size matches mask input
+        pad_b, pad_n, pad_c = padding_point_prompt_m1c.shape
+        if mask_b > 1 and pad_b == 1:
+            padding_point_prompt_m1c = padding_point_prompt_m1c.expand(mask_b, -1, -1)
+            pad_b, pad_n, pad_c = padding_point_prompt_m1c.shape
+        assert pad_b == mask_b, f"Error expecting prompt batch ({pad_b}) to match mask count ({mask_b})"
+
+        # Run 'regular' mask decoder using special mask hint to get object pointers
+        ptr_mask_hint = self.mask_to_ptr_hint_downsampler(upscaled_mask)
+        _, iou_preds_mn, obj_ptrs_mnc, _ = self(
+            encoded_image_tokens_list_bchw,
+            padding_point_prompt_m1c,
+            image_posenc_bchw,
+            mask_hint=ptr_mask_hint,
+            blank_promptless_output=False,
+        )
+
+        # Pick 'best' pointer for each multiplex/batch entry
+        best_n_idx = 1 + torch.argmax(iou_preds_mn[:, 1:], dim=-1)
+        m_idx = torch.arange(iou_preds_mn.shape[0], device=iou_preds_mn.device, dtype=torch.int64)
+        obj_ptrs_1mc = obj_ptrs_mnc[m_idx, best_n_idx].unsqueeze(0)
+
+        return obj_ptrs_1mc
 
 
 # ---------------------------------------------------------------------------------------------------------------------
