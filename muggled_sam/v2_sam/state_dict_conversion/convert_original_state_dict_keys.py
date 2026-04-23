@@ -344,6 +344,10 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
         weight_or_bias = get_suffix_terms(key, 1)
         return f"objptrgen.score_mlp.layers.{new_idx}.{weight_or_bias}"
 
+    # Handle special mask-to-pointer convolution layer
+    if key.startswith("mask_downsample."):
+        return key.replace("mask_downsample", "mask_to_ptr_hint_downsampler")
+
     # Bail on non-decoder keys
     if not key.startswith("sam_mask_decoder"):
         return None
