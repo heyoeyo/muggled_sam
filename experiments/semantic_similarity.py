@@ -64,14 +64,6 @@ def encode_image_samv3(
         multiversion_reg_encimgs, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
         multiversion_flip_encimgs, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
 
-        # If using v3.0, wrap encodings in outer-list to mimic v3.1 shape (so we can treat both as v3.1)
-        # -> v3.1 stores [v1_encimgs, v2_encimgs, v3_encimgs]
-        # -> v3.0 stores v1_encimgs, so we make it look like: [v1_encimgs]
-        is_sam_v3p0 = isinstance(multiversion_reg_encimgs[0], torch.Tensor)
-        if is_sam_v3p0:
-            multiversion_reg_encimgs = [multiversion_reg_encimgs]
-            multiversion_flip_encimgs = [multiversion_flip_encimgs]
-
         # Combine regular encodings with horizontal flip in batch dimension for output
         multver_reg_and_flipped_encimg_list = []
         for reg_encimg_list, flip_encimg_list in zip(multiversion_reg_encimgs, multiversion_flip_encimgs):
@@ -80,10 +72,6 @@ def encode_image_samv3(
                 batch_combined_encs = torch.concat((regular_enc, torch.flipud(flipped_enc)), dim=0)
                 multires_encimgs_list.append(batch_combined_encs)
             multver_reg_and_flipped_encimg_list.append(multires_encimgs_list)
-
-        # Undo v3.0 wrapping if needed
-        if is_sam_v3p0:
-            multver_reg_and_flipped_encimg_list = multver_reg_and_flipped_encimg_list[0]
 
         # Compute 'raw' encodings
         # -> Works by manually running the image encoder, without the final projection step

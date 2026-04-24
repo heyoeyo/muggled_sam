@@ -34,6 +34,7 @@ boxes_tlbr_norm_list = []  # Example:  [[(0.25, 0.25), (0.75, 0.75)]]
 fg_xy_norm_list = [(0.5, 0.5)]
 bg_xy_norm_list = []
 imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
+display_scale = 0.5
 
 # Control for SAMURAI tracking (value between 0 and 1)
 # -> High values lead to 'lag' on SAMURAI box estimates
@@ -57,6 +58,7 @@ sammodel.to(device=device, dtype=dtype)
 is_samv3p1 = hasattr(sammodel, "multiplex_video_masking")
 if is_samv3p1:
     raise NotImplementedError("Sorry, SAMv3.1 is not (yet) supported with SAMURAI. Try v3.0 or v2")
+is_samv3p0 = sammodel.name == "samv3" and not is_samv3p1
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = sammodel.encode_image(first_frame, **imgenc_config_dict)
@@ -72,6 +74,7 @@ prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
 
 # Process video frames
+is_using_cuda = "cuda" in device
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
@@ -81,13 +84,19 @@ try:
         ok_frame, frame = vcap.read()
         if not ok_frame:
             break
+        scaled_frame = cv2.resize(frame, dsize=None, fx=display_scale, fy=display_scale)
 
         # Process video frames with model & added SAMURAI post-processing
         t1 = perf_counter()
         encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+        if is_samv3p0:
+            # Temporary hack to support SAMv3 (will be changed in future update)
+            encoded_imgs_list = encoded_imgs_list[0]
         is_mem_ok, best_mask_pred, mem_enc, obj_ptr, xy1xy2_kal = samurai.step_video_masking(
             sammodel, encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
+        if is_using_cuda:
+            torch.cuda.synchronize()
         t2 = perf_counter()
         print(f"Took {round(1000 * (t2 - t1))} ms")
 
@@ -101,7 +110,7 @@ try:
         # Create mask for display
         dispres_mask = torch.nn.functional.interpolate(
             best_mask_pred,
-            size=frame.shape[0:2],
+            size=scaled_frame.shape[0:2],
             mode="bilinear",
             align_corners=False,
         )
@@ -113,8 +122,8 @@ try:
         disp_mask = samurai.draw_box_prediction(disp_mask, xy1xy2_kal, box_predict_color)
 
         # Show frame and mask
-        sidebyside = stack_func((frame, disp_mask))
-        cv2.imshow("SAMURAI Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
+        sidebyside = stack_func((scaled_frame, disp_mask))
+        cv2.imshow("SAMURAI Segmentation Result - q to quit", sidebyside)
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break

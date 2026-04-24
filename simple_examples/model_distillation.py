@@ -86,6 +86,15 @@ for epoch_idx in range(num_epochs):
             ground_truth, _, _ = model_teacher.encode_image(img_uint8, **imgenc_config_dict)
         prediction, _, _ = model_student.encode_image(img_uint8, **imgenc_config_dict)
 
+        # Flatten outputs (v3 models output list of lists of tensors)
+        if not isinstance(prediction[0], torch.Tensor):
+            flat_truth, flat_pred = [], []
+            for targ, pred in zip(ground_truth, prediction):
+                for targ_item, pred_item in zip(targ, pred):
+                    flat_truth.append(targ_item)
+                    flat_pred.append(pred_item)
+            ground_truth, prediction = flat_truth, flat_pred
+
         # Update student weights
         loss = sum(loss_func(targ, pred) for targ, pred in zip(ground_truth, prediction))
         loss.backward()

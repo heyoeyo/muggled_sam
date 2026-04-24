@@ -295,6 +295,11 @@ print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
 config_teacher, model_teacher = make_sam_from_state_dict(path_teacher_model)
 assert model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
 
+# Sanity check. Make sure were using matching models
+assert isinstance(
+    model_student, type(model_teacher)
+), f"Error, student-teacher mismatch ({model_student.__class__.__name__} vs. {model_teacher.__class__.__name__})"
+
 # Remove unused components to save some memory
 to_delete = ["sampling_encoder", "image_exemplar_fusion", "text_encoder", "exemplar_detector", "exemplar_segmentation"]
 for component_name in to_delete:
@@ -365,7 +370,8 @@ count_data_bytes = lambda in_data, out_data: in_data.nbytes + sum(entry.nbytes f
 # For datasets that might fit in memory, ask user if they want to enable teacher caching
 if size_teacher_cache_mb == 0 and is_using_cuda and total_mem_gb > 6:
     free_mem_bytes, _ = torch.cuda.mem_get_info()
-    total_data_cache_size_bytes = len(img_path_list) * 75_000_000
+    approx_bytes_per_result_at_1008px = 75_000_000
+    total_data_cache_size_bytes = len(img_path_list) * approx_bytes_per_result_at_1008px
     target_size_cache_mb = 0
     if free_mem_bytes > 2 * total_data_cache_size_bytes:
         target_size_cache_mb = 1 + round(total_data_cache_size_bytes / 1_000_000)
@@ -499,6 +505,14 @@ model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
 blocks_str = f"{num_blocks_teacher} -> {num_blocks_student} blocks"
 device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(blocks_str, device_dtype_str, space_equally=True)
+footer_msgbar = StaticMessageBar(
+    "TAB - Toggle point vs. box prompts",
+    "Space - Toggle training",
+    "1,2,3,4 - Focus mask prediction",
+    space_equally=True,
+    text_scale=0.35,
+    bar_height=30,
+)
 
 # Set up main displays
 main_img_elem = ExpandingImage(loaded_image_bgr)
@@ -574,6 +588,7 @@ disp_layout = VStack(
     lr_slider,
     accum_slider,
     HStack(reset_btn, HSeparator(40), save_to_disk_btn),
+    footer_msgbar,
 )
 
 # Render out an image with a target size, to figure out which side we should limit when rendering
@@ -613,10 +628,11 @@ if have_init_prompts:
 
 def run_full(model: nn.Module, image_tensor_bchw: torch.Tensor):
     """Helper used to run full image encoding for training"""
-    encoded_img = model.image_encoder(image_tensor_bchw)
-    v3_features_list = model.image_projection.v2_projection(encoded_img)
-    v2_features_list = model.image_projection.v3_projection(encoded_img)
-    return [*v2_features_list, *v3_features_list]
+    encoded_imgs_list, _, _ = model.encode_image(image_tensor_bchw)
+    flat_list = []
+    for item in encoded_imgs_list:
+        flat_list.extend(item)
+    return flat_list
 
 
 def save_weights(
@@ -716,7 +732,7 @@ plot_loss_list = []
 optim = remake_optimizer(0)
 request_display_only_update = True
 need_save_on_crash = False
-loss_scaling = [1.0, (1 / 2), (1 / 2), 1.0, (1 / 2), (1 / 2)]
+loss_scaling = tuple([1.0, (1 / 2), (1 / 4)] * 3)
 imgenc_config_dict = {"max_side_length": imgenc_init_size, "use_square_sizing": use_square_sizing}
 prompts_dict = {"box_tlbr_norm_list": [], "fg_xy_norm_list": [], "bg_xy_norm_list": []}
 mask_idx_select = None
@@ -874,7 +890,7 @@ try:
 
                 # Compute teacher result (and potentially cache for re-use)
                 with torch.no_grad():
-                    img_tensor = model_teacher.image_encoder.prepare_image(next_img_uint8, **imgenc_config_dict)
+                    img_tensor = model_teacher.prepare_image_batch([next_img_uint8], **imgenc_config_dict)
                     out_target = run_full(model_teacher, img_tensor)
                     nbytes = count_data_bytes(img_tensor, out_target)
                     teacher_cache.store(nbytes, next_img_path, (img_tensor, out_target))

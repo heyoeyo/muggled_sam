@@ -50,18 +50,20 @@ class SAMV3ImageProjection(nn.Module):
 
     def forward(self, tokens_bchw: Tensor) -> tuple[tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]]:
         """
-        Compute 3 projections at different resolutions, 1x, 2x and 4x
-        for both a 'v3' and 'v2' variant. In practice, only one of these may
-        be needed, in these cases consider using '.v#_projection(...)' functions.
+        Compute 2 projections each with 3 resolutions, 1x, 2x and 4x.
+        - The 'v2' projections are used for interactive & video segmentation
+        - The 'v3' projections are used for object detection
+
+        If only one projection is needed, consider using the '.v#_projection(...)' functions.
 
         Returns:
-            v3_tokens_x1_x2_x4, v2_tokens_x1_x2_x4
+            v2_tokens_x1_x2_x4, v3_tokens_x1_x2_x4
         """
 
         v2_tokens_x1, v2_tokens_x2, v2_tokens_x4 = self.multires_proj_v2(tokens_bchw)
         v3_tokens_x1, v3_tokens_x2, v3_tokens_x4 = self.multires_proj_v3(tokens_bchw)
 
-        return (v3_tokens_x1, v3_tokens_x2, v3_tokens_x4), (v2_tokens_x1, v2_tokens_x2, v2_tokens_x4)
+        return (v2_tokens_x1, v2_tokens_x2, v2_tokens_x4), (v3_tokens_x1, v3_tokens_x2, v3_tokens_x4)
 
     # .................................................................................................................
 

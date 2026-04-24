@@ -81,7 +81,7 @@ print(f"Detected {num_objects} initial objects!")
 
 # Re-encode image at 'tracking' resolution to set up initial memory encoding
 if max_side_length_detect != max_side_length_track:
-    init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length_track, use_square_sizing)
+    init_encimgs, _, _ = sammodel.encode_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
 init_mem, init_ptr = sammodel.initialize_from_mask(init_encimgs, init_masks)

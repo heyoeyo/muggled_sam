@@ -43,6 +43,8 @@ detect_every_n_frames = 10  # Set to None to only run once on startup
 detection_score_threshold = 0.5
 existing_box_iou_threshold = 0.25
 remove_after_n_missed_frames = 5
+max_side_length_detect = 1008
+max_side_length_track = 504  # Reduce this to increase speed at the cost of mask quality
 
 # Controls for visualization
 enable_detection_visualization = True
@@ -51,8 +53,8 @@ display_scale = 0.35
 
 # Bundle re-used data together for ease of use
 display_scale_dict = {"dsize": None, "fx": display_scale, "fy": display_scale}
-track_imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
-detection_imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
+track_imgenc_config_dict = {"max_side_length": max_side_length_track, "use_square_sizing": True}
+detection_imgenc_config_dict = {"max_side_length": max_side_length_detect, "use_square_sizing": True}
 detection_prompts_dict = {
     "text": text_prompt,
     "box_xy1xy2_norm_list": pos_box_xy1xy2_norm_list,
@@ -77,18 +79,21 @@ detmodel = track_model.make_detector_model()
 print("  Done!")
 
 # Allow loading of alternate tracking model
-if tracking_model_path is not None:
+is_using_separate_tracking_model = tracking_model_path is not None
+if is_using_separate_tracking_model:
     print("Loading separate tracking model...")
     _, track_model = make_sam_from_state_dict(tracking_model_path)
     assert track_model.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video tracking"
     track_model.to(device=device, dtype=dtype)
     print("  Done!")
+needs_detect_reencode = is_using_separate_tracking_model or (detection_imgenc_config_dict != track_imgenc_config_dict)
 
 # Set up storage for tracking memory and keeping track of lost objects
 memory_per_obj_dict = defaultdict(SAMVideoObjectResults.create)
 missed_frames_per_obj_dict = defaultdict(int)
 
 # Process video frames
+is_using_cuda = "cuda" in device
 detect_every_n_frames = 2**31 if detect_every_n_frames is None else detect_every_n_frames
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
@@ -134,8 +139,10 @@ try:
         no_tracked_objects = len(memory_per_obj_dict) == 0
         need_detection = ((idx_frame - initial_frame_index) % detect_every_n_frames) == 0 or no_tracked_objects
         if need_detection:
-            print(f"  Performing detection update! (frame {idx_frame})")
-            det_encimgs, _, _ = detmodel.encode_detection_image(frame, **detection_imgenc_config_dict)
+            print(f"Performing detection update! (frame {idx_frame})")
+            det_encimgs = encoded_imgs_list
+            if needs_detect_reencode:
+                det_encimgs, _, _ = detmodel.encode_detection_image(frame, **detection_imgenc_config_dict)
             det_exemplars = detmodel.encode_exemplars(det_encimgs, **detection_prompts_dict)
             det_masks, det_boxes, _, _ = detmodel.generate_detections(
                 det_encimgs, det_exemplars, detection_filter_threshold=detection_score_threshold
@@ -143,7 +150,7 @@ try:
 
             # If we get new detections, compare to existing objects to see if anything new has appeared
             num_detections = det_masks.shape[1]
-            print(f"    -> Detected {num_detections} objects")
+            print(f"  -> Detected {num_detections} objects")
             if num_detections > 0:
 
                 # Get bounding boxes of existing objects
@@ -185,7 +192,9 @@ try:
                 # Initialize new detections using the corresponding mask predictions
                 next_new_idx = max(memory_per_obj_dict.keys()) + 1 if len(memory_per_obj_dict) > 0 else 0
                 new_det_idxs_list = [det_idx for det_idx, is_new in enumerate(is_new_obj_list) if is_new]
-                print(f"    -> Adding {len(new_det_idxs_list)} new objects")
+                num_new_objs = len(new_det_idxs_list)
+                if num_new_objs > 0:
+                    print(f"  -> Adding {num_new_objs} new objects")
                 for idx_offset, det_idx in enumerate(new_det_idxs_list):
                     raw_det_mask = det_masks[0, det_idx]
                     init_mem, init_ptr = track_model.initialize_from_mask(encoded_imgs_list, raw_det_mask)
@@ -195,14 +204,17 @@ try:
                 pass
 
         # Finish timing model inference
+        if is_using_cuda:
+            torch.cuda.synchronize()
         t2 = perf_counter()
-        print(f"Took {round(1000 * (t2 - t1))} ms for {len(memory_per_obj_dict)} objects")
+        txt_time_ms = f"{round(1000 * (t2 - t1))} ms"
+        txt_obj_count = f"{len(memory_per_obj_dict)} objects"
 
         # Stop tracking objects that were marked for removal
         for idx_obj in objs_to_remove_list:
             memory_per_obj_dict.pop(idx_obj)
             missed_frames_per_obj_dict.pop(idx_obj)
-            print("  -> Removed object:", idx_obj)
+            print("  -> Removed object index:", idx_obj)
 
         # Combine all tracking masks for display
         combined_mask_result = np.zeros(display_frame.shape[0:2], dtype=bool)
@@ -219,6 +231,8 @@ try:
         # Combine original image & mask result side-by-side for display
         combined_mask_result_uint8 = combined_mask_result.astype(np.uint8) * 255
         disp_mask = cv2.cvtColor(combined_mask_result_uint8, cv2.COLOR_GRAY2BGR)
+        cv2.putText(disp_mask, txt_time_ms, (5, 18), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(disp_mask, txt_obj_count, (5, 40), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
         sidebyside_frame = stack_func((display_frame, disp_mask))
 
         # Show results

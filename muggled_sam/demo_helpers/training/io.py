@@ -138,6 +138,7 @@ class ShuffleList:
         self._data = initial_data
         self._curr_item_idx = -1
         self._idx_list = list(range(len(initial_data)))
+        self._max_idx = len(self._idx_list) - 1
         if shuffle_on_init and len(initial_data) > 0:
             self.force_shuffle()
         pass
@@ -187,8 +188,13 @@ class ShuffleList:
     def get_next(self, repeat: bool = False) -> tuple[bool, Any]:
 
         # Don't update item indexing if we're repeating an entry
-        if not repeat:
-            self._curr_item_idx += 1
+        if repeat:
+            # Avoid (rare) scenario where we don't have a proper index set
+            # -> Happens if we reshuffle (idx is -1), then do a repeat-read which doesn't increment the index
+            # -> Can get infinite loop if user tries to 'remove previous' when this happens if index isn't forced to 0
+            self._curr_item_idx = max(0, self._curr_item_idx)
+        else:
+            self._curr_item_idx = min(self._curr_item_idx + 1, self._max_idx)
 
         data_idx = self._idx_list[self._curr_item_idx]
         result = self._data[data_idx]
@@ -214,10 +220,12 @@ class ShuffleList:
         # (it remains in the original data however!)
         data_idx = self._idx_list.pop(self._curr_item_idx)
         result = self._data[data_idx]
+        max_idx = len(self._idx_list) - 1
 
         # Correct next index if needed (avoid problems when removing from end of list)
-        max_next_idx = max(0, len(self._idx_list) - 2)
+        max_next_idx = max(0, max_idx - 2)
         self._curr_item_idx = min(self._curr_item_idx, max_next_idx)
+        self._max_idx = max_idx
 
         return result
 

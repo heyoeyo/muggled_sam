@@ -269,6 +269,11 @@ config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model
 assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
 model_teacher = base_model_teacher.make_detector_model()
 
+# Sanity check. Make sure were using matching models
+assert isinstance(
+    model_student, type(model_teacher)
+), f"Error, student-teacher mismatch ({model_student.__class__.__name__} vs. {model_teacher.__class__.__name__})"
+
 # Make sure all weights are un-trainable to begin
 for p in model_student.parameters():
     p.requires_grad_(False)
@@ -459,6 +464,14 @@ model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
 layers_str = f"{num_layers_teacher} -> {num_layers_student} layers"
 device_dtype_str = f"{model_device}/{model_dtype}"
 header_msgbar = StaticMessageBar(layers_str, device_dtype_str, space_equally=True)
+footer_msgbar = StaticMessageBar(
+    "m - Toggle mask view",
+    "Space - Toggle training",
+    "Enter - Change prompt",
+    space_equally=True,
+    text_scale=0.35,
+    bar_height=30,
+)
 
 # Set up main displays
 main_img_elem = ExpandingImage(loaded_image_bgr, interpolation=cv2.INTER_NEAREST)
@@ -521,6 +534,7 @@ disp_layout = VStack(
     lr_slider,
     accum_slider,
     HStack(reset_btn, HSeparator(40), save_to_disk_btn),
+    footer_msgbar,
 )
 
 # Render out an image with a target size, to figure out which side we should limit when rendering

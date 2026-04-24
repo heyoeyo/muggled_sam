@@ -243,26 +243,6 @@ class SAMV3MaskDecoder(nn.Module):
             pad_b, pad_n, pad_c = padding_point_prompt_b1c.shape
         assert pad_b == mask_b, f"Error expecting prompt batch ({pad_b}) to match mask count ({mask_b})"
 
-        # Sanity check. Make sure we're using the correct image encodings
-        # -> This can happen because there are 2 different encodings for SAMv3
-        # -> The 'tracking' encodings are needed and have a smaller channel count than the 'detection' encodings
-        is_correct_imgenc = encoded_image_tokens_list_bchw[-1].shape[1] < encoded_image_tokens_list_bchw[0].shape[1]
-        if not is_correct_imgenc:
-            print(
-                "",
-                "WARNING:",
-                "Detection image encoding is being used to make object pointers,",
-                "but tracking encoding is required! Pointers will be corrupt...",
-                "",
-                sep="\n",
-            )
-            # Force correct channel count, just to avoid errors
-            lowres_c = encoded_image_tokens_list_bchw[0].shape[1]
-            new_c_list = (lowres_c, lowres_c // 4, lowres_c // 8)
-            encoded_image_tokens_list_bchw = tuple(
-                imgenc[:, :new_c] for imgenc, new_c in zip(encoded_image_tokens_list_bchw, new_c_list)
-            )
-
         # Run 'regular' mask decoder using special mask hint to get object pointers
         ptr_mask_hint = self.mask_to_ptr_hint_downsampler(upscaled_mask)
         _, iou_preds_bn, obj_ptrs_bnc, _ = self(
