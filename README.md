@@ -183,6 +183,12 @@ While this script only works with images, the detection capabilities of SAMv3 ca
 
 For a more hackable version of cross-image detection (i.e. using an object from one image to detect objects in other images), see the [cross-image object detection](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#object-detection-cross-image) example.
 
+
+# Changelog
+
+Over time there have been several breaking changes to the SAM implementations in MuggledSAM, these are documented in the [changelog](https://github.com/heyoeyo/muggled_sam/blob/main/.readme_assets/CHANGELOG.md).
+
+
 # Acknowledgements
 
 The code in this repo is entirely based off the original segment-anything github repos:
