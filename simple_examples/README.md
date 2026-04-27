@@ -67,13 +67,15 @@ This script runs each of the image segmentation components repeatedly while timi
 | V1-Large  | 101 ms | 26 ms  | 1.5 ms |
 | V2-Tiny   | 10 ms  | 3.1 ms | 1.6 ms |
 | V2-Large  | 47 ms  | 13 ms  | 1.6 ms |
-| V3        | 148ms  | 39 ms  | 1.5 ms |
+| V3        | 157 ms  | 44 ms  | 1.5 ms |
+| v3.1      | 162 ms  | 45 ms  | 1.5 ms |
 
 | Model | Encoding @ 1008px | Encoding @ 504px | Mask Generation |
 | ----- | ----------------- | ---------------- | --------------- |
-| V3        | 109ms  | 41 ms  | 1.5 ms |
+| V3    | 115 ms  | 43 ms    | 1.5 ms |
+| V3.1  | 119 ms  | 44 ms    | 1.5 ms |
 
-The SAMv3 results are shown for both 1024px and 1008px (it's native default), since the model takes a _significant_ performance hit at the v1/v2 default 1024px sizing. Strangely, it's also consistently slower at 504px vs. 512px.
+The SAMv3/v3.1 results are shown for both 1024px and 1008px (the native resolution of the models), since the model takes a _significant_ performance hit at the v1/v2 default 1024px sizing. It's worth noting that v3 & v3.1 both compute multiple 'projections' when running the image encoder, which are not always needed (depends on how the model is being used). If only one task is needed (e.g. interactive segmentation), it's possible to get a small (~10%) speed up by manually running only the required projection(s).
 
 For reference, here's the VRAM usage (with bfloat16) of various models as reported by [nvidia-smi](https://docs.nvidia.com/deploy/nvidia-smi/index.html) when running this script. All values are in mebibytes (MiB):
 
@@ -86,48 +88,54 @@ For reference, here's the VRAM usage (with bfloat16) of various models as report
 | V2-Small |  724 |  508 |
 | V2-Base+ |  840 |  582 |
 | V2-Large | 1230 |  920 |
-| V3       | 2524 | 2156 |
+| V3       | 2610 | 2176 |
+| V3.1     | 2622 | 2190 |
 
 
 ## Speed Benchmarking (Detections)
 
 _(Supports SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/speed_benchmarking_detection.py)
 
-This script repeatedly runs the components associated with SAMv3 object detection while timing the execution speed. The time taken for each of the major steps (image encoding, exemplar encoding and generating detections) is printed out as the script runs. For example, here are the results using an RTX 3090 on bfloat16 running at the default 1008px as well as 504px, with and without compilation for comparison. A single box, point and text prompt are being used in all cases (using more or fewer prompts will affect timing). All times are in milliseconds:
+This script repeatedly runs the components associated with SAMv3 object detection while timing the execution speed. The time taken for each of the major steps (image encoding, exemplar encoding and generating detections) is printed out as the script runs. The table below shows the results using an RTX 3090 on bfloat16 running at the default 1008px as well as 504px, with and without compilation for comparison. A single box, point and text prompt are being used in all cases (using more or fewer prompts will affect timing). All times are in milliseconds:
+
+| Model | Image encoding | Exemplar encoding | Generate detections |
+| ----- | -------------- | ----------------- | ------------------- |
+| V3 @ 1008px            | 115 | 4.2 | 18  |
+| V3 @ 1008px (compiled) | 107 | 3.1 | 12  |
+| V3 @ 504px             | 43  | 4.2 | 6.5 |
+| v3 @ 504px (compiled)  | 35  | 3.1 | 3.7 |
 
 
-| Component |  Time @ 1008px | -> Compiled (1008px) | Time @ 504px | -> Compiled (504px) |
-| --------- | -------------- | -------------------- | ------------ | ------------------- |
-| Image encoding      | 111  | 101 | 41   | 34  |
-| Exemplar encoding   | 4.4  | 3.1 | 4.4  | 3.1 |
-| Generate detections |  18  | 12  | 6.8  | 3.7 |
+As with the masking and video tracking tasks, the image encoder takes up the majority of the inference time when running object detection. Reducing the processing resolution by half gives a slightly better than 2x speed up in inference, and we see that compilation gives around a 10% speed up to the image encoder, with bigger benefits for smaller components. The results for v3.1 are identical to v3.0, except for a slightly slower image encoder due to including an additional projection of the encoded image tokens (see the [image segmentation](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#speed-benchmarking) benchmarking above).
 
-As with the masking and video tracking tasks, the image encoder takes up the majority of the inference time when running object detection. Reducing the processing resolution by half gives a slightly better than 2x speed up in inference, and we see that compilation gives around a 10% speed up to the image encoder, with bigger benefits for smaller components.
-
-For reference, nvidia-smi reports VRAM usage as 2530MiB (@1008px, bfloat16) and 2164MiB (@504px, bfloat16). With compilation, this is slightly reduced to 2454MiB and 2140MiB, respectively.
+For reference, nvidia-smi reports VRAM usage as 2530MiB (@1008px, bfloat16) and 2166MiB (@504px, bfloat16). With compilation, this is slightly reduced to 2454MiB and 2140MiB, respectively.
 
 
 ## Video Segmentation
 
 _(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py)
 
-This script provides a basic example of how to implement video segmentation using the SAMv2 or v3 model (V1 does not support video segmentation!). For simplicity, this script assumes that tracking begins with a prompt on the first frame of the video, but any frame could be used. It also only stores results for one object, though again this can be changed to handle multiple objects by creating instances of the video storage data for each object.
+This script provides a basic example of how to implement video segmentation using the SAMv2 or v3 model (V1 does not support video segmentation!). For simplicity, this script assumes that tracking begins with a prompt on the first frame of the video, but any frame could be used. It also only stores results for one object, though again this can be changed to handle multiple objects by creating multiple instances of the video storage data for each object.
 
-Segmentation results are displayed per-frame for verification, and the total inference time is also printed out. For example, the table below shows the per-frame inference times for different models while tracking one object at different image sizes using bfloat16 (all other settings are left at defaults):
+Segmentation results are displayed per-frame for verification, and the time required for image encoding as well as a single tracking update (e.g. mask prediction) is also printed out. For example, the tables below show the per-frame inference times for different models while tracking one object at different image sizes using bfloat16 on an RTX 3090 (all other settings are left at defaults):
 
-| Model | Inference @ 1024 | Inference @ 512 |
-| ----- | ---------------- | --------------- |
-| V2-Tiny | 26 ms | 8 ms |
-| V2-Small | 28 ms | 8 ms |
-| V2-Base | 38 ms | 11 ms |
-| V2-Large | 64 ms | 17 ms |
-| V3 | 172ms | 46ms |
+| Model | Encode + Track @ 1024px | Encode + Track @ 512px |
+| ----- | ----------------------- | ---------------------- |
+| V2-Tiny  | 13 + 15 | 5 + 4  |
+| V2-Small | 15 + 15 | 7 + 4  |
+| V2-Base  | 25 + 15 | 9 + 4  |
+| V2-Large | 52 + 15 | 18 + 4 |
 
-| Model | Inference @ 1008 | Inference @ 504 |
-| ----- | ---------------- | --------------- |
-| V3 | 130ms | 47ms |
+| Model | Encode + Track @ 1008px | Encode + Track @ 504px |
+| ----- | ----------------------- | ---------------------- |
+| V3    | 119 + 22 | 46 + 5 |
+| V3.1  | 121 + 25 | 48 + 6 |
 
-Again, the results for the v3 model using 1008px are included as it runs much slower when using the v1/v2 default sizing.
+Here, the results for v3/v3.1 are shown only for the native (1008px) resolution. As with image segmentation, these models run much slower at 1024px.
+
+It's worth noting that the tracking times are the same across all v2 models because they use the same size modules for tracking and mask predictions (only the image encoders differ). SAMv3.0 uses the same tracking modules as v2, but ends up slower because the image encoder uses a smaller patch size, leading to higher-resolution memory encodings (72x72 SAMv3 vs. 64x64 for SAMv2). The SAMv3.1 model introduces 'multiplexing' during video segmentation, which leads to increases in the time taken to generate masks and encode memory tokens, hence the small tracking slow down compared to v3.0.
+
+For all models, except v3.1, the tracking time scales linearly with the number of tracked objects. For v3.1, the model can handle 1 to 16 objects in a single batch. So for example, if 30 objects were being tracked, the v2-tiny model would require a total of 463ms (13 + 15 * 30) per frame, while v3.1 could treat this as two batches of 16 for a total 171ms (121 + 25 * 2).
 
 ## Video Segmentation (from mask)
 
