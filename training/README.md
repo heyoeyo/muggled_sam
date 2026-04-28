@@ -29,8 +29,6 @@ python3 prune_image_encoder.py
 
 Pruning primarily works by keeping only a subset of the original transformer blocks of either the text or image encoders. This can work surprisingly well, as the later transformer blocks typically have very little effect on the model output. The choice of which blocks to keep is configurable, with a number of default mappings provided when the scripts are first run.
 
-These scripts also support reducing the feature counts used by the encoders (see the `-h` flag for more info). This is done in a simplistic way and tends to have a very negative impact on the model performance (much more so than removing entire blocks). It can be hard to recover the lost performance when doing this, so it's meant as more of an advanced option. For patient users, it may be possible to iteratively reduce the feature count by a small amount, followed by training to correct the model errors, followed by another feature count reduction etc. However, large feature count reductions will likely require a full fine-tuning using ground-truth masks (not supported in this repo) to work properly.
-
 The models produced by these scripts are still usable with the original SAMv3 codebase, but may require changes to the original codebase to load correctly. The required changes will be printed out in the terminal when saving pruned models.
 
 ## Distillation

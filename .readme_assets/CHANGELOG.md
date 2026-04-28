@@ -14,6 +14,9 @@ The following list is a set of planned changes that will involve breaking backwa
 
 ## Breaking changes
 
+### 2026-04-28
+- Completely removed support for pruning features from the text or image encoders as part of the distillation scripts. This was just too messy to maintain, and distilling models with reduced features doesn't work well anyways (at least in the simplistic way it was being done). If needed, it's of course still possible to do using older commits (e.g. [d2d0339](https://github.com/heyoeyo/muggled_sam/tree/d2d0339f488d9581f3c388ba7c81401f55b5144c))
+
 ### 2026-04-24
 
 - Updated SAMv3.0 implementation to produce image encodings that mirror the format used by v3.1 (e.g. a 'list of lists of tensors'), in order to make v3/v3.1 models more interchangable (see [new](https://github.com/heyoeyo/muggled_sam/blob/2a085e72072dd30a9580044365a0bf4ea3e055c6/muggled_sam/v3_sam/sam_v3_model.py#L210) vs [old](https://github.com/heyoeyo/muggled_sam/blob/eee05a73b316781d167465bc0d4f6a62d8cbfba1/muggled_sam/v3_sam/sam_v3_model.py#L198)). This also makes the model less error prone when mixing video/detection encodings. However, it comes with a slight _reduction_ (~10%) in speed when detection isn't being used, as the detection encodings are computed regardless of whether they're needed. It's possible to avoid this performance hit by [manually computing](https://github.com/heyoeyo/muggled_sam/blob/2a085e72072dd30a9580044365a0bf4ea3e055c6/muggled_sam/v3_sam/image_projection_model.py#L70-L78) only the required projections, it's just no longer the default behavior

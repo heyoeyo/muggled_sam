@@ -28,12 +28,6 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, select_from_options
 from muggled_sam.demo_helpers.text_input import confirm_prompt
 from muggled_sam.demo_helpers.training.default_data import make_default_text_encoder_block_mapping, save_unnested_json
-from muggled_sam.v3_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
-
-# Only used for feature pruning
-from muggled_sam.demo_helpers.training.pruning import copy_samv3_features
-from muggled_sam.v3_sam.make_sam_v3 import make_sam_v3, make_samv3_from_original_state_dict
-from muggled_sam.v3_sam.state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -54,13 +48,6 @@ parser.add_argument(
     help="Path to a json file containing layer mappings (run script to generate initial file)",
 )
 parser.add_argument("-n", "--map_name", default=None, type=str, help="Name of layer mapping to use")
-parser.add_argument(
-    "-f",
-    "--feature_count",
-    default=None,
-    type=int,
-    help="Set to a number to choose how many features to use (prune) from original model",
-)
 parser.add_argument("-debug", default=False, action="store_true", help="Enable debug printouts")
 
 # For convenience
@@ -69,7 +56,6 @@ arg_model_path = args.model_path
 mapping_path = args.mapping_path
 enable_debug_printouts = args.debug
 map_name = args.map_name
-target_prune_features = args.feature_count
 
 # Info print out
 print(
@@ -155,59 +141,6 @@ if mugsam_key in state_dict.keys():
 sam3_required_key = "detector.backbone.language_backbone.encoder.token_embedding.weight"
 if sam3_required_key not in state_dict.keys():
     raise TypeError("Error! Only SAMv3 models are supported")
-
-# Get model config for reporting
-orig_config = get_model_config_from_state_dict(state_dict)
-num_txt_feats = orig_config["txtencoder_features"]
-num_txt_heads = orig_config["txtencoder_num_heads"]
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-# %% Prune features
-
-is_prune_enabled = target_prune_features is not None
-if is_prune_enabled:
-
-    # Get state dict of original model in mugsam format
-    orig_config, orig_model_mugsam = make_samv3_from_original_state_dict(state_dict)
-    _, reverse_key_lut = convert_state_dict_keys(orig_config, state_dict)
-    orig_sd_mugsam = orig_model_mugsam.state_dict()
-    del orig_model_mugsam
-
-    # Sanity check, make sure we're actually doing something
-    num_orig_feats, num_orig_heads = orig_config["txtencoder_features"], orig_config["txtencoder_num_heads"]
-    num_orig_feats_per_head = round(num_orig_feats / num_orig_heads)
-    assert (
-        target_prune_features < num_orig_feats
-    ), f"Error no features are being pruned (orig feature count: {num_orig_feats})"
-
-    # Create new model config (with features pruned)
-    new_txt_feats = round(target_prune_features / num_orig_feats_per_head) * num_orig_feats_per_head
-    new_txt_heads = round(new_txt_feats / num_orig_feats_per_head)
-    new_config = {**orig_config}
-    new_config["txtencoder_features"] = new_txt_feats
-    new_config["txtencoder_num_heads"] = new_txt_heads
-
-    # Get state dict of new mugsam model (with reduced feature count)
-    new_model_mugsam = make_sam_v3(**new_config)
-    new_sd_mugsam = new_model_mugsam.state_dict()
-    del new_model_mugsam
-
-    # Try to copy features into pruned model
-    print("", f"Pruning text encoder features ({num_orig_feats} down to {new_txt_feats})...")
-    is_ok_prune, pruned_sd = copy_samv3_features(orig_sd_mugsam, new_sd_mugsam, state_dict, reverse_key_lut)
-    assert set(pruned_sd.keys()) == set(state_dict.keys()), "Error, mismatching keys after feature pruning!"
-    if not is_ok_prune:
-        print(
-            "",
-            "Warning",
-            "Feature pruning produced errors!",
-            "The pruned model may not be useable...",
-            sep="\n",
-        )
-    state_dict = pruned_sd
-    num_txt_feats = new_txt_feats
-    num_txt_heads = new_txt_heads
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -310,8 +243,6 @@ if is_identical_order and num_layers_removed == 0:
 # Figure out name of new model
 old_model_path = Path(model_path)
 new_model_name = f"{old_model_path.stem}_txtenc_{map_name}"
-if is_prune_enabled:
-    new_model_name = f"{old_model_path.stem}_txtenc_{num_txt_feats}feats_{map_name}"
 new_model_path = old_model_path.with_stem(new_model_name)
 for rename_idx in range(2, 100):
     if not new_model_path.exists():
@@ -336,12 +267,10 @@ if user_confirm_save:
         "",
         "*" * 64,
         "",
-        "Using this model with the original SAM3 codebase requires (minor) modifications:",
-        f"  1 - Set the text encoder width to: {num_txt_feats}",
-        f"  2 - Set the number of heads to: {num_txt_heads}",
-        f"  3 - Set the layer count to: {num_to_keep}",
+        "Using this model with the original SAM3 codebase requires a minor modification:",
+        f"  Set the layer count to: {num_to_keep}",
         "",
         "See:",
-        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L495-L497",
+        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L497",
         sep="\n",
     )
