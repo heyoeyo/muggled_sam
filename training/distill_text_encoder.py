@@ -96,7 +96,7 @@ default_loss_samples = 600
 default_teacher_cache_mb = 16
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 text encoder")
+parser = argparse.ArgumentParser(description="Script used to distill the SAMv3/v3.1 text encoder")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to test image")
 parser.add_argument("-t", "--text_prompt", default=default_text_prompt, help="Text prompt for testing")
 parser.add_argument("--teacher_path", default=default_teacher_path, type=str, help="Path to teacher model weights")
@@ -259,20 +259,20 @@ history.store(
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
 config_student, base_model_student = make_sam_from_state_dict(path_student_model)
-assert base_model_student.name == "samv3", "Only SAMv3 is supported for fine tuning"
+assert base_model_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_student = base_model_student.make_detector_model()
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
 config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert base_model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
+assert base_model_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_teacher = base_model_teacher.make_detector_model()
 
 # Sanity check. Make sure were using matching models
-assert isinstance(
-    model_student, type(model_teacher)
-), f"Error, student-teacher mismatch ({model_student.__class__.__name__} vs. {model_teacher.__class__.__name__})"
+assert (
+    base_model_teacher.name == base_model_student.name
+), f"Error, mismatched teacher-student models! ({base_model_teacher.name} vs. {base_model_student.name})"
 
 # Make sure all weights are un-trainable to begin
 for p in model_student.parameters():

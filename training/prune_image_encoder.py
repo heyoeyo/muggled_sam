@@ -38,7 +38,7 @@ default_model_path = None
 default_mapping_path = "image_encoder_prune_mappings.json"
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to prune the image encoder of a SAMv3 model")
+parser = argparse.ArgumentParser(description="Script used to prune the image encoder of a SAMv3/v3.1 model")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAMv3 model weights")
 parser.add_argument(
     "-map",
@@ -60,7 +60,7 @@ map_name = args.map_name
 # Info printout
 print(
     "",
-    "This script can be used to reduce the size of the SAMv3 image encoder.",
+    "This script can be used to reduce the size of the SAMv3/v3.1 image encoder.",
     "",
     "It works by keeping only a subset of the original transformer model",
     "which has 32 blocks grouped into 4 stages. This script uses a block",
@@ -140,19 +140,21 @@ blocks_per_stage = num_new_blocks_per_stage[0]
 print("", "Loading base model...", sep="\n")
 state_dict = torch.load(model_path)
 
-# Sanity check. Make sure we're dealing with SAMv3
-mugsam_key = "config_muggled_samv3"
-if mugsam_key in state_dict.keys():
-    raise TypeError("MuggledSAM model detected! Only original SAMv3 models are supported")
-sam3_required_key = "detector.backbone.vision_backbone.trunk.pos_embed"
-if sam3_required_key not in state_dict.keys():
-    raise TypeError("Error! Only SAMv3 models are supported")
+# Pruning only works on original SAM weights, not re-saved MuggledSAM
+is_mugsam_weights = any(key.startswith("config_muggled") for key in state_dict.keys())
+if is_mugsam_weights:
+    raise TypeError("MuggledSAM model detected! Only original SAM weights can be pruned")
+
+# Sanity check, make sure we're dealing with SAMv3 or v3.1
+target_image_encoder_key = "detector.backbone.vision_backbone.trunk.pos_embed"
+if target_image_encoder_key not in state_dict.keys():
+    raise TypeError("Only SAMv3/v3.1 are supported! The loaded model is missing image encoder keys...")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Get block indexing
 
-# Hard-code block prefix for SAMv3
+# Hard-code block prefix for SAMv3/v3.1
 target_block_key_prefix = "detector.backbone.vision_backbone.trunk.blocks"
 target_freqs_key_component = "freqs_cis"
 
@@ -278,7 +280,7 @@ for rename_idx in range(2, 100):
     new_model_path = old_model_path.with_stem(f"{new_model_name}_v{rename_idx}")
 
 # Get user to confirm before saving (large) file
-print("", "Created new model:", new_model_path.name, "", sep="\n", flush=True)
+print("", "Creating new model:", new_model_path.name, "", sep="\n", flush=True)
 user_confirm_save = confirm_prompt("Save model")
 
 # Only save when confirmed
@@ -299,7 +301,7 @@ if user_confirm_save:
         f"  2 - Set the global attention block indices to: {tuple(new_global_idxs)}",
         "",
         "See:",
-        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L79",
-        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L87",
+        "https://github.com/facebookresearch/sam3/blob/c97c893969003d3e6803fd5d679f21e515aef5ce/sam3/model_builder.py#L84",
+        "https://github.com/facebookresearch/sam3/blob/c97c893969003d3e6803fd5d679f21e515aef5ce/sam3/model_builder.py#L92",
         sep="\n",
     )

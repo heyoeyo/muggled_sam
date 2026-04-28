@@ -94,7 +94,7 @@ default_loss_samples = 300
 default_teacher_cache_mb = 0
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to distill the SAMv3 image encoder")
+parser = argparse.ArgumentParser(description="Script used to distill the SAMv3/v3.1 image encoder")
 parser.add_argument("-i", "--image_path", default=default_image_path, help="Path to test image")
 parser.add_argument(
     "-p",
@@ -287,13 +287,13 @@ history.store(
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
 config_student, model_student = make_sam_from_state_dict(path_student_model)
-assert model_student.name == "samv3", "Only SAMv3 is supported for fine tuning"
+assert model_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
 config_teacher, model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert model_teacher.name == "samv3", "Only SAMv3 is supported for fine tuning"
+assert model_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 
 # Sanity check. Make sure were using matching models
 assert isinstance(

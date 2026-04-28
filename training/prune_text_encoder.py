@@ -38,7 +38,7 @@ default_model_path = None
 default_mapping_path = "text_encoder_prune_mappings.json"
 
 # Define script arguments
-parser = argparse.ArgumentParser(description="Script used to prune the text encoder of a SAMv3 model")
+parser = argparse.ArgumentParser(description="Script used to prune the text encoder of a SAMv3/v3.1 model")
 parser.add_argument("-m", "--model_path", default=default_model_path, type=str, help="Path to SAMv3 model weights")
 parser.add_argument(
     "-map",
@@ -60,7 +60,7 @@ map_name = args.map_name
 # Info print out
 print(
     "",
-    "This script can be used to reduce the size of the SAMv3 text encoder.",
+    "This script can be used to reduce the size of the SAMv3/v3.1 text encoder.",
     "",
     "It works by keeping only a subset of the original transformer model",
     "which has 24 block/layers. This script uses a block mapping to",
@@ -134,13 +134,15 @@ num_to_keep = len(idx_to_keep_list)
 print("", "Loading base model...", sep="\n")
 state_dict = torch.load(model_path)
 
-# Sanity check. Make sure we're dealing with SAMv3
-mugsam_key = "config_muggled_samv3"
-if mugsam_key in state_dict.keys():
-    raise TypeError("MuggledSAM model detected! Only original SAMv3 models are supported")
-sam3_required_key = "detector.backbone.language_backbone.encoder.token_embedding.weight"
-if sam3_required_key not in state_dict.keys():
-    raise TypeError("Error! Only SAMv3 models are supported")
+# Pruning only works on original SAM weights, not re-saved MuggledSAM
+is_mugsam_weights = any(key.startswith("config_muggled") for key in state_dict.keys())
+if is_mugsam_weights:
+    raise TypeError("MuggledSAM model detected! Only original SAM weights can be pruned")
+
+# Sanity check, make sure we're dealing with SAMv3 or v3.1
+target_text_encoder_key = "detector.backbone.language_backbone.encoder.token_embedding.weight"
+if target_text_encoder_key not in state_dict.keys():
+    raise TypeError("Only SAMv3/v3.1 are supported! The loaded model is missing text encoder keys...")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -252,7 +254,7 @@ for rename_idx in range(2, 100):
 
 
 # Get user to confirm before saving (large) file
-print("", "Created new model:", new_model_path.name, "", sep="\n", flush=True)
+print("", "Creating new model:", new_model_path.name, "", sep="\n", flush=True)
 user_confirm_save = confirm_prompt("Save model")
 
 # Only save when confirmed
@@ -271,6 +273,6 @@ if user_confirm_save:
         f"  Set the layer count to: {num_to_keep}",
         "",
         "See:",
-        "https://github.com/facebookresearch/sam3/blob/f6e51f59500a87c576c2df2323ce56b9fd7a12de/sam3/model_builder.py#L497",
+        "https://github.com/facebookresearch/sam3/blob/c97c893969003d3e6803fd5d679f21e515aef5ce/sam3/model_builder.py#L508",
         sep="\n",
     )

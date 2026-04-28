@@ -27,8 +27,21 @@ from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, ask_
 from muggled_sam.demo_helpers.text_input import confirm_prompt
 from muggled_sam.demo_helpers.training.io import get_training_weight_paths
 
-from muggled_sam.v3_sam.state_dict_conversion.convert_original_state_dict_keys import convert_state_dict_keys
-from muggled_sam.v3_sam.state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
+# SAMv3.0 functions
+from muggled_sam.v3_sam.state_dict_conversion.convert_original_state_dict_keys import (
+    convert_state_dict_keys as v3_convert_sd_keys,
+)
+from muggled_sam.v3_sam.state_dict_conversion.config_from_original_state_dict import (
+    get_model_config_from_state_dict as v3_get_config_from_state_dict,
+)
+
+# SAMv3.1 functions
+from muggled_sam.v3p1_sam.state_dict_conversion.convert_original_state_dict_keys import (
+    convert_state_dict_keys as v3p1_convert_sd_keys,
+)
+from muggled_sam.v3p1_sam.state_dict_conversion.config_from_original_state_dict import (
+    get_model_config_from_state_dict as v3p1_get_config_from_state_dict,
+)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -77,19 +90,17 @@ if train_weights_path is not None:
         raise FileNotFoundError(f"Invalid file path: {train_weights_path}")
 
 # Ask user for path to training weights if needed
+base_model_path = Path(base_model_path)
 if train_weights_path is None:
 
     # Try to get weights associated with the loaded model, so we can provide a menu selection
-    base_model_path = Path(base_model_path)
-    base_model_name = base_model_path.name
-    base_model_name_no_ext = base_model_path.stem
-    train_file_paths_list = get_training_weight_paths(root_path, base_model_name_no_ext)
+    train_file_paths_list = get_training_weight_paths(root_path, base_model_path)
 
     # Ask user for file path if we can't find weights for the model, otherwise give a menu
     num_entries = len(train_file_paths_list)
     if num_entries == 0:
         # Ask user for file path directly
-        print("", f"No training files found for model ({base_model_name})", "", sep="\n", flush=True)
+        print("", f"No training files found for model ({base_model_path.name})", "", sep="\n", flush=True)
         train_weights_path = ask_for_path_if_missing(file_type="training weights")
 
     else:
@@ -122,18 +133,25 @@ if sd_weights is None:
 
 print("", "Loading base model...", f"@ {base_model_path}", sep="\n")
 sd_model = torch.load(base_model_path)
+is_samv3 = "tracker.no_obj_ptr" in sd_model.keys()
+is_samv3p1 = "tracker.model.interactive_sam_mask_decoder.iou_token.weight" in sd_model.keys()
+assert is_samv3 or is_samv3p1, "Unexpected model! Only SAMv3/v3.1 are supported"
 
-# Get model weights/info
-model_config = get_model_config_from_state_dict(sd_model)
-model_components_to_sd, new_to_old_key_lut = convert_state_dict_keys(model_config, sd_model)
+# Get model weights/info & reversal table, so we can map mugsam keys back into original format
+if is_samv3:
+    model_config = v3_get_config_from_state_dict(sd_model)
+    model_components_to_sd, new_to_old_key_lut = v3_convert_sd_keys(model_config, sd_model)
+elif is_samv3p1:
+    model_config = v3p1_get_config_from_state_dict(sd_model)
+    model_components_to_sd, new_to_old_key_lut = v3p1_convert_sd_keys(model_config, sd_model)
 
 # Warn if we get a name mismatch
 train_student_name = sd_train.get("student_name", None)
-if train_student_name is not None and train_student_name != base_model_name:
+if train_student_name is not None and train_student_name != base_model_path.name:
     print(
         "",
         "Warning:",
-        f"Base model name ({base_model_name}) doesn't match the training weights ({train_student_name})",
+        f"Base model name ({base_model_path.name}) doesn't match the training weights ({train_student_name})",
         "This may lead to unexpected performance of the merged model...",
         sep="\n",
     )
@@ -357,7 +375,8 @@ for weight_key, new_rotmat, new_bias in lora_embed_rotmat_and_bias_list:
         new_sd[weight_key] += new_bias
 
 # Set up name of new model, with renaming to avoid overwriting existing models
-new_model_name_no_ext = f"{base_model_name_no_ext}-merged"
+base_model_name_no_ext = base_model_path
+new_model_name_no_ext = f"{base_model_path.stem}-merged"
 new_model_path = base_model_path.with_stem(new_model_name_no_ext)
 for rename_idx in range(2, 100):
     if not new_model_path.exists():

@@ -12,7 +12,6 @@ import json
 import torch
 import torch.nn as nn
 import numpy as np
-import cv2
 
 # For type hints
 from typing import Any
@@ -349,8 +348,8 @@ def save_training_weights(
 
 def get_training_weight_paths(
     root_folder_path: str | Path,
-    base_model_name: str | Path,
-    weight_folder_name: str | Path = "saved_train_weights",
+    base_model_path: str | Path,
+    weight_folder_name: str = "saved_train_weights",
     reverse_sort_paths: bool = True,
 ) -> list[Path]:
     """
@@ -360,8 +359,7 @@ def get_training_weight_paths(
     """
 
     # Build pathing to where we expect training weights to be stored for the given model
-    base_model_name = Path(base_model_name).stem
-    weight_folder_name = Path(weight_folder_name).stem
+    base_model_name = Path(base_model_path).stem
     model_train_folder = Path(root_folder_path) / weight_folder_name / base_model_name
 
     # List out all saved torch files under the training folder
