@@ -8,8 +8,7 @@
 import torch
 import torch.nn as nn
 
-from .components.memory_image_fusion_components import MemoryFusionTransformerLayer, FusionPositionOffset
-from .components.posenc_sine import SinusoidalPE2D
+from .components.memory_image_fusion_components import MemoryImageFusionTransformer, FusionPositionOffset
 from .components.version_2_vs_2p1_variants import ObjectPointerPosEnc_v2p0, ObjectPointerPosEnc_v2p1
 
 # For type hints
@@ -67,21 +66,15 @@ class SAMV2MemoryImageFusion(nn.Module):
         # Embedding added to encoded image features when not using memory encoding
         self.no_mem_embed_bchw = torch.nn.Parameter(torch.empty(1, features_per_image_token, 1, 1))
 
-        # Create models used to help prepare data for transformer layers
+        # Create model used to help prepare data for transformer
         self.memconcat = MemoryConcatenator(
             features_per_image_token, features_per_memory_token, max_memory_history, is_version_2p1
         )
-        self.imgposenc = ImageTokenPositionEncoder(features_per_image_token)
 
-        # Build transformer layers
-        layers_list = []
-        for _ in range(num_layers):
-            layer = MemoryFusionTransformerLayer(
-                features_per_image_token, features_per_memory_token, num_heads, mlp_ratio=8
-            )
-            layers_list.append(layer)
-        self.layers = nn.ModuleList(layers_list)
-        self.out_norm = nn.LayerNorm(features_per_image_token)
+        # Model used to encode memory data into image tokens
+        self.fusion_transformer = MemoryImageFusionTransformer(
+            features_per_image_token, features_per_memory_token, num_layers, num_heads
+        )
 
     # .................................................................................................................
 
@@ -126,25 +119,11 @@ class SAMV2MemoryImageFusion(nn.Module):
             previous_is_recent_first,
         )
 
-        # Get input shape so we can restore it on output & handle batching if needed
-        mem_b = memory_tokens.shape[0]
-        img_b, img_c, img_h, img_w = lowres_image_tokens_bchw.shape
-        patch_hw = (img_h, img_w)
-        if mem_b > 1 and img_b == 1:
-            lowres_image_tokens_bchw = lowres_image_tokens_bchw.expand(mem_b, -1, -1, -1)
-            img_b = mem_b
-
-        # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
-        image_posenc_tokens = self.imgposenc(lowres_image_tokens_bchw)
-        flat_imgtokens_bnc = image_posenc_tokens.flatten(2).permute(0, 2, 1)
-
-        # Run transformer layers to fuse memory results with image tokens
-        for layer in self.layers:
-            flat_imgtokens_bnc = layer(patch_hw, flat_imgtokens_bnc, memory_tokens, memory_posenc, num_ptr_tokens)
-
-        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
-        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
-        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(img_b, img_c, img_h, img_w)
+        # Fuse memory results into image tokens
+        fused_img_tokens = self.fusion_transformer(
+            lowres_image_tokens_bchw, memory_tokens, memory_posenc, num_ptr_tokens
+        )
+        return fused_img_tokens
 
     # .................................................................................................................
 
@@ -293,45 +272,5 @@ class MemoryConcatenator(nn.Module):
         memory_posenc = torch.cat(posenc_list, dim=1)
 
         return memory_tokens, memory_posenc, num_ptr_tokens
-
-    # .................................................................................................................
-
-
-class ImageTokenPositionEncoder(nn.Module):
-    """
-    Simple helper used to handle the addition of position encodings
-    to image tokens within the memory fusion model. This module does
-    not exist in the original implementation, but is separated in
-    this repo for the sake of clarity.
-
-    This functionality seems like an odd implementation detail from the
-    original code base, and is the only place where image position encodings
-    are actually used (with default the configs at least), it can be found here:
-    https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/memory_attention.py#L141
-
-    Removing this behavior (by not running the model or having a weight of 0.0),
-    has very little effect on the output!
-    """
-
-    # .................................................................................................................
-
-    def __init__(self, features_per_image_token=256, position_encoding_weight=0.1):
-        super().__init__()
-        self.posenc = SinusoidalPE2D(features_per_image_token)
-        self._posenc_weight = position_encoding_weight
-
-    def forward(self, image_tokens_bchw: Tensor) -> Tensor:
-        """
-        Applies (additive) position encoding to image tokens
-        Returns:
-            encoded_image_tokens_bchw (same shape as input)
-        """
-
-        # For clarity
-        _, _, h, w = image_tokens_bchw.shape
-
-        # Create position encoding matching image shape and add to original tokens
-        img_posenc = self.posenc(h, w) * self._posenc_weight
-        return image_tokens_bchw + img_posenc
 
     # .................................................................................................................

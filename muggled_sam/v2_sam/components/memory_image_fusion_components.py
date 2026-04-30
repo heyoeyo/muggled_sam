@@ -19,6 +19,82 @@ from torch import Tensor
 # %% Classes
 
 
+class MemoryImageFusionTransformer(nn.Module):
+    """
+    This model is responsible for the bulk of the memory-to-image 'fusion' computation.
+    It's a transformer model made of 'fusion' layers, which make use of both self & cross attention.
+
+    It mostly corresponds to the 'MemoryAttention' module from the original code base:
+    https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/sam2/modeling/memory_attention.py#L102
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        features_per_image_token=256,
+        features_per_memory_token=64,
+        num_layers=4,
+        num_heads=1,
+        position_encoding_weight=0.1,
+    ):
+        # Inherit from parent
+        super().__init__()
+
+        # Position encoding for image tokens
+        self.img_posenc = SinusoidalPE2D(features_per_image_token)
+        self._img_posenc_weight = position_encoding_weight
+
+        # Build transformer layers
+        layers_list = []
+        for _ in range(num_layers):
+            layer = MemoryFusionTransformerLayer(
+                features_per_image_token, features_per_memory_token, num_heads, mlp_ratio=8
+            )
+            layers_list.append(layer)
+        self.layers = nn.ModuleList(layers_list)
+        self.out_norm = nn.LayerNorm(features_per_image_token)
+
+    # .................................................................................................................
+
+    def forward(
+        self,
+        lowres_image_tokens_bchw: Tensor,
+        memory_tokens: Tensor,
+        memory_posenc: Tensor,
+        num_ptr_tokens: int,
+    ) -> Tensor:
+        """
+        Fuses memory data into image tokens. Also handles batching between memory and image data
+        Returns:
+            fused_image_tokens_bchw (same shape as low-res input)
+        """
+
+        # Get input shape so we can restore it on output & handle batching if needed
+        mem_b = memory_tokens.shape[0]
+        img_b, img_c, img_h, img_w = lowres_image_tokens_bchw.shape
+        patch_hw = (img_h, img_w)
+        if mem_b > 1 and img_b == 1:
+            lowres_image_tokens_bchw = lowres_image_tokens_bchw.expand(mem_b, -1, -1, -1)
+            img_b = mem_b
+
+        # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
+        # https://github.com/facebookresearch/segment-anything-2/blob/7e1596c0b6462eb1d1ba7e1492430fed95023598/sam2/modeling/memory_attention.py#L141
+        img_posenc_bchw = self.img_posenc(img_h, img_w) * self._img_posenc_weight
+        image_with_posenc_tokens = lowres_image_tokens_bchw + img_posenc_bchw
+        flat_imgtokens_bnc = image_with_posenc_tokens.flatten(2).permute(0, 2, 1)
+
+        # Run transformer layers to fuse memory results with image tokens
+        for layer in self.layers:
+            flat_imgtokens_bnc = layer(patch_hw, flat_imgtokens_bnc, memory_tokens, memory_posenc, num_ptr_tokens)
+
+        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
+        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
+        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(img_b, img_c, img_h, img_w)
+
+    # .................................................................................................................
+
+
 class MemoryFusionTransformerLayer(nn.Module):
     """
     Simplified implementation of the 'MemoryAttentionLayer' model from:

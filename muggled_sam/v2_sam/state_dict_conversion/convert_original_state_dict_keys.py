@@ -500,17 +500,17 @@ def _convert_memfusion_keys(key: str) -> None | str:
     if key.startswith("obj_ptr_tpos_proj"):
         return key.replace("obj_ptr_tpos_proj", "memconcat.ptrposenc.pointer_pos_proj")
 
-    # Remove model name prefix
+    # Handle memory attention conversions
     if key.startswith("memory_attention"):
 
-        # Remove memory_attention prefix from all keys
-        new_key = key.removeprefix("memory_attention.")
+        # Update memory attention prefix
+        new_key = key.replace("memory_attention", "fusion_transformer")
 
         # Rename final norm layer for clarity
-        if new_key.startswith("norm"):
+        if new_key.startswith("fusion_transformer.norm"):
             new_key = new_key.replace("norm", "out_norm")
 
-        if new_key.startswith("layers"):
+        if new_key.startswith("fusion_transformer.layers"):
 
             # Handle re-structuring of the fusion transformer layers
             find_and_replace_lut = {

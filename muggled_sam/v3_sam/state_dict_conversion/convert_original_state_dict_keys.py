@@ -704,29 +704,32 @@ def _convert_memimgfusion_keys(key: str) -> None | str:
         return key.replace("tracker.obj_ptr_tpos_proj", "memconcat.ptrposenc.pointer_pos_proj")
 
     # Remove original prefix for remaining 'transformer' keys
-    key = key.removeprefix("tracker.transformer.encoder.")
+    if key.startswith("tracker.transformer.encoder."):
 
-    # Re-name the layers of the transformer (bulk of this model)
-    if key.startswith("layers"):
+        # Update transformer prefix
+        key = key.replace("tracker.transformer.encoder", "fusion_transformer")
 
-        # Handle re-structuring of the fusion transformer layers
-        find_and_replace_lut = {
-            "norm1": "image_selfattn.norm",
-            "norm2": "image_crossattn.norm",
-            "self_attn": "image_selfattn.attn",
-            "cross_attn_image": "image_crossattn.attn",
-            "norm3": "image_mlp.mlp.0",
-            "linear1": "image_mlp.mlp.1",
-            "linear2": "image_mlp.mlp.3",
-        }
-        has_attn_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
-        if has_attn_match:
-            return key.replace(targ_str, match_str)
+        # Re-name the layers of the transformer (bulk of this model)
+        if key.startswith("fusion_transformer.layers"):
 
-    # Rename final norm layers for clarity
-    # (these are different from the norm layers 'norm1/2/3' inside the transformer)
-    if key.startswith("norm"):
-        return key.replace("norm", "out_norm")
+            # Handle re-structuring of the fusion transformer layers
+            find_and_replace_lut = {
+                "norm1": "image_selfattn.norm",
+                "norm2": "image_crossattn.norm",
+                "self_attn": "image_selfattn.attn",
+                "cross_attn_image": "image_crossattn.attn",
+                "norm3": "image_mlp.mlp.0",
+                "linear1": "image_mlp.mlp.1",
+                "linear2": "image_mlp.mlp.3",
+            }
+            has_attn_match, targ_str, match_str = find_match_by_lut(key, find_and_replace_lut)
+            if has_attn_match:
+                return key.replace(targ_str, match_str)
+
+        # Rename final norm layers for clarity
+        # (these are different from the 'norm1/2/3' in the transformer layers)
+        if key.startswith("fusion_transformer.norm"):
+            return key.replace("norm", "out_norm")
 
     return None
 

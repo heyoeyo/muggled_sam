@@ -19,6 +19,83 @@ from torch import Tensor
 # %% Classes
 
 
+class MemoryImageFusionTransformer(nn.Module):
+    """
+    This model is responsible for the bulk of the memory-to-image 'fusion' computation.
+    It's a transformer model made of 'fusion' layers, which make use of both self & cross attention.
+
+    It mostly corresponds to the 'TransformerEncoderCrossAttention' model from the original code base:
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/decoder.py#L614
+    https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model_builder.py#L410
+    """
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        features_per_image_token: int = 256,
+        features_per_memory_token: int = 64,
+        num_layers: int = 4,
+        num_heads: int = 1,
+        position_encoding_weight: float = 0.1,
+    ):
+        # Inherit from parent
+        super().__init__()
+
+        # Position encoding for image tokens
+        self.img_posenc = SinusoidalPE2D(features_per_image_token)
+        self._img_posenc_weight = position_encoding_weight
+
+        # Build transformer layers
+        layers_list = []
+        for _ in range(num_layers):
+            layer = MemoryImageFusionTransformerLayer(
+                features_per_image_token, features_per_memory_token, num_heads, mlp_ratio=8
+            )
+            layers_list.append(layer)
+        self.layers = nn.ModuleList(layers_list)
+        self.out_norm = nn.LayerNorm(features_per_image_token)
+
+    # .................................................................................................................
+
+    def forward(
+        self,
+        lowres_image_tokens_bchw: Tensor,
+        memory_tokens: Tensor,
+        memory_posenc: Tensor,
+        num_ptr_tokens: int,
+    ) -> Tensor:
+        """
+        Fuses memory data into image tokens. Also handles batching between memory and image data
+        Returns:
+            fused_image_tokens_bchw (same shape as low-res input)
+        """
+
+        # Get input shape so we can restore it on output & handle batching if needed
+        mem_b = memory_tokens.shape[0]
+        img_b, img_c, img_h, img_w = lowres_image_tokens_bchw.shape
+        patch_hw = (img_h, img_w)
+        if mem_b > 1 and img_b == 1:
+            lowres_image_tokens_bchw = lowres_image_tokens_bchw.expand(mem_b, -1, -1, -1)
+            img_b = mem_b
+
+        # Apply position encoding & flatten to rows-of-tokens format, shape: BxNxC
+        # https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/decoder.py#L683C17-L683C33
+        img_posenc_bchw = self.img_posenc(img_h, img_w) * self._img_posenc_weight
+        image_with_posenc_tokens = lowres_image_tokens_bchw + img_posenc_bchw
+        flat_imgtokens_bnc = image_with_posenc_tokens.flatten(2).permute(0, 2, 1)
+
+        # Run transformer layers to fuse memory results with image tokens
+        for layer in self.layers:
+            flat_imgtokens_bnc = layer(patch_hw, flat_imgtokens_bnc, memory_tokens, memory_posenc, num_ptr_tokens)
+
+        # Convert back to image-like shape, from: BxNxC -> BxCxHxW
+        flat_imgtokens_bnc = self.out_norm(flat_imgtokens_bnc)
+        return flat_imgtokens_bnc.permute(0, 2, 1).reshape(img_b, img_c, img_h, img_w)
+
+    # .................................................................................................................
+
+
 class MemoryImageFusionTransformerLayer(nn.Module):
     """
     Simplified implementation of the 'TransformerDecoderLayerv2' model from:
