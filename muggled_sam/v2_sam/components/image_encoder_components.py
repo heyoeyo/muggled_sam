@@ -204,14 +204,22 @@ class OutputProjection(nn.Module):
         # Inherit from parent
         super().__init__()
 
-        in_chs_large_first = sorted(input_channels_list, reverse=True)
-        self.multires_projs = nn.ModuleList(Conv1x1Layer(in_ch, output_channels) for in_ch in in_chs_large_first)
+        # For clarity. Get input/output channel counts for projections
+        in_half, in_x1, in_x2, in_x4 = sorted(input_channels_list, reverse=True)
+        out_x2 = output_channels // 4
+        out_x4 = output_channels // 8
+
+        # Build each (multi-res) projection layer
+        self.halfres_proj = Conv1x1Layer(in_half, output_channels)
+        self.lowres_x1_proj = Conv1x1Layer(in_x1, output_channels)
+        self.hires_x2_proj = nn.Sequential(Conv1x1Layer(in_x2, output_channels), Conv1x1Layer(output_channels, out_x2))
+        self.hires_x4_proj = nn.Sequential(Conv1x1Layer(in_x4, output_channels), Conv1x1Layer(output_channels, out_x4))
 
     # .................................................................................................................
 
     def forward(
         self, multires_tokens_largest_first: tuple[Tensor, Tensor, Tensor, Tensor]
-    ) -> tuple[tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Input is expected to be a list of 4 image tokens at multiple resolutions,
         where each entry has a shape: BxFxHxW
@@ -220,37 +228,33 @@ class OutputProjection(nn.Module):
         The ordering is expected to be largest-to-smallest (in terms of H & W),
         with each entry being progressively halved in size.
 
-        This function applies processing which projects each of these multi-res tokens
-        to a single shared channel size, while maintaining the multi-res shapes.
-        However, the lowest resolution tokens are discarded!
+        This function produces a new set of tokens, with reduced feature counts
 
         Returns:
-            image_tokens_smallest_first_list, posembed_list
+            lowres_features, features_x2, features_x4
+            -> Each has shape: BxFxHxW, but different F, H & W values
             -> Output tokens are ordered smallest-to-largest by H & W (this is reversed compared to input!)
         """
 
-        # Project each of the image tokens to a shared channel dimension
-        img_tokens_smallest_first = reversed(multires_tokens_largest_first)
-        proj_tokens = [proj(tokens) for proj, tokens in zip(self.multires_projs, img_tokens_smallest_first)]
+        # For clarity, unpack multi-resolution inputs
+        hires_x4, hires_x2, lowres_x1, halfres = multires_tokens_largest_first
 
-        # Split tokens into lowest-res & outputs
-        # -> We only keep the 3 highest resolution tokens for output
-        # -> This was done using a 'scalp' setting in the original code:
-        # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/backbones/image_encoder.py#L32
-        lowres_features, *tokens_smallest_first_list = proj_tokens
+        # Compute projections for each resolution (all end up with shapes: BxFxHxW, but different 'F' values)
+        hires_x4 = self.hires_x4_proj(hires_x4)
+        hires_x2 = self.hires_x2_proj(hires_x2)
+        lowres_x1 = self.lowres_x1_proj(lowres_x1)
+        halfres = self.halfres_proj(halfres)
 
-        # Compute 'top-down-features' which are added to only the remaining lowres tokens, see:
+        # Compute 'top-down-features' which are only added to lowres tokens, see:
         # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/backbones/image_encoder.py#L115
-        initial_dtype = lowres_features.dtype
+        tokens_hw = lowres_x1.shape[2:]
         top_down_features = nn.functional.interpolate(
-            lowres_features.to(dtype=torch.float32),
-            size=tokens_smallest_first_list[0].shape[2:],
+            halfres.to(dtype=torch.float32),
+            size=tokens_hw,
             mode="nearest",
             align_corners=None,
             antialias=False,
         )
-        tokens_smallest_first_list[0] += top_down_features.to(dtype=initial_dtype)
+        lowres_x1 += top_down_features.to(dtype=lowres_x1.dtype)
 
-        return tokens_smallest_first_list
-
-    # .................................................................................................................
+        return lowres_x1, hires_x2, hires_x4

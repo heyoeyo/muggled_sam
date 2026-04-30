@@ -206,11 +206,11 @@ def _convert_imgenc_keys(
 ) -> None | str:
     """Converts keys associated with the image encoder component of the model"""
 
-    # Capture oddly placed hi-res convolution layers on the mask decoder
+    # Capture oddly placed hi-res convolution layers on the mask decoder (move to output projection)
     if key.startswith("sam_mask_decoder.conv_s0"):
-        return key.replace("sam_mask_decoder.conv_s0", "proj_x4")
+        return key.replace("sam_mask_decoder.conv_s0", "output_projection.hires_x4_proj.1")
     if key.startswith("sam_mask_decoder.conv_s1"):
-        return key.replace("sam_mask_decoder.conv_s1", "proj_x2")
+        return key.replace("sam_mask_decoder.conv_s1", "output_projection.hires_x2_proj.1")
 
     # Re-arrange/name positional encoding weights to a different model component
     if key == "image_encoder.trunk.pos_embed":
@@ -241,7 +241,6 @@ def _convert_imgenc_keys(
         # Fix block MLP layer indexing
         orig_block_idx = get_nth_integer(new_key, 0)
         if ".mlp.layers." in new_key:
-            # block_idx = get_nth_integer(new_key, 0)
             mlp_layer_idx = get_nth_integer(new_key, 1)
             new_idx = 2 * mlp_layer_idx
             weight_or_bias = get_suffix_terms(new_key, 1)
@@ -260,7 +259,14 @@ def _convert_imgenc_keys(
     if "neck.convs" in new_key:
         seq_idx = get_nth_integer(new_key, 0)
         weight_or_bias = get_suffix_terms(new_key, 1)
-        return f"output_projection.multires_projs.{seq_idx}.{weight_or_bias}"
+        seq_idx_to_key_lut = {
+            0: "halfres_proj",
+            1: "lowres_x1_proj",
+            2: "hires_x2_proj.0",
+            3: "hires_x4_proj.0",
+        }
+        new_layer_name = seq_idx_to_key_lut[seq_idx]
+        return f"output_projection.{new_layer_name}.{weight_or_bias}"
 
     # Return all other keys with just prefix removed
     return new_key

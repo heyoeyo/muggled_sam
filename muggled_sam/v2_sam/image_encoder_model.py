@@ -13,7 +13,6 @@ import torch.nn as nn
 
 from .components.hiera_model import HieraModel
 from .components.image_encoder_components import HalfStepPatchEmbed, WindowTiledPositionEncoding, OutputProjection
-from .components.shared import Conv1x1Layer
 
 # For type hints
 from torch import Tensor
@@ -93,10 +92,6 @@ class SAMV2ImageEncoder(nn.Module):
         features_per_stage = self.hiera.get_features_per_stage()
         self.output_projection = OutputProjection(output_channels, features_per_stage)
 
-        # New to version-2, used to process pass-thru features sent to the mask decoder
-        self.proj_x4 = Conv1x1Layer(output_channels, output_channels // 8)
-        self.proj_x2 = Conv1x1Layer(output_channels, output_channels // 4)
-
         # Store image scaling values
         self.register_buffer("mean_rgb", torch.tensor(self.rgb_offset).view(-1, 1, 1), persistent=False)
         self.register_buffer("stdev_scale_rgb", 1.0 / torch.tensor(self.rgb_stdev).view(-1, 1, 1), persistent=False)
@@ -118,7 +113,7 @@ class SAMV2ImageEncoder(nn.Module):
           ->          index-2 shape: 1x32x256x256
 
         Returns:
-            [lowres_features, features_x2, features_x4]
+            lowres_features, features_x2, features_x4
         """
 
         # Prepare image tokens for transformer
@@ -127,12 +122,7 @@ class SAMV2ImageEncoder(nn.Module):
 
         # Encode patches using transformer, then project down to 3 feature maps
         multires_tokens_bchw_list = self.hiera(patch_tokens_bchw)
-        features_list = self.output_projection(multires_tokens_bchw_list)
-
-        # Further process high-res features
-        lowres_features, hires_features_x2, hires_features_x4 = features_list
-        hires_features_x4 = self.proj_x4(hires_features_x4)
-        hires_features_x2 = self.proj_x2(hires_features_x2)
+        lowres_features, hires_features_x2, hires_features_x4 = self.output_projection(multires_tokens_bchw_list)
 
         return lowres_features, hires_features_x2, hires_features_x4
 
