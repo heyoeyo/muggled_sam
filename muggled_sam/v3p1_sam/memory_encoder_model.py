@@ -194,48 +194,45 @@ class SAMV3p1MemoryEncoder(nn.Module):
 
         # Convert 'is prompt' flag to per-multiple-mask entry if we're not given a tensor
         if need_convert_is_prompt_enc:
-            is_prompt_enc_bm = torch.full([1, mask_m], is_prompt_encoding, device=device, dtype=dtype)
+            is_prompt_enc_1m = torch.full([1, mask_m], is_prompt_encoding, device=device, dtype=dtype)
         else:
             # If user gives a tensor directly, make sure there's one entry for each mask input
             assert is_prompt_encoding.shape[0] == mask_m, "Prompt encoding tensor must match mask multiplex count!"
-            is_prompt_enc_bm = is_prompt_encoding.unsqueeze(0).to(device=device, dtype=dtype)
+            is_prompt_enc_1m = is_prompt_encoding.unsqueeze(0).to(device=device, dtype=dtype)
 
-        # Initialize 'batched' outputs
-        mask_prediction_bmhw = mask_prediction_1mhw
-        object_ptrs_bmc = object_pointers_1mc
-        object_score_bm = object_score_m.unsqueeze(0)
-        is_padded_entry_bm = torch.zeros((1, mask_m), device=device, dtype=dtype)
+        # Set up 1xM inputs so we can convert to BxM
+        object_score_1m = object_score_m.unsqueeze(0)
+        is_padded_entry_1m = torch.zeros((1, mask_m), device=device, dtype=dtype)
 
         # Generate padding so we have the right number of multiplex entries (possibly with batch size > 1)
         # -> For example, for a multiplex of 16 (default), if we get 40 masks, we
         #    need to pad to 48 entries, so we can form a 3x16 tensor (batch size of 3)
         mplex_b = torch.tensor(mask_m / self._multiplex_channels).ceil().int()
         num_empty_pad = (mplex_b * self._multiplex_channels) - mask_m
-        if num_empty_pad > 0:
-            pad_masks = torch.zeros((1, num_empty_pad, mask_h, mask_w), device=device, dtype=dtype)
-            pad_score = torch.full([1, num_empty_pad], -10.0, device=device, dtype=dtype)
-            pad_is_prompt = torch.zeros([1, num_empty_pad], device=device, dtype=dtype)
-            pad_is_padded_entry = torch.ones([1, num_empty_pad], device=device, dtype=dtype)
+        pad_masks = torch.zeros((1, num_empty_pad, mask_h, mask_w), device=device, dtype=dtype)
+        pad_score = torch.full([1, num_empty_pad], -10.0, device=device, dtype=dtype)
+        pad_is_prompt = torch.zeros([1, num_empty_pad], device=device, dtype=dtype)
+        pad_is_padded_entry = torch.ones([1, num_empty_pad], device=device, dtype=dtype)
 
-            # Append padding to inputs
-            mask_prediction_bmhw = torch.concat((mask_prediction_bmhw, pad_masks), dim=1)
-            object_score_bm = torch.concat((object_score_bm, pad_score), dim=1)
-            is_prompt_enc_bm = torch.concat((is_prompt_enc_bm, pad_is_prompt), dim=1)
-            is_padded_entry_bm = torch.concat((is_padded_entry_bm, pad_is_padded_entry), dim=1)
-
-            # Pointers get special treatment. They don't need padding unless we're batching
-            # -> Padding can have a noticable negative effect otherwise!
-            num_pad_ptrs = num_empty_pad if mplex_b > 1 else 0
-            pad_ptrs = torch.zeros((1, num_pad_ptrs, ptr_c), device=device, dtype=dtype)
-            object_ptrs_bmc = torch.concat((object_ptrs_bmc, pad_ptrs), dim=1)
+        # Append padding to inputs
+        mask_prediction_1mhw = torch.concat((mask_prediction_1mhw, pad_masks), dim=1)
+        object_score_1m = torch.concat((object_score_1m, pad_score), dim=1)
+        is_prompt_enc_1m = torch.concat((is_prompt_enc_1m, pad_is_prompt), dim=1)
+        is_padded_entry_1m = torch.concat((is_padded_entry_1m, pad_is_padded_entry), dim=1)
 
         # Reshape inputs to properly use batch dimension if needed
-        if mplex_b > 1:
-            mask_prediction_bmhw = mask_prediction_bmhw.view(mplex_b, self._multiplex_channels, mask_h, mask_w)
-            object_ptrs_bmc = object_ptrs_bmc.view(mplex_b, self._multiplex_channels, ptr_c)
-            object_score_bm = object_score_bm.view(mplex_b, self._multiplex_channels)
-            is_prompt_enc_bm = is_prompt_enc_bm.view(mplex_b, self._multiplex_channels)
-            is_padded_entry_bm = is_padded_entry_bm.view(mplex_b, self._multiplex_channels)
+        mask_prediction_bmhw = mask_prediction_1mhw.view(mplex_b, self._multiplex_channels, mask_h, mask_w)
+        object_score_bm = object_score_1m.view(mplex_b, self._multiplex_channels)
+        is_prompt_enc_bm = is_prompt_enc_1m.view(mplex_b, self._multiplex_channels)
+        is_padded_entry_bm = is_padded_entry_1m.view(mplex_b, self._multiplex_channels)
+
+        # Pointers get special treatment. They don't need padding unless we're batching
+        # -> Padding can have a noticable negative effect otherwise!
+        # -> Has to be done in a weird way to support compilation
+        num_pad_ptrs = (mplex_b > 1).int() * num_empty_pad  # Same as: num_empty_pad if mplex_b > 1 else 0
+        pad_ptrs = torch.zeros((1, num_pad_ptrs, ptr_c), device=device, dtype=dtype)
+        object_pointers_1mc = torch.concat((object_pointers_1mc, pad_ptrs), dim=1)
+        object_ptrs_bmc = object_pointers_1mc.view(mplex_b, -1, ptr_c)
 
         # Reset inputs that came in as 'None'
         if is_missing_ptr:
