@@ -485,7 +485,7 @@ class ObjectPointerGen(nn.Module):
 
         # Projection layers to convert encoded tokens to score & pointer
         # -> The 'no_ptr' parameter is the pointer given for low object scores
-        self.no_ptr = nn.Parameter(torch.zeros(1, features_per_token))
+        self.no_ptr_embed = nn.Parameter(torch.zeros(1, 1, features_per_token))
         self.score_mlp = MLP3Layers(features_per_token, 1)
         self.pointer_mlp = MLP3Layers(features_per_token, features_per_token)
 
@@ -518,15 +518,12 @@ class ObjectPointerGen(nn.Module):
         # Compute object score (indicator of whether there is a valid object being masked)
         objscore_b = self.score_mlp(encoded_object_token).squeeze(-1)
 
-        # Get pointer for each batch
-        objptrs_list = []
-        for batch_idx in range(encoded_mask_tokens.shape[0]):
-            tokens = encoded_mask_tokens[batch_idx]
-            ptr = self.pointer_mlp(tokens) if objscore_b[batch_idx] > 0 else self.no_ptr.expand_as(tokens)
-            objptrs_list.append(ptr)
-        objptrs = torch.stack(objptrs_list)
+        # Get pointers for each batch (implemented in a bit of a strange way to support compilation)
+        ptrs_bnc = self.pointer_mlp(encoded_mask_tokens)
+        is_ok_score = (objscore_b > 0).to(dtype=ptrs_bnc.dtype)
+        objptrs_bnc = ptrs_bnc * is_ok_score + (1 - is_ok_score) * self.no_ptr_embed
 
-        return objscore_b, objptrs
+        return objscore_b, objptrs_bnc
 
     # .................................................................................................................
 

@@ -132,6 +132,10 @@ def convert_state_dict_keys(
             layernorm_key_hints = ("downscaler.1", "downscaler.4", "img_patch_upscaler.norm")
             new_data = _reshape_layernorm2d(new_key, orig_data, *layernorm_key_hints)
 
+            # Reshape to BxNxC (1x1xC) format for no-pointer embedding (originally 1xC)
+            if new_key == "objptrgen.no_ptr_embed":
+                new_data = new_data.unsqueeze(0)
+
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 
         elif sam_module_type == SAM3ModuleType.memory_encoder:
@@ -543,7 +547,7 @@ def _convert_maskdecoder_keys(key: str) -> None | str:
 
     # Capture object pointer weights (now part of mask decoder, instead of 'parent' model)
     if key == "tracker.no_obj_ptr":
-        return "objptrgen.no_ptr"
+        return "objptrgen.no_ptr_embed"
     elif key.startswith("tracker.obj_ptr_proj"):
         layer_idx = get_nth_integer(key, 0)
         new_idx = 2 * layer_idx
