@@ -6,12 +6,12 @@
 # %% Imports
 
 import os.path as osp
-from time import perf_counter
 from contextlib import contextmanager
 
-import numpy as np
 import torch
 import torch.nn as nn
+
+from .compilation import enable_compilation as _enable_compilation
 
 # For type hints
 from torch import Tensor
@@ -72,6 +72,7 @@ class SAMV3p1Model(nn.Module):
         exemplar_detector_model: SAMV3p1ExemplarDetector,
         exemplar_segmentation_model: SAMV3p1ExemplarSegmentation,
         config_bytes: bytearray,
+        enable_inference_mode: bool = True,
     ):
 
         # Inherit from parent
@@ -86,9 +87,9 @@ class SAMV3p1Model(nn.Module):
         self.coordinate_encoder = coordinate_encoder_model
         self.prompt_encoder = prompt_encoder_model
         self.mask_decoder = mask_decoder_model
-        self.multiplex_video_masking = multiplex_video_masking_model
 
         # Video tracking components caried over from SAMv2
+        self.multiplex_video_masking = multiplex_video_masking_model
         self.memory_encoder = memory_encoder_model
         self.memory_image_fusion = memory_image_fusion_model
 
@@ -103,84 +104,194 @@ class SAMV3p1Model(nn.Module):
         for param in self.parameters():
             param.requires_grad_(False)
         self.eval()
-        self._infmode = True
-
-    # .................................................................................................................
-
-    def forward(
-        self,
-        image_rgb_normalized_bchw: Tensor,
-        boxes_tensor: Tensor,
-        fg_tensor: Tensor,
-        bg_tensor: Tensor,
-        mask_hint: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        """
-        This function implements the full 'direct prompt' mask generating code
-        bundled into a single function. Takes an image and set of prompts and
-        produces several candidate segmentation masks.
-
-        Note that in practice, it makes more sense to call the component pieces of the model,
-        rather than using this function so that image & prompt encoding can happen independently.
-        See the 'encode_prompts', 'encode_image' and 'generate_masks' functions for more info
-
-        Returns:
-            mask_predictions, iou_predictions, objscore_pred, mask_tokens_out
-        """
-
-        # Encode prompts & image inputs
-        box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
-        encoded_prompts = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
-        encoded_image = self.image_encoder(image_rgb_normalized_bchw)
-
-        # Combine encodings to generate mask output
-        patch_grid_hw = encoded_image.shape[2:]
-        grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-        mask_preds, iou_preds, objscore_pred, mask_tokens_out = self.coordinate_encoder(
-            encoded_image, encoded_prompts, grid_posenc, mask_hint
-        )
-
-        return mask_preds, iou_preds, objscore_pred, mask_tokens_out
+        self._infmode = enable_inference_mode
 
     # .................................................................................................................
 
     def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1InteractiveModel.encode_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+    def encode_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+
+    def generate_masks(
+        self,
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_prompts: Tensor,
+        mask_hint: Tensor | int | None = None,
+        blank_promptless_output: bool = True,
+    ) -> tuple[Tensor, Tensor]:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1InteractiveModel.generate_masks(
+            self, encoded_image_features_list, encoded_prompts, mask_hint, blank_promptless_output
+        )
+
+    def initialize_video_masking(
+        self,
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        box_tlbr_norm_list: list,
+        fg_xy_norm_list: list,
+        bg_xy_norm_list: list,
+        mask_hint: Tensor | int | None = None,
+        mask_index_select: int | None = None,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1TrackingModel.initialize_video_masking(
+            self,
+            encoded_image_features_list,
+            box_tlbr_norm_list,
+            fg_xy_norm_list,
+            bg_xy_norm_list,
+            mask_hint,
+            mask_index_select,
+        )
+
+    def initialize_from_mask(
+        self,
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        mask_image: ndarray | Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1TrackingModel.initialize_from_mask(self, encoded_image_features_list, mask_image)
+
+    def step_video_masking(
+        self,
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        prompt_memory_encodings: list[Tensor],
+        prompt_object_pointers: list[Tensor],
+        previous_memory_encodings: list[Tensor],
+        previous_object_pointers: list[Tensor],
+        num_multiplex_objects: int = 1,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1TrackingModel.step_video_masking(
+            self,
+            encoded_image_features_list,
+            prompt_memory_encodings,
+            prompt_object_pointers,
+            previous_memory_encodings,
+            previous_object_pointers,
+            num_multiplex_objects,
+        )
+
+    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1InteractiveModel.check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+    def prepare_image_batch(
+        self,
+        images_bgr_list: list[ndarray],
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> Tensor:
+        """Temporary placeholder for backwards compatibility"""
+        return SAMV3p1InteractiveModel.prepare_image_batch(self, images_bgr_list, max_side_length, use_square_sizing)
+
+    def make_detector_model(self, bpe_vocab_path: str | None = None) -> nn.Module:
+        """Temporary placeholder for backwards compatibility"""
+        return self.get_detector_context(bpe_vocab_path)
+
+    # .................................................................................................................
+
+    def get_interactive_context(self) -> nn.Module:
+        """Creates an interactive model, used for user-prompted image segmentation"""
+        return SAMV3p1InteractiveModel(
+            self.image_encoder,
+            self.image_projection,
+            self.coordinate_encoder,
+            self.prompt_encoder,
+            self.mask_decoder,
+            self._infmode,
+        )
+
+    def get_tracking_context(self) -> nn.Module:
+        """Creates a tracking model, used for video segmentation"""
+        return SAMV3p1TrackingModel(
+            self.image_encoder,
+            self.image_projection,
+            self.coordinate_encoder,
+            self.prompt_encoder,
+            self.mask_decoder,
+            self.multiplex_video_masking,
+            self.memory_encoder,
+            self.memory_image_fusion,
+            self._infmode,
+        )
+
+    def get_detector_context(self, bpe_vocab_path: str | None = None) -> nn.Module:
+        """Creates 'detection' model, used for generating bounding box & segmentation masks from exemplars"""
+        return SAMV3p1DetectorModel(
+            self.image_encoder,
+            self.image_projection,
+            self.text_encoder,
+            self.sampling_encoder,
+            self.image_exemplar_fusion,
+            self.exemplar_detector,
+            self.exemplar_segmentation,
+            self._infmode,
+            bpe_vocab_path,
+        )
+
+    # .................................................................................................................
+
+    def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         """
-        Function used to encode prompt coordinates. Inputs should be given as lists
-        of prompts. The length of each list does not need to match. Enter either
-        None or an empty list ([]) to disable any of the prompts.
-
-        Box prompt formatting:
-            Each entry should be in top-left/bottom-right form: ((x1, y1), (x2, y2))
-            For example:
-                [
-                    [(0.1, 0.5), (0.3, 0.7)], # Box 1
-                    [(0.6, 0.2), (0.8, 0.4)], # Box 2
-                    ... etc ...
-                ]
-
-        FG/BG prompt formatting:
-            Each entry should be a single (x, y) point
-            For example:
-                [
-                    (0.2, 0.6), # Point 1
-                    (0.5, 0.4), # Point 2
-                    (0.7, 0.7), # Point 3
-                    (0.1, 0.9), # Point 4
-                    ... etc ..
-                ]
-
-        Returns:
-            encoded_prompts (shape: 1 x N x F, where N is number of prompt points, F is features per prompt)
+        Helper used to toggle internal 'with torch.inference_mode' on/off.
+        When training the model, inference mode can become problematic, so disabling it can be helpful.
+        If 'enable_inference_mode' is None, then the current state will be toggled.
+        Otherwise, the state can be explicitly set by providing a True or False argument.
+        Returns: is_inference_mode_enabled
         """
+        self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
+        return self._infmode
 
-        with _inference_mode(self._infmode):
-            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
-            fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
-            box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
-            encoded_prompts = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
+    # .................................................................................................................
 
-        return encoded_prompts
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Task-Specific classes
+
+
+class SAMV3p1InteractiveModel(nn.Module):
+    """
+    Wrapper around SAMV3.1 interactive components, used for image segmentation (e.g. SAMv1 task).
+
+    The basic usage of this model is to call the 3 main functions (in order) to generate mask predictions:
+        model.encode_image(...)
+        model.encode_prompts(...)
+        model.generate_masks(...)
+    See the image segmentation example for more details:
+    https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/image_segmentation.py
+    """
+
+    name = "samv3"
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        image_encoder_model: SAMV3p1ImageEncoder,
+        image_projection_model: SAMV3p1ImageProjection,
+        coordinate_encoder_model: SAMV3p1CoordinateEncoder,
+        prompt_encoder_model: SAMV3p1PromptEncoder,
+        mask_decoder_model: SAMV3p1MaskDecoder,
+        enable_inference_mode: bool = True,
+    ):
+        # Store modules for interactive use
+        super().__init__()
+        self.image_encoder = image_encoder_model
+        self.image_projection = image_projection_model
+        self.coordinate_encoder = coordinate_encoder_model
+        self.prompt_encoder = prompt_encoder_model
+        self.mask_decoder = mask_decoder_model
+        self._infmode = enable_inference_mode
 
     # .................................................................................................................
 
@@ -189,7 +300,7 @@ class SAMV3p1Model(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
-    ) -> tuple[tuple[list[Tensor], list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[list[Tensor], list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The max_side_length setting is used to set the size at which the image is processed, if
@@ -225,9 +336,50 @@ class SAMV3p1Model(nn.Module):
 
     # .................................................................................................................
 
+    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+        """
+        Function used to encode prompt coordinates. Inputs should be given as lists
+        of prompts. The length of each list does not need to match. Enter either
+        None or an empty list ([]) to disable any of the prompts.
+
+        Box prompt formatting:
+            Each entry should be in top-left/bottom-right form: ((x1, y1), (x2, y2))
+            For example:
+                [
+                    [(0.1, 0.5), (0.3, 0.7)], # Box 1
+                    [(0.6, 0.2), (0.8, 0.4)], # Box 2
+                    ... etc ...
+                ]
+
+        FG/BG prompt formatting:
+            Each entry should be a single (x, y) point
+            For example:
+                [
+                    (0.2, 0.6), # Point 1
+                    (0.5, 0.4), # Point 2
+                    (0.7, 0.7), # Point 3
+                    (0.1, 0.9), # Point 4
+                    ... etc ..
+                ]
+
+        Returns:
+            encoded_prompts_bnc
+            -> shape: BxNxC, B batch size, N number of prompt points, C is channels/feature count
+        """
+
+        with _inference_mode(self._infmode):
+            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
+            fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
+            box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
+            encoded_prompts_bnc = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
+
+        return encoded_prompts_bnc
+
+    # .................................................................................................................
+
     def generate_masks(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor], list[Tensor]],
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
         encoded_prompts: Tensor,
         mask_hint: Tensor | int | None = None,
         blank_promptless_output: bool = True,
@@ -269,9 +421,175 @@ class SAMV3p1Model(nn.Module):
 
     # .................................................................................................................
 
+    def prepare_image_batch(
+        self,
+        images_bgr_list: list[ndarray],
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> Tensor:
+        """
+        Helper used to convert BGR image (from opencv) into the tensor format needed for image encoding
+        Expects a list of numpy arrays (BGR images) as input. Returns a single tensor of shape: BxCxHxW
+        """
+
+        # Prepare each image individually
+        img_tensors_list = []
+        for image_bgr in images_bgr_list:
+            img_tensor_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
+            img_tensors_list.append(img_tensor_bchw)
+
+        # Check that all images have the same size if square sizing isn't used
+        if not use_square_sizing:
+            all_h_list = [img.shape[2] for img in img_tensors_list]
+            all_w_list = [img.shape[3] for img in img_tensors_list]
+            assert all(all_h_list[0] == h for h in all_h_list), "Mismatched image heights (different aspect ratios)"
+            assert all(all_w_list[0] == w for w in all_w_list), "Mismatched image widths (different aspect ratios)"
+
+        return torch.concat(img_tensors_list, dim=0)
+
+    # .................................................................................................................
+
+    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
+        """Helper used to check if there are any prompts (returns False if all inputs are empty)"""
+        return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+
+    # .................................................................................................................
+
+    def enable_compilation(
+        self,
+        example_image_bgr: ndarray | None = None,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+        compile_image_encoding: bool = True,
+        compile_mask_generation: bool = True,
+        custom_config: dict | None = None,
+    ) -> None:
+        """Enable (experimental) compilation of model components"""
+
+        # Run model to fill in cache
+        if example_image_bgr is not None:
+            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_prompts = self.encode_prompts([], [(0.5, 0.5)], [])
+            self.generate_masks(encoded_imgs, encoded_prompts)
+
+        return _enable_compilation(
+            self,
+            example_image_bgr,
+            max_side_length,
+            use_square_sizing,
+            compile_image_encoder=compile_image_encoding,
+            compile_image_projection=compile_image_encoding,
+            compile_coordinate_encoder=compile_mask_generation,
+            compile_prompt_encoder=compile_mask_generation,
+            compile_mask_decoder=compile_mask_generation,
+            custom_config=custom_config,
+        )
+
+    # .................................................................................................................
+
+    def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
+        self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
+        return self._infmode
+
+    # .................................................................................................................
+
+    def forward(self, *args, **kwargs) -> None:
+        """Placeholder to prevent users from trying to call this model using the forward function"""
+
+        name = self.__class__.__name__
+        print(
+            "",
+            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
+            "Instead, use functions (in order):",
+            "  model.encode_image(...)",
+            "  model.encode_prompts(...)",
+            "  model.generate_masks(...)",
+            "",
+            "In order to generate mask & IoU predictions",
+            sep="\n",
+        )
+
+        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+
+    # .................................................................................................................
+
+
+class SAMV3p1TrackingModel(nn.Module):
+    """
+    Wrapper around SAMv3.1 tracking components, used for video segmentation (e.g. SAMv2 task).
+
+    The basic usage of this model involves two phases. The first is to encode a prompt or mask
+    'memory' which determines the object to be tracked. The second phase is to repeatedly make
+    mask predictions for new incoming frames of a video using prior memory encodings.
+
+    The basic usage for encoding an initial object is:
+        model.encode_image(...)
+        model.initialize_video_masking(...) OR .initialize_from_mask(...)
+
+    The usage for repeatedly encoding new frames is:
+        model.encode_image(...)
+        model.step_video_masking(...)
+
+    See the video segmentation example for more details:
+    https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py
+    """
+
+    name = "samv3"
+
+    # .................................................................................................................
+
+    def __init__(
+        self,
+        image_encoder_model: SAMV3p1ImageEncoder,
+        image_projection_model: SAMV3p1ImageProjection,
+        coordinate_encoder_model: SAMV3p1CoordinateEncoder,
+        prompt_encoder_model: SAMV3p1PromptEncoder,
+        mask_decoder_model: SAMV3p1MaskDecoder,
+        multiplex_video_masking_model: SAMV3p1MaskDecoder,
+        memory_encoder_model: SAMV3p1MemoryEncoder,
+        memory_image_fusion_model: SAMV3p1MemoryImageFusion,
+        enable_inference_mode: bool = True,
+    ):
+
+        # Inherit from parent
+        super().__init__()
+
+        # Store components
+        self.image_encoder = image_encoder_model
+        self.image_projection = image_projection_model
+        self.coordinate_encoder = coordinate_encoder_model
+        self.prompt_encoder = prompt_encoder_model
+        self.mask_decoder = mask_decoder_model
+        self.multiplex_video_masking = multiplex_video_masking_model
+        self.memory_encoder = memory_encoder_model
+        self.memory_image_fusion = memory_image_fusion_model
+
+        # Default to eval mode, expecting to use inference only
+        self.eval()
+        self._infmode = enable_inference_mode
+
+    # .................................................................................................................
+
+    def encode_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> tuple[list[list[Tensor], list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+        """
+        Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
+        The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
+        of the image before encoding.
+        Returns:
+            encoded_images_list, patch_grid_hw, preencoded_image_hw
+        """
+        return SAMV3p1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+
+    # .................................................................................................................
+
     def initialize_video_masking(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor], list[Tensor]],
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
         box_tlbr_norm_list: list,
         fg_xy_norm_list: list,
         bg_xy_norm_list: list,
@@ -294,8 +612,11 @@ class SAMV3p1Model(nn.Module):
             best_mask_prediction, memory_encoding, object_pointer
         """
 
-        # Encode initial prompts
-        encoded_prompts = self.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+        # Encode initial prompts (re-use interactive implementation as it's the same process)
+        # -> This lets us 'hide' the prompt encoding function, which isn't meant to be used on tracking model
+        encoded_prompts = SAMV3p1InteractiveModel.encode_prompts(
+            self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
+        )
 
         with _inference_mode(self._infmode):
 
@@ -317,7 +638,7 @@ class SAMV3p1Model(nn.Module):
 
             # Fill in missing index with 'best' based on IoU
             if mask_index_select is None:
-                mask_index_select = self.get_best_mask_index(iou_preds_mn)
+                mask_index_select = self.mask_decoder.get_best_mask_index(iou_preds_mn)
 
             # Make sure we have a slice/tensor-style index
             if isinstance(mask_index_select, int):
@@ -339,9 +660,9 @@ class SAMV3p1Model(nn.Module):
 
     def initialize_from_mask(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor], list[Tensor]],
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
         mask_image: ndarray | Tensor,
-    ) -> tuple[tuple[Tensor, Tensor], Tensor]:
+    ) -> tuple[Tensor, Tensor]:
         """
         Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
         to begin tracking an object.
@@ -413,13 +734,13 @@ class SAMV3p1Model(nn.Module):
 
     def step_video_masking(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor], list[Tensor]],
+        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
         num_multiplex_objects: int = 1,
-    ) -> tuple[Tensor, Tensor, Tensor, tuple[Tensor, Tensor], Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
         Function which makes segmentation predictions for consecutive frames of
         an input video. It takes in the encoded video frame data along with prior
@@ -484,85 +805,83 @@ class SAMV3p1Model(nn.Module):
 
     # .................................................................................................................
 
-    def get_best_mask_index(self, iou_predictions: Tensor) -> int:
-        """Returns the index of the highest IoU prediction score"""
-        return self.mask_decoder.get_best_mask_index(iou_predictions)
-
-    # .................................................................................................................
-
-    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
-        """Helper used to check if there are any prompts"""
-        return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-
-    # .................................................................................................................
-
-    def prepare_image_batch(
+    def enable_compilation(
         self,
-        images_bgr_list: list[ndarray],
+        example_image_bgr: ndarray | None = None,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
-    ) -> Tensor:
-        """
-        Helper used to convert BGR image (from opencv) into the tensor format needed for image encoding
-        Expects a list of numpy arrays (BGR images) as input. Returns a single tensor of shape: BxCxHxW
-        """
+        compile_image_encoding: bool = True,
+        compile_mask_generation: bool = True,
+        compile_memory_encoding: bool = True,
+        custom_config: dict | None = None,
+    ) -> None:
+        """Enable (experimental) compilation of model components"""
 
-        # Prepare each image individually
-        img_tensors_list = []
-        for image_bgr in images_bgr_list:
-            img_tensor_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
-            img_tensors_list.append(img_tensor_bchw)
+        # Run model to fill in cache
+        if example_image_bgr is not None:
+            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            _, init_mem, init_ptr = self.initialize_video_masking(encoded_imgs, [], [(0.5, 0.5)], [])
+            self.step_video_masking(encoded_imgs, [init_mem], [init_ptr], [], [])
 
-        # Check that all images have the same size if square sizing isn't used
-        if not use_square_sizing:
-            all_h_list = [img.shape[2] for img in img_tensors_list]
-            all_w_list = [img.shape[3] for img in img_tensors_list]
-            assert all(all_h_list[0] == h for h in all_h_list), "Mismatched image heights (different aspect ratios)"
-            assert all(all_w_list[0] == w for w in all_w_list), "Mismatched image widths (different aspect ratios)"
-
-        return torch.concat(img_tensors_list, dim=0)
-
-    # .................................................................................................................
-
-    def make_detector_model(self, bpe_vocab_path: str | None = None) -> nn.Module:
-        """Creates 'detection' model, used for generating bounding box & segmentation masks from exemplars"""
-        detector_model = SAMV3DetectorModel(
-            self.image_encoder,
-            self.image_projection,
-            self.text_encoder,
-            self.sampling_encoder,
-            self.image_exemplar_fusion,
-            self.exemplar_detector,
-            self.exemplar_segmentation,
-            bpe_vocab_path,
+        return _enable_compilation(
+            self,
+            example_image_bgr,
+            max_side_length,
+            use_square_sizing,
+            compile_image_encoder=compile_image_encoding,
+            compile_image_projection=compile_image_encoding,
+            compile_coordinate_encoder=compile_mask_generation,
+            compile_prompt_encoder=compile_mask_generation,
+            compile_mask_decoder=compile_mask_generation,
+            compile_multiplex_masking=compile_mask_generation,
+            compile_memory_encoder=compile_memory_encoding,
+            compile_memory_image_fusion=compile_memory_encoding,
+            custom_config=custom_config,
         )
-        detector_model.toggle_inference_mode(self._infmode)
-        return detector_model
 
     # .................................................................................................................
 
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
-        """
-        Helper used to toggle internal 'with torch.inference_mode' on/off.
-        When training the model, inference mode can become problematic, so disabling it can be helpful.
-        If 'enable_inference_mode' is None, then the current state will be toggled.
-        Otherwise, the state can be explicitly set by providing a True or False argument.
-        Returns: is_inference_mode_enabled
-        """
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
 
     # .................................................................................................................
 
+    def forward(self, *args, **kwargs) -> None:
+        """Placeholder to prevent users from trying to call this model using the forward function"""
 
-class SAMV3DetectorModel(nn.Module):
+        name = self.__class__.__name__
+        print(
+            "",
+            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
+            "Instead, begin tracking using functions:",
+            "  model.encode_image(...)",
+            "  model.initialize_video_masking(...) OR: .initialize_from_mask(...)",
+            "",
+            "Continue tracking over frames using:",
+            "  model.encode_image(...)",
+            "  model.step_video_masking(...)",
+            "",
+            "In order to generate mask & IoU predictions",
+            sep="\n",
+        )
+
+        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+
+    # .................................................................................................................
+
+
+class SAMV3p1DetectorModel(nn.Module):
     """
-    Wrapper around SAMv3 detection components. These components are almost entirely
-    separate from the components used for the image/video segmentation found in SAMv1/SAMv2
-    (with the exception of the image encoder). This model exists to help avoid overlap with
-    similar looking functionality from the v1/v2 components.
-
+    Wrapper around SAMV3.1 detection components.
     Initializing this model also loads a BPE vocabulary from the file system, needed by the text encoder.
+
+    The basic usage of this model is to call the 3 main functions (in order) to generate mask detections:
+        model.encode_image(...)
+        model.encode_exemplars(...)
+        model.generate_detections(...)
+    See the object detection example for more details:
+    https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/object_detection.py
 
     The functions of this model (roughly) correspond with the original code base as follows:
         .encode_detection_image -> Sam3Processor.set_image
@@ -571,6 +890,8 @@ class SAMV3DetectorModel(nn.Module):
     For more context, see the 'forward_grounding' function from the original implementation:
     https://github.com/facebookresearch/sam3/blob/5eb25fb54b70ec0cb16f949289053be091e16705/sam3/model/sam3_image.py#L442
     """
+
+    name = "samv3"
 
     # .................................................................................................................
 
@@ -583,6 +904,7 @@ class SAMV3DetectorModel(nn.Module):
         image_exemplar_fusion_model: SAMV3p1ImageExemplarFusion,
         exemplar_detector_model: SAMV3p1ExemplarDetector,
         exemplar_segmentation_model: SAMV3p1ExemplarSegmentation,
+        enable_inference_mode: bool = True,
         bpe_vocab_path: str | None = None,
     ):
         # Inherit from parent
@@ -616,48 +938,24 @@ class SAMV3DetectorModel(nn.Module):
 
         # Default to eval mode, expecting to use inference only
         self.eval()
-        self._infmode = True
+        self._infmode = enable_inference_mode
 
     # .................................................................................................................
 
-    def encode_detection_image(
+    def encode_image(
         self,
         image_bgr: ndarray,
         max_side_length: int | None = None,
         use_square_sizing: bool = True,
-    ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[list[Tensor], list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
-        The max_side_length setting is used to set the size at which the image is processed, if
-        no value is given, the image will be scaled to the 'preferred' size of the model.
-        The use_square_sizing setting determines whether the image is scaled to a square resolution
-        or scaled (to the max_side_length) based on it's original aspect ratio.
-
-        IMPORTANT:
-            This function produces *different* results from the .encode_image(...)
-            function that is part of the base model, though the outputs have the same structure.
-
+        The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
+        of the image before encoding.
         Returns:
-            encoded_detection_images_list, patch_grid_hw, preencoded_image_hw
-            -> Encoded detection images list contains 3 multi-resolution feature maps
-               they have shapes: Bx256x72x72, Bx256x144x144, Bx256x288x288 (using default settings)
-            -> The patch_grid_hw contains the height & width of the low-res
-               feature map (72x72 with default 1008x1008 input sizing)
-            -> The preencoded_image_hw contains the height & width of the
-               input image after pre-processing just before being encoded,
-               by default it would be 1008x1008
+            encoded_images_list, patch_grid_hw, preencoded_image_hw
         """
-
-        with _inference_mode(self._infmode):
-            image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
-            encoded_img = self.image_encoder(image_rgb_normalized_bchw)
-            encoded_image_features_list = self.image_projection(encoded_img)
-
-        # Get patch sizing of lowest-res tokens (as needed by other components) & size of processed image
-        patch_grid_hw = encoded_image_features_list[0][0].shape[2:]
-        image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
-
-        return encoded_image_features_list, patch_grid_hw, image_preenc_hw
+        return SAMV3p1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
     # .................................................................................................................
 
@@ -869,136 +1167,6 @@ class SAMV3DetectorModel(nn.Module):
 
     # .................................................................................................................
 
-    def enable_compilation(
-        self,
-        example_image_bgr: ndarray | None = None,
-        max_side_length: int | None = None,
-        use_square_sizing: bool = True,
-        compile_image_encoding: bool = True,
-        compile_exemplar_encoding: bool = True,
-        compile_detection_segmentation: bool = True,
-        custom_config: dict | None = None,
-    ) -> int:
-        """
-        Enable (experimental) compilation of model components.
-        Anecdotally, this seems to give around a 10% reduction in
-        inference time of large components and 30-40% reduction for
-        smaller components, though this is likely dependent on hardware!
-
-        Note that any adjustments to model usage (e.g. different input parameters)
-        after calling this function may result in re-compilation.
-
-        The 'custom_config' input can be given to provide custom compilation
-        settings. This is used as:
-            torch.compile(<model_code>, **custom_config)
-        If not provided, some (fairly aggressive) default settings will be used.
-
-        Compilation for certain components can be toggled on/off using the
-        'compile_image_encoding' and similar args. This can be useful to disable
-        heavy compilation on components that are only called once for example.
-        This can also be used to provide different custom compilation configs
-        to different model components, if needed.
-
-        Returns:
-            total_time_taken_ms
-        """
-
-        # Special optimization to speed up float32 usage
-        if next(self.parameters()).dtype == torch.float32:
-            torch.set_float32_matmul_precision("high")
-
-        # Fill in default compilation settings
-        comp_kwargs = custom_config
-        dyncomp_kwargs = custom_config
-        if custom_config is None:
-            compile_options = {
-                "shape_padding": True,
-                "epilogue_fusion": True,
-                "max-autotune": True,
-            }
-            comp_kwargs = {"mode": None, "fullgraph": True, "options": compile_options}
-            dyncomp_kwargs = {**comp_kwargs, "dynamic": True}
-
-        # Create dummy arguments to run model
-        exm_args_1 = ("visual", [[(0.2, 0.3), (0.5, 0.6)]], [(0.5, 0.5)], [[(0.1, 0.1), (0.2, 0.2)]], [(0.9, 0.1)])
-        exm_args_2 = ("visual", None, None, None, None)
-        exm_args_3 = (None, *exm_args_1[1:])
-        if example_image_bgr is None:
-            example_image_bgr = np.zeros((1, 1, 3), dtype=np.uint8)
-
-        # Switch away from using complex numbers (not well supported by compiler)
-        if compile_image_encoding:
-            self.image_encoder.toggle_use_complex_numbers(False)
-
-        # Run model to fill caches
-        encoded_imgs, _, _ = self.encode_detection_image(example_image_bgr, max_side_length, use_square_sizing)
-        encoded_exemplars = self.encode_exemplars(encoded_imgs, *exm_args_1)
-        self.generate_detections(encoded_imgs, encoded_exemplars)
-
-        # Start timing
-        t1 = perf_counter()
-
-        if compile_image_encoding:
-            self.image_encoder.forward = torch.compile(self.image_encoder.forward, **comp_kwargs)
-            self.image_projection.forward = torch.compile(self.image_projection.forward, **comp_kwargs)
-
-        if compile_exemplar_encoding:
-            self.text_encoder.transformer.forward = torch.compile(
-                self.text_encoder.transformer.forward, **dyncomp_kwargs
-            )
-            self.sampling_encoder.fusion_transformer.forward = torch.compile(
-                self.sampling_encoder.fusion_transformer.forward, **dyncomp_kwargs
-            )
-            self.image_exemplar_fusion.forward = torch.compile(self.image_exemplar_fusion.forward, **dyncomp_kwargs)
-
-        if compile_detection_segmentation:
-            self.exemplar_detector.forward = torch.compile(self.exemplar_detector.forward, **dyncomp_kwargs)
-            self.exemplar_segmentation.forward = torch.compile(self.exemplar_segmentation.forward, **dyncomp_kwargs)
-
-        # Compilation doesn't occur until we actually run the model!
-        for exm_args in [exm_args_3, exm_args_2, exm_args_1]:
-            encoded_imgs, _, _ = self.encode_detection_image(example_image_bgr, max_side_length, use_square_sizing)
-            encoded_exemplars = self.encode_exemplars(encoded_imgs, *exm_args)
-            self.generate_detections(encoded_imgs, encoded_exemplars)
-
-        # Finish timing
-        t2 = perf_counter()
-        time_taken_ms = round(1000 * (t2 - t1))
-
-        return time_taken_ms
-
-    # .................................................................................................................
-
-    def forward(self, *args, **kwargs) -> None:
-        """
-        Placeholder to prevent users from trying to call this model using the forward function.
-        This model is meant to be called in stages, roughly as follows:
-
-            # Example procedure for generating detections
-            enc_image, _, _ = msam_det.encode_detection_image(image_bgr)
-            enc_exemplars = msam_det.encode_exemplars(enc_image, text="person")
-            mask_preds, box_preds, scores, presence = msam_det.generate_detections(enc_image, enc_exemplars)
-
-        Please see individual functions for more information
-        """
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, use functions (in order):",
-            "  model.encode_detection_image(...)",
-            "  model.encode_exemplars(...)",
-            "  model.generate_detections(...)",
-            "",
-            "In order to generate mask & bounding-box predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be used with .forward(...)")
-
-    # .................................................................................................................
-
     @staticmethod
     def make_exemplar_batch(*encoded_exemplars_bnc: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -1058,6 +1226,61 @@ class SAMV3DetectorModel(nn.Module):
 
     # .................................................................................................................
 
+    def enable_compilation(
+        self,
+        example_image_bgr: ndarray | None = None,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+        compile_image_encoding: bool = True,
+        compile_exemplar_encoding: bool = True,
+        compile_detection_segmentation: bool = True,
+        custom_config: dict | None = None,
+    ) -> None:
+        """
+        Enable (experimental) compilation of model components.
+        Anecdotally, this seems to give around a 10% reduction in
+        inference time of large components and 30-40% reduction for
+        smaller components, though this is likely dependent on hardware!
+
+        Note that any adjustments to model usage (e.g. different input parameters)
+        after calling this function may result in re-compilation.
+
+        The 'custom_config' input can be given to provide custom compilation
+        settings. This is used as:
+            torch.compile(<model_code>, **custom_config)
+        If not provided, some (fairly aggressive) default settings will be used
+        """
+
+        # Run model to fill in cache
+        if example_image_bgr is not None:
+            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_exemplars = self.encode_exemplars(
+                encoded_imgs,
+                text="visual",
+                box_xy1xy2_norm_list=[[(0.2, 0.3), (0.5, 0.6)]],
+                point_xy_norm_list=[(0.5, 0.5)],
+                negative_boxes_list=[[(0.1, 0.1), (0.2, 0.2)]],
+                negative_points_list=[(0.9, 0.1)],
+            )
+            self.generate_detections(encoded_imgs, encoded_exemplars)
+
+        return _enable_compilation(
+            self,
+            example_image_bgr,
+            max_side_length,
+            use_square_sizing,
+            compile_image_encoder=compile_image_encoding,
+            compile_image_projection=compile_image_encoding,
+            compile_text_encoder=compile_exemplar_encoding,
+            compile_sampling_encoder=compile_exemplar_encoding,
+            compile_image_exemplar_fusion=compile_exemplar_encoding,
+            compile_exemplar_detector=compile_detection_segmentation,
+            compile_exemplar_segmentation=compile_detection_segmentation,
+            custom_config=custom_config,
+        )
+
+    # .................................................................................................................
+
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         """
         Helper used to toggle internal 'with torch.inference_mode' on/off.
@@ -1068,6 +1291,37 @@ class SAMV3DetectorModel(nn.Module):
         """
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
+
+    # .................................................................................................................
+
+    def forward(self, *args, **kwargs) -> None:
+        """Placeholder to prevent users from trying to call this model using the forward function"""
+
+        name = self.__class__.__name__
+        print(
+            "",
+            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
+            "Instead, use functions (in order):",
+            "  model.encode_image(...)",
+            "  model.encode_exemplars(...)",
+            "  model.generate_detections(...)",
+            "",
+            "In order to generate mask & bounding-box predictions",
+            sep="\n",
+        )
+
+        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+
+    # .................................................................................................................
+
+    def encode_detection_image(
+        self,
+        image_bgr: ndarray,
+        max_side_length: int | None = None,
+        use_square_sizing: bool = True,
+    ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+        """Temporary function for backwards compatibility. Will be removed in the future"""
+        return self.encode_image(image_bgr, max_side_length, use_square_sizing)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
