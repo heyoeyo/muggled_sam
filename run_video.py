@@ -238,9 +238,10 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for video predictions!"
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core.to(**device_config_dict)
+interact_model = sam_core.get_interactive_context()
+tracking_model = sam_core.get_tracking_context()
 
 # Set up access to video
 vreader = ReversibleLoopingVideoReader(video_path).release()
@@ -256,7 +257,7 @@ if enable_crop_ui:
 # Initial model run to make sure everything succeeds
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(sample_frame, **imgenc_config_dict)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(sample_frame, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -265,10 +266,9 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
 prompts = ([], [], [])
-encoded_prompts = sammodel.encode_prompts(*prompts)
-init_mask_preds, _ = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+encoded_prompts = interact_model.encode_prompts(*prompts)
+init_mask_preds, _ = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 prediction_hw = init_mask_preds.shape[2:]
-# mask_uint8 = ((mask_preds[:, 0, :, :] > 0.0) * 255).byte().cpu().numpy().squeeze()
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -572,7 +572,7 @@ try:
         # Encode any 'new' frames as needed (but not on playback slider changes, would cripple the machine)
         need_image_encode = imgenc_idx_keeper.is_changed(frame_idx)
         if need_image_encode and not is_playback_adjusting:
-            encoded_img, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+            encoded_img, _, _ = interact_model.encode_image(frame, **imgenc_config_dict)
             imgenc_idx_keeper.record(frame_idx)
 
         # Wipe out masking/contours when jumping around playback (otherwise stays over top of changing video!)
@@ -619,8 +619,8 @@ try:
             track_btn.toggle(True, flag_if_changed=False)
 
             # If a prompt exists when tracking begins, assume we should use it
-            if sammodel.check_have_prompts(*prompts):
-                _, init_mem, init_ptr = sammodel.initialize_video_masking(
+            if interact_model.check_have_prompts(*prompts):
+                _, init_mem, init_ptr = tracking_model.initialize_video_masking(
                     encoded_img,
                     *prompts,
                     mask_index_select=maskresults_list[buffer_select_idx].idx,
@@ -647,11 +647,11 @@ try:
             # Look for user interactions
             _, paused_mask_idx, _ = ui_elems.masks_constraint.read()
             need_prompt_encode, prompts = uictrl.read_prompts()
-            have_user_prompts = sammodel.check_have_prompts(*prompts)
+            have_user_prompts = interact_model.check_have_prompts(*prompts)
             have_track_prompts = any(mem.check_has_prompts() for mem in memory_list)
             if need_prompt_encode and (have_user_prompts or not have_track_prompts):
-                encoded_prompts = sammodel.encode_prompts(*prompts)
-                paused_mask_preds, _ = sammodel.generate_masks(
+                encoded_prompts = interact_model.encode_prompts(*prompts)
+                paused_mask_preds, _ = interact_model.generate_masks(
                     encoded_img,
                     encoded_prompts,
                     mask_hint=None,
@@ -662,7 +662,7 @@ try:
             # If there are no user prompts but there are tracking prompts, run the tracker to get a segmentation
             if have_track_prompts and not have_user_prompts and is_changed_track_idx:
                 selected_memory_dict = memory_list[buffer_select_idx].to_dict()
-                paused_obj_score, _, paused_mask_preds, _, _ = sammodel.step_video_masking(
+                paused_obj_score, _, paused_mask_preds, _, _ = tracking_model.step_video_masking(
                     encoded_img, **selected_memory_dict
                 )
                 paused_obj_score = float(paused_obj_score.squeeze().float().cpu().numpy())
@@ -670,7 +670,7 @@ try:
 
             # Store encoded prompts as needed
             if store_prompt_btn.read():
-                _, init_mem, init_ptr = sammodel.initialize_video_masking(
+                _, init_mem, init_ptr = tracking_model.initialize_video_masking(
                     encoded_img,
                     *prompts,
                     mask_index_select=paused_mask_idx,
@@ -694,7 +694,7 @@ try:
                         continue
 
                     # Only run model if we have stored prompts
-                    obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
+                    obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = tracking_model.step_video_masking(
                         encoded_img, **memory_list[objidx].to_dict()
                     )
                     obj_score = float(obj_score.squeeze().float().cpu().numpy())

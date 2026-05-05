@@ -189,10 +189,9 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv3", "Error! Only SAMv3 models support detection..."
-sammodel.to(**device_config_dict)
-detmodel = sammodel.make_detector_model(arg_bpe_path)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+detect_model = sam_core.get_detector_context(arg_bpe_path)
+detect_model.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
 loaded_image_bgr = cv2.imread(image_path)
@@ -228,7 +227,9 @@ if arg_mask_path is not None:
 # Handle compilation
 if enable_compilation:
     print("", "Compiling model... (experimental)", sep="\n", flush=True)
-    time_compile_ms = detmodel.enable_compilation(input_image_bgr, **imgenc_config_dict, compile_image_encoding=False)
+    time_compile_ms = detect_model.enable_compilation(
+        input_image_bgr, **imgenc_config_dict, compile_image_encoding=False
+    )
     print("  Done! Took", time_compile_ms, "ms")
 
 
@@ -238,7 +239,7 @@ if enable_compilation:
 # Run image encoding (only need to do this once)
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_imgs, token_hw, preencode_img_hw = detmodel.encode_detection_image(input_image_bgr, **imgenc_config_dict)
+encoded_imgs, token_hw, preencode_img_hw = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -249,7 +250,7 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 ref_encoded_imgs = encoded_imgs
 if have_different_ref_image:
     print("", "Using separate reference image", "Encoding reference image data...", sep="\n", flush=True)
-    ref_encoded_imgs, _, _ = detmodel.encode_detection_image(input_ref_image_bgr, **imgenc_config_dict)
+    ref_encoded_imgs, _, _ = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
     print("  Done", flush=True)
 
 # Provide some feedback about how the model is running
@@ -515,10 +516,10 @@ try:
         # Handle re-encoding of image data if sizing changes
         if is_size_changed:
             imgenc_config_dict["max_side_length"] = img_enc_size
-            encoded_imgs, _, _ = detmodel.encode_detection_image(input_image_bgr, **imgenc_config_dict)
+            encoded_imgs, _, _ = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
             ref_encoded_imgs = encoded_imgs
             if have_different_ref_image:
-                ref_encoded_imgs, _, _ = detmodel.encode_detection_image(input_ref_image_bgr, **imgenc_config_dict)
+                ref_encoded_imgs, _, _ = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
             need_detection_update = True
 
         # Wipe out prompts on clear
@@ -677,8 +678,8 @@ try:
 
             # Run model with timing
             t1 = perf_counter()
-            exemplars = detmodel.encode_exemplars(ref_encoded_imgs, **prompts_dict)
-            mask_preds, box_preds, det_scores, _ = detmodel.generate_detections(encoded_imgs, exemplars)
+            exemplars = detect_model.encode_exemplars(ref_encoded_imgs, **prompts_dict)
+            mask_preds, box_preds, det_scores, _ = detect_model.generate_detections(encoded_imgs, exemplars)
             t2 = perf_counter()
             time_txtblock.set_value(round(1000 * (t2 - t1)))
 

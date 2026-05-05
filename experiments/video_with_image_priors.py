@@ -172,9 +172,10 @@ history.store(image_path=image_path, video_path=video_path, model_path=model_pat
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for video predictions!"
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core.to(**device_config_dict)
+interact_model = sam_core.get_interactive_context()
+track_model = sam_core.get_tracking_context()
 
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
@@ -194,7 +195,7 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -202,8 +203,8 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-encoded_prompts = sammodel.encode_prompts([], [], [])
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
 
 # Provide some feedback about how the model is running
@@ -310,7 +311,7 @@ try:
         if record_prompt_btn.read():
 
             # Produce prompt to be recorded for video segmentation
-            _, init_mem, init_ptr = sammodel.initialize_video_masking(
+            _, init_mem, init_ptr = track_model.initialize_video_masking(
                 encoded_img, *prompts, mask_index_select=mselect_idx
             )
             objbuffer.store_prompt_result(0, init_mem, init_ptr)
@@ -329,8 +330,8 @@ try:
 
         # Only run the model when an input affecting the output has changed!
         if need_prompt_encode:
-            encoded_prompts = sammodel.encode_prompts(*prompts)
-            mask_preds, iou_preds = sammodel.generate_masks(
+            encoded_prompts = interact_model.encode_prompts(*prompts)
+            mask_preds, iou_preds = interact_model.generate_masks(
                 encoded_img, encoded_prompts, mask_hint=None, blank_promptless_output=True
             )
 
@@ -391,7 +392,7 @@ if no_buffer and has_prompts:
     )
 
     # Store encoding associated with last active prompt data
-    _, init_mem, init_ptr = sammodel.initialize_video_masking(encoded_img, *prompts, mask_index_select=mselect_idx)
+    _, init_mem, init_ptr = track_model.initialize_video_masking(encoded_img, *prompts, mask_index_select=mselect_idx)
     objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
 
@@ -404,9 +405,9 @@ playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=Fals
 sample_frame = vreader.get_sample_frame()
 
 # Setup initial model results
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(sample_frame, **imgenc_config_dict)
-encoded_prompts = sammodel.encode_prompts([], [], [])
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(sample_frame, **imgenc_config_dict)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
 
 # Set up simpler UI for video playback
@@ -475,8 +476,8 @@ try:
 
         # Only run segmentation on unseen frames
         if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
-            encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
-            obj_score, best_mask_idx, video_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
+            encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+            obj_score, best_mask_idx, video_preds, mem_enc, obj_ptr = track_model.step_video_masking(
                 encoded_imgs_list, **objbuffer.to_dict()
             )
 

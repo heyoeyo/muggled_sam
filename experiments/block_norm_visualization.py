@@ -154,8 +154,9 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
@@ -172,21 +173,21 @@ if full_image_bgr is None:
 # Figure out which transformer block outputs we're trying to capture
 is_v1_model, is_v2_model, is_v3_model = False, False, False
 target_modules = None
-if sammodel.name == "samv3":
+if sam_core.name == "samv3":
     is_v3_model = True
     target_modules = (V3GlobalBlock, V3WindowBlock, V3p1GlobalBlock, V3p1WindowBlock)
-elif sammodel.name == "samv2":
+elif sam_core.name == "samv2":
     is_v2_model = True
     target_modules = (V2GlobalBlock, V2WindowBlock, V2PoolBlock)
-elif sammodel.name == "samv1":
+elif sam_core.name == "samv1":
     is_v1_model = True
     target_modules = (V1GlobalBlock, V1WindowBlock)
 else:
     raise TypeError("Unknown model type (expecting SAMv1, v2 or v3)")
 
 # Capture target module output
-captures = ModelOutputCapture(sammodel, target_modules=target_modules)
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, **imgenc_config_dict)
+captures = ModelOutputCapture(interact_model, target_modules=target_modules)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
 assert len(captures) > 0, "Error! No block data was captured... likely targeting the wrong blocks?"
 
 # For SAMv1, every windowed block includes a global block that operates on windows. We need to remove these!

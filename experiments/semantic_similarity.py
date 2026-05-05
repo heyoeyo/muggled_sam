@@ -373,8 +373,9 @@ else:
 # Get the model name, for reporting
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(**device_config_dict)
 
 # Load reference image
 image_bgr_a = cv2.imread(image_path_a)
@@ -411,13 +412,13 @@ else:
 # Determine which image encoding function to use
 is_v1_model, is_v2_model, is_v3_model = False, False, False
 encode_image_func = None
-if sammodel.name == "samv3":
+if sam_core.name == "samv3":
     is_v3_model = True
     encode_image_func = encode_image_samv3
-elif sammodel.name == "samv2":
+elif sam_core.name == "samv2":
     is_v2_model = True
     encode_image_func = encode_image_samv2
-elif sammodel.name == "samv1":
+elif sam_core.name == "samv1":
     is_v1_model = True
     encode_image_func = encode_image_samv1
 else:
@@ -427,8 +428,8 @@ else:
 imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": use_square_sizing}
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-raw_enc_a, proj_enc_a = encode_image_func(sammodel, image_bgr_a, **imgenc_config_dict)
-raw_enc_b, proj_enc_b = encode_image_func(sammodel, image_bgr_b, **imgenc_config_dict)
+raw_enc_a, proj_enc_a = encode_image_func(interact_model, image_bgr_a, **imgenc_config_dict)
+raw_enc_b, proj_enc_b = encode_image_func(interact_model, image_bgr_b, **imgenc_config_dict)
 t2 = perf_counter()
 init_time_taken_ms = round(1000 * (t2 - t1), 1)
 print(f"  -> Took {init_time_taken_ms} ms", flush=True)
@@ -449,8 +450,8 @@ else:
     token_hw_a, token_hw_b = proj_enc_a[0].shape[2:], proj_enc_b[0].shape[2:]
 
 # Run model without prompts as sanity check. Also gives initial result values
-encoded_prompts = sammodel.encode_prompts([], [], [])
-init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img_a, encoded_prompts, blank_promptless_output=True)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img_a, encoded_prompts, blank_promptless_output=True)
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
 # Provide some feedback about how the model is running
@@ -637,8 +638,10 @@ try:
         # Compute mask predictions as needed
         need_update_prediction = need_prompt_encode or is_swap_changed
         if need_prompt_encode or is_swap_changed:
-            encoded_prompts = sammodel.encode_prompts(*prompts)
-            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=True)
+            encoded_prompts = interact_model.encode_prompts(*prompts)
+            mask_preds, iou_preds = interact_model.generate_masks(
+                encoded_img, encoded_prompts, blank_promptless_output=True
+            )
             uictrl.update_mask_previews(mask_preds)
 
         # Update masking + outline used to indicate segmentation result

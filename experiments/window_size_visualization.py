@@ -169,9 +169,9 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
-is_v2_model = sammodel.name == "samv2"
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
 full_image_bgr = cv2.imread(image_path)
@@ -188,7 +188,9 @@ if full_image_bgr is None:
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(
+    full_image_bgr, imgenc_base_size, use_square_sizing
+)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -196,8 +198,8 @@ init_time_taken_ms = round(1000 * (t2 - t1), 1)
 print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-encoded_prompts = sammodel.encode_prompts([], [], [])
-init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
 # Provide some feedback about how the model is running
@@ -220,11 +222,11 @@ print(
 # -> v2 model has complicated window sizing, but can be directly read from config
 # -> v1 model works the same as v3
 init_winsize_per_stage = [None] * 4
-if sammodel.name == "samv3":
+if sam_core.name == "samv3":
     init_winsize_per_stage = [model_config_dict.get("imgencoder_window_size", None)] * 4
-elif sammodel.name == "samv2":
+elif sam_core.name == "samv2":
     init_winsize_per_stage = model_config_dict.get("imgencoder_window_size_per_stage", (8, 4, 14, 7))
-elif sammodel.name == "samv1":
+elif sam_core.name == "samv1":
     init_winsize_per_stage = [model_config_dict.get("base_window_size", None)] * 4
 
 # Check for window sizing limits. Needed to stop crashing due to pytorch 'scaled_dot_product_attention'
@@ -233,7 +235,7 @@ elif sammodel.name == "samv1":
 # -> Using a large input image + small window size can lead to these overly large tensors
 # -> Only really a concern on SAMv2, which has very large token grids in it's earlier stages due to hiera
 min_winsize_per_stage = (1, 1, 1, 1)
-if sammodel.name == "samv2":
+if sam_core.name == "samv2":
     num_lowres_tokens = token_hw[0] * token_hw[1]
     tokens_per_stage = [16 * num_lowres_tokens, 4 * num_lowres_tokens, num_lowres_tokens, num_lowres_tokens // 2]
     min_winsize_per_stage = [max(1, num_tokens // (2**15)) for num_tokens in tokens_per_stage]
@@ -358,9 +360,9 @@ try:
                 show_preds_btn.toggle(True)
 
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
-            sammodel.image_encoder.set_window_sizes(win_sizes)
+            interact_model.image_encoder.set_window_sizes(win_sizes)
             t1 = perf_counter()
-            encoded_img, token_hw, _ = sammodel.encode_image(full_image_bgr, max_side_length, use_square_sizing)
+            encoded_img, token_hw, _ = interact_model.encode_image(full_image_bgr, max_side_length, use_square_sizing)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             t2 = perf_counter()
@@ -374,8 +376,10 @@ try:
 
         # Update masking result if window or prompts are changed
         if need_image_encode or need_prompt_encode:
-            encoded_prompts = sammodel.encode_prompts(*prompts)
-            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+            encoded_prompts = interact_model.encode_prompts(*prompts)
+            mask_preds, iou_preds = interact_model.generate_masks(
+                encoded_img, encoded_prompts, blank_promptless_output=False
+            )
 
             # Make scaled copy of predictions for preview when sizing changes
             # (if we don't do this, the UI will jitter due to layout sizing changes!)

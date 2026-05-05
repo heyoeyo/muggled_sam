@@ -151,9 +151,9 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
-is_v2_model = sammodel.name == "samv2"
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(**device_config_dict)
 
 # Load image (or frame from video)
 full_image_bgr = cv2.imread(image_path)
@@ -170,7 +170,9 @@ if full_image_bgr is None:
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(
+    full_image_bgr, imgenc_base_size, use_square_sizing
+)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -178,8 +180,8 @@ init_time_taken_ms = round(1000 * (t2 - t1), 1)
 print(f"  -> Took {init_time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-encoded_prompts = sammodel.encode_prompts([], [], [])
-init_mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
 # Provide some feedback about how the model is running
@@ -327,7 +329,7 @@ try:
 
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
             t1 = perf_counter()
-            encoded_img, token_hw, _ = sammodel.encode_image(rescaled_img_bgr, max_side_length, use_square_sizing)
+            encoded_img, token_hw, _ = interact_model.encode_image(rescaled_img_bgr, max_side_length, use_square_sizing)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             t2 = perf_counter()
@@ -339,8 +341,10 @@ try:
         # Update masking result
         need_mask_update = need_prompt_encode or need_image_encode
         if need_mask_update:
-            encoded_prompts = sammodel.encode_prompts(*prompts)
-            mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+            encoded_prompts = interact_model.encode_prompts(*prompts)
+            mask_preds, iou_preds = interact_model.generate_masks(
+                encoded_img, encoded_prompts, blank_promptless_output=False
+            )
 
             # Make scaled copy of predictions for preview when sizing changes
             # (if we don't do this, the UI will jitter due to layout sizing changes!)

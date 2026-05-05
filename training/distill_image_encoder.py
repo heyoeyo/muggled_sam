@@ -286,27 +286,25 @@ history.store(
 # Load student model
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
-config_student, model_student = make_sam_from_state_dict(path_student_model)
-assert model_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+config_student, core_student = make_sam_from_state_dict(path_student_model)
+assert core_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+model_student = core_student.get_interactive_context()
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert model_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+config_teacher, core_teacher = make_sam_from_state_dict(path_teacher_model)
+assert core_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+model_teacher = core_teacher.get_interactive_context()
 
 # Sanity check. Make sure were using matching models
 assert isinstance(
     model_student, type(model_teacher)
 ), f"Error, student-teacher mismatch ({model_student.__class__.__name__} vs. {model_teacher.__class__.__name__})"
 
-# Remove unused components to save some memory
-to_delete = ["sampling_encoder", "image_exemplar_fusion", "text_encoder", "exemplar_detector", "exemplar_segmentation"]
-for component_name in to_delete:
-    if hasattr(model_student, component_name):
-        delattr(model_student, component_name)
-    if hasattr(model_teacher, component_name):
-        delattr(model_teacher, component_name)
+# Wipe out core model to remove unused components to reduce memory use
+del core_student
+del core_teacher
 
 # Make sure all weights are un-trainable to begin
 for p in model_student.parameters():

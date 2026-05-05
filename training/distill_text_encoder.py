@@ -258,21 +258,21 @@ history.store(
 # Load student model
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
-config_student, base_model_student = make_sam_from_state_dict(path_student_model)
-assert base_model_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
-model_student = base_model_student.make_detector_model()
+config_student, core_student = make_sam_from_state_dict(path_student_model)
+assert core_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+model_student = core_student.get_detector_context()
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, base_model_teacher = make_sam_from_state_dict(path_teacher_model)
-assert base_model_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
-model_teacher = base_model_teacher.make_detector_model()
+config_teacher, core_teacher = make_sam_from_state_dict(path_teacher_model)
+assert core_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
+model_teacher = core_teacher.get_detector_context()
 
 # Sanity check. Make sure were using matching models
 assert (
-    base_model_teacher.name == base_model_student.name
-), f"Error, mismatched teacher-student models! ({base_model_teacher.name} vs. {base_model_student.name})"
+    core_teacher.name == core_student.name
+), f"Error, mismatched teacher-student models! ({core_teacher.name} vs. {core_student.name})"
 
 # Make sure all weights are un-trainable to begin
 for p in model_student.parameters():
@@ -304,8 +304,8 @@ true_mask_preds, _, true_score_preds, _ = model_teacher.generate_detections(true
 _, true_filt_masks, _, _ = get_filtered_detections(true_mask_preds, None, true_score_preds, detection_threshold)
 
 # Delete unusued components save memory
-del base_model_student
-del base_model_teacher
+del core_student
+del core_teacher
 del model_teacher.image_encoder
 del model_teacher.image_projection
 del model_student.image_encoder

@@ -112,8 +112,8 @@ history.store(model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core.to(**device_config_dict)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class PosencExtractor:
 
 
 # Set up extractor and create example encoding for feature size information
-posextract = PosencExtractor(sammodel)
+posextract = PosencExtractor(sam_core)
 base_h, base_w = (72, 72) if posextract.is_v3_model else (64, 64)
 example_posenc_bchw = posextract.make_new_encodings(base_h, base_w)
 _, features_per_token, _, _ = example_posenc_bchw.shape

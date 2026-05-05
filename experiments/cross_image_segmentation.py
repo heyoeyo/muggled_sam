@@ -165,9 +165,11 @@ history.store(image_path=image_path_a, cross_image_path=image_path_b, model_path
 # Try loading model weights
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for cross-segmentation!"
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+assert sam_core.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for cross-segmentation!"
+sam_core.to(**device_config_dict)
+interact_model = sam_core.get_interactive_context()
+tracking_model = sam_core.get_tracking_context()
 
 # Load image and get shaping info for providing display
 full_image_a = cv2.imread(image_path_a)
@@ -208,8 +210,8 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 # Run Model
 print("", "Encoding images...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img_a, token_hw, preencode_img_hw = sammodel.encode_image(full_image_a, **imgenc_config_dict)
-encoded_img_b, _, _ = sammodel.encode_image(full_image_b, **imgenc_config_dict)
+encoded_img_a, token_hw, preencode_img_hw = interact_model.encode_image(full_image_a, **imgenc_config_dict)
+encoded_img_b, _, _ = interact_model.encode_image(full_image_b, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -217,9 +219,9 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-encoded_prompts = sammodel.encode_prompts([], [], [])
-mask_a_preds, iou_a_preds = sammodel.generate_masks(encoded_img_a, encoded_prompts)
-mask_b_preds, iou_b_preds = sammodel.generate_masks(encoded_img_b, encoded_prompts)
+encoded_prompts = interact_model.encode_prompts([], [], [])
+mask_a_preds, iou_a_preds = interact_model.generate_masks(encoded_img_a, encoded_prompts)
+mask_b_preds, iou_b_preds = interact_model.generate_masks(encoded_img_b, encoded_prompts)
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -402,8 +404,8 @@ try:
         need_prompt_encode = prompt_a_changed or prompt_b_changed or need_prompt_clear
         if need_prompt_encode:
             selected_prompts = prompts_a if side_select == "a" else prompts_b
-            encoded_prompts = sammodel.encode_prompts(*selected_prompts)
-            ref_preds, _ = sammodel.generate_masks(encoded_img, encoded_prompts)
+            encoded_prompts = interact_model.encode_prompts(*selected_prompts)
+            ref_preds, _ = interact_model.generate_masks(encoded_img, encoded_prompts)
 
         # Encode memory data from selected mask
         need_memory_encode = need_prompt_encode or is_mask_select_changed or is_numiter_changed
@@ -412,13 +414,13 @@ try:
             # Use prompted mask to initialize 'tracking' to segment the cross-image
             mem_mask_idx = mask_a_idx if side_select == "a" else mask_b_idx
             mask_for_mem = ref_preds[:, [mem_mask_idx], :, :]
-            ref_mem, ref_ptr = sammodel.initialize_from_mask(encoded_img, mask_for_mem)
+            ref_mem, ref_ptr = tracking_model.initialize_from_mask(encoded_img, mask_for_mem)
 
             # Run 'video' segmentation to prompt other image
             prompt_mem, prompt_ptr = tuple([ref_mem]), tuple([ref_ptr])
             prev_mems, prev_ptrs = deque([]), deque([])
             for _ in range(1 + num_video_iter):
-                obj_score, best_mask_idx, cross_preds, new_mem, new_ptr = sammodel.step_video_masking(
+                obj_score, best_mask_idx, cross_preds, new_mem, new_ptr = tracking_model.step_video_masking(
                     cross_encoded_img, prompt_mem, prompt_ptr, prev_mems, prev_ptrs
                 )
                 prev_mems.appendleft(new_mem)
@@ -477,8 +479,8 @@ try:
 
             # Get data for saving -> want to save image that isn't prompted
             # (though we'll save the prompts from the other image, just because...)
-            is_side_a_prompted = sammodel.check_have_prompts(*prompts_a)
-            is_side_b_prompted = sammodel.check_have_prompts(*prompts_b)
+            is_side_a_prompted = interact_model.check_have_prompts(*prompts_a)
+            is_side_b_prompted = interact_model.check_have_prompts(*prompts_b)
             if not (is_side_a_prompted or is_side_b_prompted):
                 print("", "No prompts! Will skip saving...", sep="\n", flush=True)
                 continue

@@ -176,8 +176,9 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(**device_config_dict)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(**device_config_dict)
 
 # Load image and get shaping info for providing display
 loaded_image_bgr = cv2.imread(image_path)
@@ -212,7 +213,9 @@ use_mask_hint = mask_hint_img is not None
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(input_image_bgr, imgenc_base_size, use_square_sizing)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(
+    input_image_bgr, imgenc_base_size, use_square_sizing
+)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -221,8 +224,8 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
 box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
-encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-mask_preds, iou_preds = sammodel.generate_masks(
+encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+mask_preds, iou_preds = interact_model.generate_masks(
     encoded_img, encoded_prompts, blank_promptless_output=disable_promptless_masks
 )
 
@@ -235,7 +238,7 @@ if use_mask_hint:
     mask_hint = torch.from_numpy(mask_hint_img_1ch).squeeze().unsqueeze(0)
     mask_hint = ((mask_hint / max(mask_hint.max(), 1.0)) - 0.5) * 20.0
     mask_hint = mask_hint.to(mask_preds)
-    mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint)
+    mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
@@ -403,15 +406,15 @@ try:
         # Only run the model when an input affecting the output has changed!
         need_prompt_encode = is_prompt_changed or is_mhint_changed
         if need_prompt_encode:
-            encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-            mask_preds, iou_preds = sammodel.generate_masks(
+            encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            mask_preds, iou_preds = interact_model.generate_masks(
                 encoded_img,
                 encoded_prompts,
                 mask_hint if enable_mask_hint else None,
                 blank_promptless_output=disable_promptless_masks,
             )
             if use_best_mask:
-                best_mask_idx = sammodel.get_best_mask_index(iou_preds)
+                best_mask_idx = interact_model.get_best_mask_index(iou_preds)
                 ui_elems.masks_constraint.change_to(best_mask_idx)
 
         # Update mask previews & selected mask for outlines
