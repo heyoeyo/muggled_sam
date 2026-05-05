@@ -524,8 +524,8 @@ class ObjectPointerGen(nn.Module):
 
         # Get pointers for each batch (implemented in a bit of a strange way to support compilation)
         ptrs_bnc = self.pointer_mlp(encoded_mask_tokens)
-        is_ok_score = (objscore_b > 0).to(dtype=ptrs_bnc.dtype)
-        objptrs_bnc = ptrs_bnc * is_ok_score + (1 - is_ok_score) * self.no_ptr_embed
+        is_ok_score_b11 = (objscore_b > 0).to(dtype=ptrs_bnc.dtype).unsqueeze(-1).unsqueeze(-1)
+        objptrs_bnc = ptrs_bnc * is_ok_score_b11 + (1 - is_ok_score_b11) * self.no_ptr_embed
 
         return objscore_b, objptrs_bnc
 
