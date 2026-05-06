@@ -42,14 +42,16 @@ assert len(train_image_paths_list) > 0, "No training data found!"
 
 # Set up student
 print("Loading student model...")
-_, model_student = make_sam_from_state_dict(student_model_path)
+_, core_student = make_sam_from_state_dict(student_model_path)
+model_student = core_student.get_interactive_context()
 model_student.to(device=device, dtype=dtype)
 model_student.toggle_inference_mode(False)
 model_student.train()
 
 # Set up teacher
 print("Loading teacher model...")
-_, model_teacher = make_sam_from_state_dict(teacher_model_path)
+_, core_teacher = make_sam_from_state_dict(teacher_model_path)
+model_teacher = core_teacher.get_interactive_context()
 model_teacher.to(device=device, dtype=dtype)
 model_teacher.toggle_inference_mode(False)
 model_teacher.eval()
@@ -86,7 +88,7 @@ for epoch_idx in range(num_epochs):
             ground_truth, _, _ = model_teacher.encode_image(img_uint8, **imgenc_config_dict)
         prediction, _, _ = model_student.encode_image(img_uint8, **imgenc_config_dict)
 
-        # Flatten outputs (v3 models output list of lists of tensors)
+        # Flatten outputs if needed to get list of tensors (v3 models output list-of-lists-of-tensors)
         if not isinstance(prediction[0], torch.Tensor):
             flat_truth, flat_pred = [], []
             for targ, pred in zip(ground_truth, prediction):
@@ -115,5 +117,5 @@ print("", "", sep="\n")
 if "n" not in input("Save result? [Y/n] ").lower():
     timestamp = round(dt.now().timestamp())
     save_path = os.path.join(os.path.dirname(student_model_path), f"simple_distillation_{timestamp}.pt")
-    torch.save(model_student.state_dict(), save_path)
+    torch.save(core_student.state_dict(), save_path)
     print("Saved training result:", save_path, sep="\n")

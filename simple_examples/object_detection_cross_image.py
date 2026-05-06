@@ -44,13 +44,13 @@ if target_img_bgr is None:
     raise FileNotFoundError(f"Error loading target image: {target_image_path}")
 
 # Load and set up detector model
-model_config_dict, full_model = make_sam_from_state_dict(model_path)
-full_model.to(device=device, dtype=dtype)
-detmodel = full_model.make_detector_model()
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+detect_model = sam_core.get_detector_context()
+detect_model.to(device=device, dtype=dtype)
 
 # Encode exemplars from *reference* image
-enc_ref_img, _, _ = detmodel.encode_detection_image(ref_img_bgr, **imgenc_config_dict)
-enc_ref_exemplars = detmodel.encode_exemplars(
+enc_ref_img, _, _ = detect_model.encode_detection_image(ref_img_bgr, **imgenc_config_dict)
+enc_ref_exemplars = detect_model.encode_exemplars(
     enc_ref_img,
     text_prompt,
     pos_box_xy1xy2_norm_list,
@@ -60,17 +60,18 @@ enc_ref_exemplars = detmodel.encode_exemplars(
 )
 
 # Detect exemplars on *target* image
-enc_targ_img, token_hw, preencode_hw = detmodel.encode_detection_image(target_img_bgr, **imgenc_config_dict)
-mask_preds, box_preds, detection_scores, presence_score = detmodel.generate_detections(enc_targ_img, enc_ref_exemplars)
-filtered_masks, filtered_boxes, filtered_scores, presence_score = detmodel.filter_results(
-    mask_preds, box_preds, detection_scores, presence_score, detection_score_threshold
+enc_targ_img, token_hw, preencode_hw = detect_model.encode_detection_image(target_img_bgr, **imgenc_config_dict)
+mask_preds, box_preds, detection_scores, pres_score = detect_model.generate_detections(enc_targ_img, enc_ref_exemplars)
+filtered_masks, filtered_boxes, filtered_scores, pres_score = detect_model.filter_results(
+    mask_preds, box_preds, detection_scores, pres_score, detection_score_threshold
 )
 
 # Scale images for display
 disp_scale_factor = 0.5
 scaled_targ_img = cv2.resize(target_img_bgr, dsize=None, fx=disp_scale_factor, fy=disp_scale_factor)
-ref_scaled_w = round(ref_img_bgr.shape[1] * scaled_targ_img.shape[0] / target_img_bgr.shape[0])
-ref_scaled_h = scaled_targ_img.shape[0]
+targ_hw = scaled_targ_img.shape[0:2]
+ref_scaled_h = targ_hw[0]
+ref_scaled_w = round((ref_img_bgr.shape[1] * ref_scaled_h / ref_img_bgr.shape[0]))
 scaled_ref_img = cv2.resize(ref_img_bgr, dsize=(ref_scaled_w, ref_scaled_h))
 
 # Draw prompts onto reference image
@@ -93,8 +94,8 @@ num_filtered_detections = filtered_masks.shape[0]
 if num_filtered_detections == 0:
     filtered_masks = torch.full((1, filtered_masks.shape[-2], filtered_masks.shape[-1]), -10.0).to(filtered_masks)
     print("", "No masks detected!", sep="\n")
-scaled_masks = torch.nn.functional.interpolate(filtered_masks[None], scaled_targ_img.shape[0:2]).squeeze(0)
-combined_mask, _ = (scaled_masks > 0).max(dim=0)
+scaled_masks = torch.nn.functional.interpolate(filtered_masks[None], targ_hw, mode="bilinear").squeeze(0)
+combined_mask = (scaled_masks > 0).any(dim=0)
 scaled_targ_img = cv2.copyTo(scaled_targ_img, combined_mask.byte().cpu().numpy())
 
 # Final display

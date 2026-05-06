@@ -13,6 +13,7 @@ except ModuleNotFoundError:
         sys.path.insert(0, parent_folder)
     else:
         raise ImportError("Can't find path to muggled_sam folder!")
+from time import perf_counter
 import cv2
 import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
@@ -37,23 +38,26 @@ if img_bgr is None:
 
 # Load and set up detector model
 print("Loading model...", flush=True)
-model_config_dict, full_model = make_sam_from_state_dict(model_path)
-full_model.to(device=device, dtype=dtype)
-detmodel = full_model.make_detector_model()
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+detect_model = sam_core.get_detector_context()
+detect_model.to(device=device, dtype=dtype)
 
 # Run detection
 print("Running detections...", flush=True)
-encoded_imgs, _, _ = detmodel.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
-exemplars_list = [detmodel.encode_exemplars(encoded_imgs, txt) for txt in text_prompts_list]
-exemplar_batch, exemplar_padding_mask = detmodel.make_exemplar_batch(*exemplars_list)
-mask_preds_bnhw, box_preds_bn22, detection_scores_bn, presence_scores_b = detmodel.generate_detections(
-    encoded_imgs,
+t_start = perf_counter()
+encoded_img, _, _ = detect_model.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
+exemplars_list = [detect_model.encode_exemplars(encoded_img, txt) for txt in text_prompts_list]
+exemplar_batch, exemplar_padding_mask = detect_model.make_exemplar_batch(*exemplars_list)
+mask_preds_bnhw, box_preds_bn22, detection_scores_bn, presence_scores_b = detect_model.generate_detections(
+    encoded_img,
     encoded_exemplars_bnc=exemplar_batch,
     exemplar_padding_mask_bn=exemplar_padding_mask,
 )
+t_end = perf_counter()
 print("Raw mask prediction shape:", tuple(mask_preds_bnhw.shape))
 print("Exemplar batch shape:", tuple(exemplar_batch.shape))
 print("Padding mask shape:", tuple(exemplar_padding_mask.shape))
+print("Time taken ms:", round(1000 * (t_end - t_start)))
 
 # Display results per-batch entry
 batch_size = mask_preds_bnhw.shape[0]
@@ -61,7 +65,7 @@ for b_idx, txt in enumerate(text_prompts_list):
 
     # Filter out 'good' detections (model always produces 200 guesses, we keep only the ones with high scores)
     # -> Cannot be done as a batch operation, since results are usually different shapes (i.e. different 'N')
-    mask_nhw, boxes_n22, scores_n22, presence_score = detmodel.filter_results(
+    mask_nhw, boxes_n22, scores_n22, presence_score = detect_model.filter_results(
         mask_preds_bnhw[b_idx],
         box_preds_bn22[b_idx],
         detection_scores_bn[b_idx],

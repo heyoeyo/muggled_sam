@@ -42,6 +42,7 @@ max_side_length_track = 504  # Reduce this to increase speed at the cost of mask
 use_square_sizing = True
 detection_score_threshold = 0.5
 display_scale = 0.5
+enable_compilation = False
 
 # Read first frame, will use to begin tracking
 vcap = cv2.VideoCapture(video_path)
@@ -50,21 +51,21 @@ vcap.set(cv2.CAP_PROP_POS_FRAMES, initial_frame_index)
 ok_frame, first_frame = vcap.read()
 assert ok_frame, f"Could not read frames from video: {video_path}"
 
-# Load and set up detector model
+# Load and set up model components
 print("Loading model...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv3", "Only SAMv3.1 supports multiplexed video segmentation!"
-sammodel.to(device=device, dtype=dtype)
-detmodel = sammodel.make_detector_model()
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core.to(device=device, dtype=dtype)
+track_model = sam_core.get_tracking_context()
+detect_model = sam_core.get_detector_context()
 
 # Warning for non-v3.1 (e.g. v3 which doesn't do multiplexing)
-is_v3p1 = hasattr(sammodel, "multiplex_video_masking")
+is_v3p1 = hasattr(track_model, "multiplex_video_masking")
 if not is_v3p1:
     print("", "WARNING: Model is not SAMv3.1", "Multiplexing may not be properly supported", "", sep="\n")
 
 # Run initial detection to get objects to track
-init_encimgs, _, _ = detmodel.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
-init_exemplars = detmodel.encode_exemplars(
+init_encimgs, _, _ = detect_model.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
+init_exemplars = detect_model.encode_exemplars(
     init_encimgs,
     text_prompt,
     pos_box_xy1xy2_norm_list,
@@ -72,7 +73,7 @@ init_exemplars = detmodel.encode_exemplars(
     neg_box_xy1xy2_norm_list,
     neg_point_xy_norm_list,
 )
-init_masks, _, _, _ = detmodel.generate_detections(init_encimgs, init_exemplars, detection_score_threshold)
+init_masks, _, _, _ = detect_model.generate_detections(init_encimgs, init_exemplars, detection_score_threshold)
 
 # Sanity check
 num_objects = init_masks.shape[1]
@@ -81,14 +82,24 @@ print(f"Detected {num_objects} initial objects!")
 
 # Re-encode image at 'tracking' resolution to set up initial memory encoding
 if max_side_length_detect != max_side_length_track:
-    init_encimgs, _, _ = sammodel.encode_image(first_frame, max_side_length_track, use_square_sizing)
+    init_encimgs, _, _ = track_model.encode_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
-init_mem, init_ptr = sammodel.initialize_from_mask(init_encimgs, init_masks)
+init_mem, init_ptr = track_model.initialize_from_mask(init_encimgs, init_masks)
 prompt_mems = deque([init_mem])
 prompt_ptrs = deque([init_ptr])
 prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
+
+# Handle compilation if needed (doing this here to avoid including setup in compilation)
+if enable_compilation:
+    print("Compiling enabled! First run may take a while...", flush=True)
+    track_model.enable_compilation(
+        first_frame,
+        max_side_length_track,
+        use_square_sizing,
+        compile_memory_encoding=False,  # Currently causes problems for multiplexing
+    )
 
 # Process video frames
 is_using_cuda = "cuda" in device
@@ -105,8 +116,8 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame, max_side_length_track, use_square_sizing)
-        obj_score, best_idx_m, mask_preds_mnhw, mem_enc, obj_ptr = sammodel.step_video_masking(
+        encoded_imgs_list, _, _ = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
+        obj_score, best_idx_m, mask_preds_mnhw, mem_enc, obj_ptr = track_model.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, num_multiplex_objects=num_objects
         )
         if is_using_cuda:

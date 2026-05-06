@@ -53,8 +53,8 @@ display_scale = 0.35
 
 # Bundle re-used data together for ease of use
 display_scale_dict = {"dsize": None, "fx": display_scale, "fy": display_scale}
-track_imgenc_config_dict = {"max_side_length": max_side_length_track, "use_square_sizing": True}
-detection_imgenc_config_dict = {"max_side_length": max_side_length_detect, "use_square_sizing": True}
+imgenc_config_dict_track = {"max_side_length": max_side_length_track, "use_square_sizing": True}
+imgenc_config_dict_detect = {"max_side_length": max_side_length_detect, "use_square_sizing": True}
 detection_prompts_dict = {
     "text": text_prompt,
     "box_xy1xy2_norm_list": pos_box_xy1xy2_norm_list,
@@ -71,22 +71,20 @@ ok_frame, first_frame = vcap.read()
 assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
-print("Loading model...")
-model_config_dict, track_model = make_sam_from_state_dict(detection_model_path)
-assert track_model.name == "samv3", "Error! Only SAMv3 models support object detection..."
-track_model.to(device=device, dtype=dtype)
-detmodel = track_model.make_detector_model()
-print("  Done!")
+print("Loading model...", end=" ", flush=True)
+model_config_dict, sam_core_detect = make_sam_from_state_dict(detection_model_path)
+detect_model = sam_core_detect.get_detector_context().to(device=device, dtype=dtype)
+print("Done!")
 
-# Allow loading of alternate tracking model
+# Allow loading of alternate model for tracking
+sam_core_track = sam_core_detect
 is_using_separate_tracking_model = tracking_model_path is not None
 if is_using_separate_tracking_model:
-    print("Loading separate tracking model...")
-    _, track_model = make_sam_from_state_dict(tracking_model_path)
-    assert track_model.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video tracking"
-    track_model.to(device=device, dtype=dtype)
-    print("  Done!")
-needs_detect_reencode = is_using_separate_tracking_model or (detection_imgenc_config_dict != track_imgenc_config_dict)
+    print("Loading separate tracking model...", end=" ", flush=True)
+    _, sam_core_track = make_sam_from_state_dict(tracking_model_path)
+    print("Done!")
+track_model = sam_core_track.get_tracking_context().to(device=device, dtype=dtype)
+needs_detect_reencode = is_using_separate_tracking_model or imgenc_config_dict_track != imgenc_config_dict_detect
 
 # Set up storage for tracking memory and keeping track of lost objects
 memory_per_obj_dict = defaultdict(SAMVideoObjectResults.create)
@@ -112,7 +110,7 @@ try:
         t1 = perf_counter()
 
         # Encode image data for tracking (this is the heaviest part of video inference)
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, **track_imgenc_config_dict)
+        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict_track)
 
         # Advance video tracking for all known objects
         objs_to_remove_list = []
@@ -142,9 +140,9 @@ try:
             print(f"Performing detection update! (frame {idx_frame})")
             det_encimgs = encoded_imgs_list
             if needs_detect_reencode:
-                det_encimgs, _, _ = detmodel.encode_detection_image(frame, **detection_imgenc_config_dict)
-            det_exemplars = detmodel.encode_exemplars(det_encimgs, **detection_prompts_dict)
-            det_masks, det_boxes, _, _ = detmodel.generate_detections(
+                det_encimgs, _, _ = detect_model.encode_detection_image(frame, **imgenc_config_dict_detect)
+            det_exemplars = detect_model.encode_exemplars(det_encimgs, **detection_prompts_dict)
+            det_masks, det_boxes, _, _ = detect_model.generate_detections(
                 det_encimgs, det_exemplars, detection_filter_threshold=detection_score_threshold
             )
 
@@ -158,6 +156,8 @@ try:
                 for mask_tensor in masks_on_frame_list:
                     mask_uint8 = (mask_tensor[0] > 0).byte().cpu().numpy()
                     contours_list, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if len(contours_list) == 0:
+                        continue
                     contour = max(contours_list, key=cv2.contourArea) if len(contours_list) > 1 else contours_list[0]
                     box_x, box_y, box_w, box_h = cv2.boundingRect(contour)
                     box_xy1xy2_px = torch.tensor(((box_x, box_y), (box_x + box_w, box_y + box_h)))

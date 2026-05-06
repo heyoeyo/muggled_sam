@@ -29,6 +29,8 @@ box_tlbr_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy)
 fg_xy_norm_list = []  # Example: [(0.5, 0.5)]
 bg_xy_norm_list = []
 mask_hint = None  # Example: torch.randn((1, 256, 256))
+max_side_length = None
+use_square_sizing = True
 
 # Load image
 img_bgr = cv2.imread(image_path)
@@ -37,14 +39,15 @@ if img_bgr is None:
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(device=device, dtype=dtype)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(device=device, dtype=dtype)
 
 # Process data
 print("Generating masks...")
-encoded_img, token_hw, preencode_img_hw = sammodel.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
-encoded_prompts = sammodel.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompts, mask_hint)
+encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(img_bgr, max_side_length, use_square_sizing)
+encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
 # Feedback
 print("")

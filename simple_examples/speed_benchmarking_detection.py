@@ -49,18 +49,17 @@ if device == "cpu":
 # Set up model
 print(f"Loading model ({os.path.basename(model_path)})")
 t1 = perf_counter()
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name == "samv3", f"Error, must use a SAMv3 model! (Got: {sammodel.name})"
-detmodel = sammodel.make_detector_model()
-detmodel.to(device=device, dtype=dtype)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+detect_model = sam_core.get_detector_context()
+detect_model.to(device=device, dtype=dtype)
 t2 = perf_counter()
 print("-> Loading took", round(1000 * (t2 - t1)), "ms")
 
 # Fill in missing processing size, if needed
 if max_side_length is None:
     prep_img = np.zeros((10, 10, 3), dtype=np.uint8)
-    prep_tensor = detmodel.image_encoder.prepare_image(prep_img, None, use_square_sizing)
-    max_side_length = int(max(prep_tensor.shape[-2:]))
+    _, _, preencode_hw = detect_model.encode_image(prep_img, max_side_length, use_square_sizing)
+    max_side_length = int(max(preencode_hw))
 print("", f"Using max side length: {max_side_length}px", f"Square sizing: {use_square_sizing}", sep="\n", flush=True)
 
 # Set up testing inputs
@@ -77,14 +76,14 @@ prompts_dict = {
 # Run compilation
 if enable_compilation:
     print("", "Compiling model... (this may take a while)", sep="\n", flush=True)
-    detmodel.enable_compilation(test_img, **imgenc_config_dict)
+    detect_model.enable_compilation(test_img, **imgenc_config_dict)
 
 # Model warm-up (excludes one-time VRAM/cache allocation from timing)
 print("", f"Running warm-up ({device} / {dtype})", sep="\n", flush=True)
 for _ in range(num_warmup_iterations):
-    encoded_imgs, token_hw, preencode_hw = detmodel.encode_detection_image(test_img, **imgenc_config_dict)
-    encoded_exemplars = detmodel.encode_exemplars(encoded_imgs, **prompts_dict)
-    mask_preds, box_preds, detection_scores, presence_score = detmodel.generate_detections(
+    encoded_imgs, token_hw, preencode_hw = detect_model.encode_image(test_img, **imgenc_config_dict)
+    encoded_exemplars = detect_model.encode_exemplars(encoded_imgs, **prompts_dict)
+    mask_preds, box_preds, detection_scores, presence_score = detect_model.generate_detections(
         encoded_imgs, encoded_exemplars
     )
 if torch.cuda.is_available():
@@ -94,7 +93,7 @@ if torch.cuda.is_available():
 print("", f"Running image encoder ({num_image_encoder_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_image_encoder_iterations):
-    encoded_imgs, _, _ = detmodel.encode_detection_image(test_img, **imgenc_config_dict)
+    encoded_imgs, _, _ = detect_model.encode_image(test_img, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -106,7 +105,7 @@ print(f"-> Image encoder took {per_iter:.1f} ms / iter (total: {total_time_ms:.0
 print("", f"Encoding exemplars ({num_exemplar_encoding_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_exemplar_encoding_iterations):
-    encoded_exemplars = detmodel.encode_exemplars(encoded_imgs, **prompts_dict)
+    encoded_exemplars = detect_model.encode_exemplars(encoded_imgs, **prompts_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -118,7 +117,7 @@ print(f"-> Exemplar encoding took {per_iter:.1f} ms / iter (total: {total_time_m
 print("", f"Generating detections ({num_detection_generation_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_detection_generation_iterations):
-    mask_preds, _, _, _ = detmodel.generate_detections(encoded_imgs, encoded_exemplars)
+    mask_preds, _, _, _ = detect_model.generate_detections(encoded_imgs, encoded_exemplars)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()

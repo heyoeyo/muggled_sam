@@ -76,9 +76,9 @@ vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
-sammodel.to(device=device, dtype=dtype)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+track_model = sam_core.get_tracking_context()
+track_model.to(device=device, dtype=dtype)
 
 # Process video frames
 win_title, disp_mask = "Video Segmentation Result - q to quit", None
@@ -96,7 +96,7 @@ try:
         scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
 
         # Encode frame data (shared for all objects)
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
 
         # Generate & store prompt memory encodings for each object as needed
         prompts_dict = prompts_per_frame_index.get(frame_idx, None)
@@ -105,7 +105,7 @@ try:
             # Loop over all sets of prompts for the current frame
             for obj_key_name, obj_prompts in prompts_dict.items():
                 print(f"Generating prompt for object: {obj_key_name} (frame {frame_idx})")
-                init_mask, init_mem, init_ptr = sammodel.initialize_video_masking(encoded_imgs_list, **obj_prompts)
+                init_mask, init_mem, init_ptr = track_model.initialize_video_masking(encoded_imgs_list, **obj_prompts)
                 memory_per_obj_dict[obj_key_name].store_prompt_result(frame_idx, init_mem, init_ptr)
 
                 # Draw prompts for debugging
@@ -134,7 +134,7 @@ try:
         # Update tracking using newest frame
         combined_mask_result = np.zeros(scaled_frame.shape[0:2], dtype=bool)
         for obj_key_name, obj_memory in memory_per_obj_dict.items():
-            obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
+            obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
                 encoded_imgs_list, **obj_memory.to_dict()
             )
 

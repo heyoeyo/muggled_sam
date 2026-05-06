@@ -34,6 +34,7 @@ boxes_tlbr_norm_list = []  # Example:  [[(0.25, 0.25), (0.75, 0.75)]]
 fg_xy_norm_list = [(0.5, 0.5)]
 bg_xy_norm_list = []
 imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
+enable_compilation = False
 
 # Read first frame
 vcap = cv2.VideoCapture(video_path)
@@ -44,13 +45,18 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
-sammodel.to(device=device, dtype=dtype)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+track_model = sam_core.get_tracking_context()
+track_model.to(device=device, dtype=dtype)
+
+# Handle compilation if needed
+if enable_compilation:
+    print("Compiling enabled! First run may take a while...", flush=True)
+    track_model.enable_compilation(first_frame, **imgenc_config_dict)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = sammodel.encode_image(first_frame, **imgenc_config_dict)
-init_mask, init_mem, init_ptr = sammodel.initialize_video_masking(
+init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
+init_mask, init_mem, init_ptr = track_model.initialize_video_masking(
     init_encoded_img, boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=None
 )
 
@@ -76,11 +82,11 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
+        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()
-        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
+        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
         if is_using_cuda:

@@ -59,9 +59,10 @@ assert any(filter_by_idx), "Must use at least one mask prediction from model!"
 
 # Set up model
 print("Loading model & encoding image data...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-sammodel.to(device=device, dtype=dtype)
-encoded_img, _, _ = sammodel.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+interact_model = sam_core.get_interactive_context()
+interact_model.to(device=device, dtype=dtype)
+encoded_img, _, _ = interact_model.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
 
 # Generate grid of point prompts & generate mask for each
 print(f"Generating masks ({num_total_prompts} total prompts)...")
@@ -69,8 +70,8 @@ t1 = perf_counter()
 try:
     raw_results_list = []
     for fg_xy_norm in pts_2d:
-        encoded_prompt = sammodel.encode_prompts(None, [fg_xy_norm], None)
-        mask_preds, iou_preds = sammodel.generate_masks(encoded_img, encoded_prompt)
+        encoded_prompt = interact_model.encode_prompts(None, [fg_xy_norm], None)
+        mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompt)
 
         # Allow some mask predictions to be ignored
         # -> Certain indexes favor large/middle/small-scale segmentations (indexing varies by model)

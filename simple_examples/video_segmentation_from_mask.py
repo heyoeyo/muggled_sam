@@ -47,13 +47,13 @@ assert (init_mask is not None) and (init_mask_image is not None), "Error reading
 
 # Set up model
 print("Loading model...")
-model_config_dict, sammodel = make_sam_from_state_dict(model_path)
-assert sammodel.name in ("samv2", "samv3"), "Only SAMv2/v3 are supported for video segmentation"
-sammodel.to(device=device, dtype=dtype)
+model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+track_model = sam_core.get_tracking_context()
+track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = sammodel.encode_image(init_mask_image, **imgenc_config_dict)
-init_mem, init_ptr = sammodel.initialize_from_mask(init_encoded_img, init_mask)
+init_encoded_img, _, _ = track_model.encode_image(init_mask_image, **imgenc_config_dict)
+init_mem, init_ptr = track_model.initialize_from_mask(init_encoded_img, init_mask)
 
 # Set up data storage for prompted object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
@@ -62,6 +62,7 @@ prev_mems = deque([], maxlen=6)
 prev_ptrs = deque([], maxlen=15)
 
 # Process video frames
+is_using_cuda = "cuda" in device
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
 close_keycodes = {27, ord("q")}  # Esc or q to close
 try:
@@ -76,10 +77,12 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = sammodel.encode_image(frame, **imgenc_config_dict)
-        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = sammodel.step_video_masking(
+        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
             encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
+        if is_using_cuda:
+            torch.cuda.synchronize()
         t2 = perf_counter()
         print(f"Took {round(1000 * (t2 - t1))} ms")
 
