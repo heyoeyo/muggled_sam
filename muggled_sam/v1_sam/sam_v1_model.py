@@ -338,9 +338,6 @@ class SAMV1InteractiveModel(nn.Module):
 
         return _enable_compilation(
             self,
-            example_image_bgr,
-            max_side_length,
-            use_square_sizing,
             compile_image_encoder=compile_image_encoding,
             compile_coordinate_encoder=compile_mask_generation,
             compile_prompt_encoder=compile_mask_generation,

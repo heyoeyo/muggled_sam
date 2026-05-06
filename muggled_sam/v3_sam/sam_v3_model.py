@@ -463,9 +463,6 @@ class SAMV3InteractiveModel(nn.Module):
 
         return _enable_compilation(
             self,
-            example_image_bgr,
-            max_side_length,
-            use_square_sizing,
             compile_image_encoder=compile_image_encoding,
             compile_image_projection=compile_image_encoding,
             compile_coordinate_encoder=compile_mask_generation,
@@ -808,9 +805,6 @@ class SAMV3TrackingModel(nn.Module):
 
         return _enable_compilation(
             self,
-            example_image_bgr,
-            max_side_length,
-            use_square_sizing,
             compile_image_encoder=compile_image_encoding,
             compile_image_projection=compile_image_encoding,
             compile_coordinate_encoder=compile_mask_generation,
@@ -1246,9 +1240,6 @@ class SAMV3DetectorModel(nn.Module):
 
         return _enable_compilation(
             self,
-            example_image_bgr,
-            max_side_length,
-            use_square_sizing,
             compile_image_encoder=compile_image_encoding,
             compile_image_projection=compile_image_encoding,
             compile_text_encoder=compile_exemplar_encoding,
