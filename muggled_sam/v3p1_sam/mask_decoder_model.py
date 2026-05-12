@@ -254,9 +254,9 @@ class SAMV3p1MaskDecoder(nn.Module):
     def make_pointer_from_mask(
         self,
         encoded_image_tokens_list_bchw: Tensor,
-        padding_point_prompt_m1c: Tensor,
+        padding_point_prompt_b1c: Tensor,
         image_posenc_bchw: Tensor,
-        mask_1mhw: Tensor,
+        mask_b1hw: Tensor,
     ) -> Tensor:
         """
         Awkward helper used specifically for encoding masks used to generate object pointers
@@ -269,45 +269,42 @@ class SAMV3p1MaskDecoder(nn.Module):
         https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L712-L782
 
         Returns:
-            object_pointers_1mc ('M' matching input masks)
+            object_pointers_b1c ('B' matching input masks)
         """
 
         # Resize mask to prepare for special downsample step
-        mask_binary = (mask_1mhw > 0).to(device=mask_1mhw.device, dtype=mask_1mhw.dtype)
-        mask_b, mask_n, mask_h, mask_w = mask_1mhw.shape
+        mask_binary = (mask_b1hw > 0).to(device=mask_b1hw.device, dtype=mask_b1hw.dtype)
+        mask_b, mask_n, mask_h, mask_w = mask_b1hw.shape
         upscaled_mask = nn.functional.interpolate(
             mask_binary, size=(4 * mask_h, 4 * mask_w), mode="bilinear", align_corners=False
         )
 
         # Move multi-channel inputs to batch dimension if needed (for compatibility with convolution weights)
-        if mask_n > 1 and mask_b == 1:
+        if mask_b == 1 and mask_n > 1:
             upscaled_mask = upscaled_mask.permute(1, 0, 2, 3)
             mask_b, mask_n, mask_h, mask_w = upscaled_mask.shape
         assert mask_n == 1, f"Expecting single channel mask, e.g. Bx1xHxW, got shape: {tuple(upscaled_mask.shape)}"
 
         # Make sure the padding batch size matches mask input
-        pad_b, pad_n, pad_c = padding_point_prompt_m1c.shape
+        pad_b, pad_n, pad_c = padding_point_prompt_b1c.shape
         if mask_b > 1 and pad_b == 1:
-            padding_point_prompt_m1c = padding_point_prompt_m1c.expand(mask_b, -1, -1)
-            pad_b, pad_n, pad_c = padding_point_prompt_m1c.shape
+            padding_point_prompt_b1c = padding_point_prompt_b1c.expand(mask_b, -1, -1)
+            pad_b, pad_n, pad_c = padding_point_prompt_b1c.shape
         assert pad_b == mask_b, f"Error expecting prompt batch ({pad_b}) to match mask count ({mask_b})"
 
         # Run 'regular' mask decoder using special mask hint to get object pointers
         ptr_mask_hint = self.mask_to_ptr_hint_downsampler(upscaled_mask)
-        _, iou_preds_mn, obj_ptrs_mnc, _ = self(
+        mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, _ = self(
             encoded_image_tokens_list_bchw,
-            padding_point_prompt_m1c,
+            padding_point_prompt_b1c,
             image_posenc_bchw,
             mask_hint=ptr_mask_hint,
             blank_promptless_output=False,
         )
 
         # Pick 'best' pointer for each multiplex/batch entry
-        best_n_idx = 1 + torch.argmax(iou_preds_mn[:, 1:], dim=-1)
-        m_idx = torch.arange(iou_preds_mn.shape[0], device=iou_preds_mn.device, dtype=torch.int64)
-        obj_ptrs_1mc = obj_ptrs_mnc[m_idx, best_n_idx].unsqueeze(0)
-
-        return obj_ptrs_1mc
+        _, _, _, obj_ptrs_b1c = self.get_best_decoder_results(mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc)
+        return obj_ptrs_b1c
 
 
 # ---------------------------------------------------------------------------------------------------------------------

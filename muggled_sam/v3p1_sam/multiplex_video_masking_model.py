@@ -165,8 +165,8 @@ class SAMV3p1MultiplexVideoMasking(nn.Module):
 
         # Create 'blank' entries to reach padding shape
         pad_masks = torch.full((mask_m, num_to_pad, mask_h, mask_w), -10.0, device=device, dtype=dtype)
-        pad_ious = torch.zeros((mask_m, mask_n), device=device, dtype=dtype)
-        pad_ptrs = torch.zeros((mask_m, mask_n, obj_ptrs_mnc.shape[-1]), device=device, dtype=dtype)
+        pad_ious = torch.zeros((mask_m, num_to_pad), device=device, dtype=dtype)
+        pad_ptrs = torch.zeros((mask_m, num_to_pad, obj_ptrs_mnc.shape[-1]), device=device, dtype=dtype)
 
         # Pad to end so we don't interfere with original data indexing
         padded_masks_mnhw = torch.concat((mask_preds_mnhw, pad_masks), dim=1)
@@ -188,27 +188,28 @@ class SAMV3p1MultiplexVideoMasking(nn.Module):
         mask_preds_mnhw: Tensor,
         iou_preds_mn: Tensor,
         obj_ptrs_mnc: Tensor,
+        exclude_0th_index: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Helper used to keep only the 'best' result from the mask decoder predictions,
         which always feature multiple 'guesses' to help deal with ambiguity.
 
         Returns:
-            best_index, best_mask_1mhw, best_iou_1m, best_pointer_1mc
+            best_index, best_mask_m1hw, best_iou_m1, best_pointer_m1c
             -> Best index is a tensor (!) with shape: M (i.e. multiplex count)
-            -> Mask prediction has shape: 1xMxHxW
-            -> IoU has shape: 1xM
-            -> Object pointer has shape: 1xMxC (C features, 256 by default)
+            -> Mask prediction has shape: Mx1xHxW
+            -> IoU has shape: Mx1
+            -> Object pointer has shape: Mx1xC (C features, 256 by default)
         """
 
         # Each mask prediction contains multiple (3 by default) options, here we select which to use
         num_multiplex_objects = mask_preds_mnhw.shape[0]
         m_idx = torch.arange(num_multiplex_objects, device=iou_preds_mn.device)
-        best_idx_mplex = torch.argmax(iou_preds_mn, dim=-1)
+        best_idx_mplex = 1 + iou_preds_mn[:, 1:].argmax(dim=-1) if exclude_0th_index else iou_preds_mn.argmax(dim=-1)
 
         # Index out best entries, but add back in a batch dimension to keep the same shape
-        best_mask_1mhw = mask_preds_mnhw[m_idx, best_idx_mplex].unsqueeze(0)
-        best_iou_pred_1m = iou_preds_mn[m_idx, best_idx_mplex].unsqueeze(0)
-        best_objptr_1mc = obj_ptrs_mnc[m_idx, best_idx_mplex].unsqueeze(0)
+        best_mask_m1hw = mask_preds_mnhw[m_idx, best_idx_mplex].unsqueeze(1)
+        best_iou_pred_m1 = iou_preds_mn[m_idx, best_idx_mplex].unsqueeze(1)
+        best_objptr_m1c = obj_ptrs_mnc[m_idx, best_idx_mplex].unsqueeze(1)
 
-        return best_idx_mplex, best_mask_1mhw, best_iou_pred_1m, best_objptr_1mc
+        return best_idx_mplex, best_mask_m1hw, best_iou_pred_m1, best_objptr_m1c

@@ -70,9 +70,9 @@ class SAMV3p1MemoryEncoder(nn.Module):
     def forward(
         self,
         lowres_image_encoding_bchw: Tensor,
-        mask_prediction_1mhw: Tensor,
-        object_pointers_1mc: Tensor | None,
-        object_score_1m: Tensor | None,
+        mask_prediction_m1hw: Tensor,
+        object_pointers_m1c: Tensor | None,
+        object_score_m: Tensor | None,
         is_prompt_encoding: Tensor | bool,
     ) -> tuple[tuple[Tensor, Tensor], Tensor]:
         """
@@ -82,21 +82,18 @@ class SAMV3p1MemoryEncoder(nn.Module):
         (without requiring any other prompts)
 
         The input image encoding is expected to have shape BxCxHxW, the mask
-        prediction should have a shape of 1xMx(4H)x(4W), where M
-        is the 'multiplex' dimension introduced with SAMv3.1.
-        Up to 16 (by default) masks can be provided in the 'M' dimensions
-        to be processed in parallel. This behaves similar to batching, but
-        is much faster, though special handling of the model predictions is
-        needed when more than 1 mask is provided.
+        prediction should have a shape of Mx1x(4H)x(4W), where M is used
+        for 'multiplexing' introduced with SAMv3.1. This allows the model to
+        process up to 16 inputs in parallel, without any reduction in speed,
+        similar to batching, but much faster. However special handling of the
+        model predictions is needed when more than 1 mask is provided.
+        Note that the image batch size should generally be 1, even with
+        M > 1, unless using the model in some non-standard way.
 
-
-        The 'is_prompt_encoding_bm' input should be a tensor where each entry
+        The 'is_prompt_encoding' input should be a tensor where each entry
         is either a 1 (True) corresponding to entries that are meant to be
-        prompt encodings, or 0 (False) otherwise.
-
-        The 'is_padded_entry_bm' input is used to flag certain entries of
-        the mask input as being 'padded' entries (e.g. to get BxM shape). If
-        left as 'None', that all input masks are assumed to be valid masks.
+        prompt encodings, or 0 (False) otherwise. If a single boolean value
+        is given, it's assumed to apply to all 'M' inputs.
 
         Note that if the number of multiplexed inputs 'M' is less than the
         maximum (16 by default), the inputs will be padded as needed internally.
@@ -105,17 +102,15 @@ class SAMV3p1MemoryEncoder(nn.Module):
         memory encodings may have a batch size > 1!
 
         Returns:
-            lowres_img_encoding_bchw, fused_image_and_mask_encodings
-            -> Both outputs have shape: BxCxHxW
-            -> B batch size, H & W are height and width
-            -> The 'lowres' output is the same as the input image encodings
-            -> Bundling of orig. image encodings is feature specific to v3.1 model!
-            -> Note the output batch size can be >1 if using many multiplexed inputs
+            (lowres_img_encoding_bchw, fused_image_and_mask_encodings), object_pointers_bmc
+            -> Both image-like outputs have shape: BxCxHxW
+            -> B is multiplexing batch size, H & W are height and width
+            -> The 'lowres' output is the same as the input image encodings, and is bundled as for use with v3.1
         """
 
         # Add padding/reshaping to support multiplexing
         masks_bmhw, ptrs_bmc, score_bm, is_prompt_bm, _ = self._make_multiplex_batches(
-            mask_prediction_1mhw, object_pointers_1mc, object_score_1m, is_prompt_encoding
+            mask_prediction_m1hw, object_pointers_m1c, object_score_m, is_prompt_encoding
         )
 
         # Prepare mask & image data for fusion
@@ -142,8 +137,8 @@ class SAMV3p1MemoryEncoder(nn.Module):
 
     def _make_multiplex_batches(
         self,
-        mask_prediction_1mhw: Tensor,
-        object_pointers_1mc: Tensor | None,
+        mask_prediction_m1hw: Tensor,
+        object_pointers_m1c: Tensor | None,
         object_score_m: Tensor | None,
         is_prompt_encoding: Tensor | bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
@@ -173,66 +168,66 @@ class SAMV3p1MemoryEncoder(nn.Module):
         """
 
         # For clarity
-        mask_b, mask_m, mask_h, mask_w = mask_prediction_1mhw.shape
-        ptr_c = object_pointers_1mc.shape[-1] if object_pointers_1mc is not None else 1
-        device, dtype = mask_prediction_1mhw.device, mask_prediction_1mhw.dtype
+        mask_m, mask_n, mask_h, mask_w = mask_prediction_m1hw.shape
+        ptr_c = object_pointers_m1c.shape[-1] if object_pointers_m1c is not None else 1
+        device, dtype = mask_prediction_m1hw.device, mask_prediction_m1hw.dtype
         need_convert_is_prompt_enc = not isinstance(is_prompt_encoding, Tensor)
 
-        # Sanity check. Make sure we're dealing with 1xMxHxW masks
-        if mask_b > 1 and mask_m == 1:
-            mask_prediction_1mhw = mask_prediction_1mhw.permute(1, 0, 2, 3)
-            mask_b, mask_m, mask_h, mask_w = mask_prediction_1mhw.shape
-        assert mask_b == 1, f"Mask shape error! Expecting 1xMxHxW, got: {tuple(mask_prediction_1mhw.shape)}"
+        # Sanity check. Make sure we're dealing with Mx1xHxW masks
+        if mask_m == 1 and mask_n > 1:
+            mask_prediction_m1hw = mask_prediction_m1hw.permute(1, 0, 2, 3)
+            mask_m, mask_n, mask_h, mask_w = mask_prediction_m1hw.shape
+        assert mask_n == 1, f"Mask shape error! Expecting Mx1xHxW, got: {tuple(mask_prediction_m1hw.shape)}"
 
         # Create missing pointer/score inputs for convenience (avoids messy logic for handling None values)
-        is_missing_ptr = object_pointers_1mc is None
+        is_missing_ptr = object_pointers_m1c is None
         is_missing_score = object_score_m is None
         if is_missing_ptr:
-            object_pointers_1mc = torch.empty((1, mask_m, ptr_c), device=device, dtype=dtype)
+            object_pointers_m1c = torch.empty((mask_m, 1, ptr_c), device=device, dtype=dtype)
         if is_missing_score:
             object_score_m = torch.empty([mask_m], device=device, dtype=dtype)
 
         # Convert 'is prompt' flag to per-multiple-mask entry if we're not given a tensor
         if need_convert_is_prompt_enc:
-            is_prompt_enc_1m = torch.full([1, mask_m], is_prompt_encoding, device=device, dtype=dtype)
+            is_prompt_enc_m1 = torch.full([mask_m, 1], is_prompt_encoding, device=device, dtype=dtype)
         else:
             # If user gives a tensor directly, make sure there's one entry for each mask input
             assert is_prompt_encoding.shape[0] == mask_m, "Prompt encoding tensor must match mask multiplex count!"
-            is_prompt_enc_1m = is_prompt_encoding.unsqueeze(0).to(device=device, dtype=dtype)
+            is_prompt_enc_m1 = is_prompt_encoding.unsqueeze(1).to(device=device, dtype=dtype)
 
         # Set up 1xM inputs so we can convert to BxM
-        object_score_1m = object_score_m.unsqueeze(0)
-        is_padded_entry_1m = torch.zeros((1, mask_m), device=device, dtype=dtype)
+        object_score_m1 = object_score_m.unsqueeze(1)
+        is_padded_entry_m1 = torch.zeros((mask_m, 1), device=device, dtype=dtype)
 
         # Generate padding so we have the right number of multiplex entries (possibly with batch size > 1)
         # -> For example, for a multiplex of 16 (default), if we get 40 masks, we
         #    need to pad to 48 entries, so we can form a 3x16 tensor (batch size of 3)
         mplex_b = torch.tensor(mask_m / self._multiplex_channels).ceil().int()
         num_empty_pad = (mplex_b * self._multiplex_channels) - mask_m
-        pad_masks = torch.zeros((1, num_empty_pad, mask_h, mask_w), device=device, dtype=dtype)
-        pad_score = torch.full([1, num_empty_pad], -10.0, device=device, dtype=dtype)
-        pad_is_prompt = torch.zeros([1, num_empty_pad], device=device, dtype=dtype)
-        pad_is_padded_entry = torch.ones([1, num_empty_pad], device=device, dtype=dtype)
+        pad_masks = torch.zeros((num_empty_pad, 1, mask_h, mask_w), device=device, dtype=dtype)
+        pad_score = torch.full([num_empty_pad, 1], -10.0, device=device, dtype=dtype)
+        pad_is_prompt = torch.zeros([num_empty_pad, 1], device=device, dtype=dtype)
+        pad_is_padded_entry = torch.ones([num_empty_pad, 1], device=device, dtype=dtype)
 
         # Append padding to inputs
-        mask_prediction_1mhw = torch.concat((mask_prediction_1mhw, pad_masks), dim=1)
-        object_score_1m = torch.concat((object_score_1m, pad_score), dim=1)
-        is_prompt_enc_1m = torch.concat((is_prompt_enc_1m, pad_is_prompt), dim=1)
-        is_padded_entry_1m = torch.concat((is_padded_entry_1m, pad_is_padded_entry), dim=1)
+        mask_prediction_m1hw = torch.concat((mask_prediction_m1hw, pad_masks), dim=0)
+        object_score_m1 = torch.concat((object_score_m1, pad_score), dim=0)
+        is_prompt_enc_m1 = torch.concat((is_prompt_enc_m1, pad_is_prompt), dim=0)
+        is_padded_entry_m1 = torch.concat((is_padded_entry_m1, pad_is_padded_entry), dim=0)
 
         # Reshape inputs to properly use batch dimension if needed
-        mask_prediction_bmhw = mask_prediction_1mhw.view(mplex_b, self._multiplex_channels, mask_h, mask_w)
-        object_score_bm = object_score_1m.view(mplex_b, self._multiplex_channels)
-        is_prompt_enc_bm = is_prompt_enc_1m.view(mplex_b, self._multiplex_channels)
-        is_padded_entry_bm = is_padded_entry_1m.view(mplex_b, self._multiplex_channels)
+        mask_prediction_bmhw = mask_prediction_m1hw.view(mplex_b, self._multiplex_channels, mask_h, mask_w)
+        object_score_bm = object_score_m1.view(mplex_b, self._multiplex_channels)
+        is_prompt_enc_bm = is_prompt_enc_m1.view(mplex_b, self._multiplex_channels)
+        is_padded_entry_bm = is_padded_entry_m1.view(mplex_b, self._multiplex_channels)
 
         # Pointers get special treatment. They don't need padding unless we're batching
         # -> Padding can have a noticable negative effect otherwise!
         # -> Has to be done in a weird way to support compilation
         num_pad_ptrs = (mplex_b > 1).int() * num_empty_pad  # Same as: num_empty_pad if mplex_b > 1 else 0
-        pad_ptrs = torch.zeros((1, num_pad_ptrs, ptr_c), device=device, dtype=dtype)
-        object_pointers_1mc = torch.concat((object_pointers_1mc, pad_ptrs), dim=1)
-        object_ptrs_bmc = object_pointers_1mc.view(mplex_b, -1, ptr_c)
+        pad_ptrs = torch.zeros((num_pad_ptrs, 1, ptr_c), device=device, dtype=dtype)
+        object_pointers_m1c = torch.concat((object_pointers_m1c, pad_ptrs), dim=0)
+        object_ptrs_bmc = object_pointers_m1c.view(mplex_b, -1, ptr_c)
 
         # Reset inputs that came in as 'None'
         if is_missing_ptr:

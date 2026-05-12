@@ -188,7 +188,7 @@ class SAMV2MaskDecoder(nn.Module):
             best_index, best_mask_prediction, best_iou_score, best_object_pointer
             -> Best index is a tensor (!) with shape: B (i.e. 1 index for each batch entry)
             -> Mask prediction has shape: Bx1xHxW
-            -> IoU has shape: B
+            -> IoU has shape: Bx1
             -> Object pointer has shape: Bx1xC (C features, 256 by default)
         """
 
@@ -200,10 +200,10 @@ class SAMV2MaskDecoder(nn.Module):
 
         # Index out best entries, while accounting for batch dimension
         best_mask_b1hw = mask_preds_bnhw[b_idx, best_idx].unsqueeze(1)
-        best_iou_b = iou_preds_bn[b_idx, best_idx]
+        best_iou_b1 = iou_preds_bn[b_idx, best_idx].unsqueeze(1)
         best_objptr_b1c = obj_ptrs_bnc[b_idx, best_idx].unsqueeze(1)
 
-        return best_idx, best_mask_b1hw, best_iou_b, best_objptr_b1c
+        return best_idx, best_mask_b1hw, best_iou_b1, best_objptr_b1c
 
     # .................................................................................................................
 

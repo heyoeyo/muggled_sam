@@ -708,22 +708,22 @@ class SAMV3p1TrackingModel(nn.Module):
 
             # Make sure we get N = 1
             mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
-            if mask_b > 1 and mask_n == 1:
+            if mask_b == 1 and mask_n > 1:
                 mask_tensor = mask_tensor.permute(1, 0, 2, 3)
                 mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
-            assert mask_b == 1, "Mask shape error! Expecting batch size of 1, eg. 1xMxHxW"
+            assert mask_n == 1, "Mask shape error! Expecting batch size of 1, eg. Bx1xHxW"
 
             # Make special-case pointer from mask, since we don't normally get one without prompting
             # https://github.com/facebookresearch/sam3/blob/2e0009e23f0ad0fbcbd0488df893d30d5c8c2565/sam3/model/video_tracking_multiplex.py#L963
             pad_prompt_enc = self.prompt_encoder.create_padding_point_encoding()
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding((token_h, token_w))
-            ptrs_1mc = self.mask_decoder.make_pointer_from_mask(v1_encimgs, pad_prompt_enc, grid_posenc, mask_tensor)
+            ptrs_b1c = self.mask_decoder.make_pointer_from_mask(v1_encimgs, pad_prompt_enc, grid_posenc, mask_tensor)
 
             # Encode new memory features
             # Called '_encode_new_memory' in original code
             # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1616
             no_score, is_prompt = None, True
-            memory_encoding, ptr_bmc = self.memory_encoder(v2_lowres_imgenc, mask_tensor, ptrs_1mc, no_score, is_prompt)
+            memory_encoding, ptr_bmc = self.memory_encoder(v2_lowres_imgenc, mask_tensor, ptrs_b1c, no_score, is_prompt)
 
         return memory_encoding, ptr_bmc
 

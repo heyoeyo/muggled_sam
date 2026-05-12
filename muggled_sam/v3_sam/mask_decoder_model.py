@@ -195,10 +195,10 @@ class SAMV3MaskDecoder(nn.Module):
 
         # Index out best entries, while accounting for batch dimension
         best_mask_b1hw = mask_preds_bnhw[b_idx, best_n_idx].unsqueeze(1)
-        best_iou_pred_b = iou_preds_bn[b_idx, best_n_idx]
+        best_iou_b1 = iou_preds_bn[b_idx, best_n_idx].unsqueeze(1)
         best_objptr_b1c = obj_ptrs_bnc[b_idx, best_n_idx].unsqueeze(1)
 
-        return best_n_idx, best_mask_b1hw, best_iou_pred_b, best_objptr_b1c
+        return best_n_idx, best_mask_b1hw, best_iou_b1, best_objptr_b1c
 
     # .................................................................................................................
 
