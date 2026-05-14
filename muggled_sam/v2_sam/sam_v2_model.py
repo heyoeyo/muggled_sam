@@ -29,7 +29,27 @@ from .memory_image_fusion_model import SAMV2MemoryImageFusion
 
 class SAMV2Model(nn.Module):
     """
-    Wrapper around separated SAMV2 model components, so that the model can be used as a singular entity
+    Holds all core SAMv2 model components.
+
+    This module is not meant to be used directly, instead, it's used to create
+    separate 'contexts' to perform specific tasks supported by the model.
+    For example:
+        interact_model = sam2_model.get_interactive_context()    # SAMv1 task
+        track_model = sam2_model.get_tracking_context()          # SAMv2 task
+
+    Since the core holds all components, it can be used to move the model to a device/dtype,
+    and this will affect all contexts. For example, using:
+        sam2_model.to("cuda")
+        interact_model = sam2_model.get_interactive_context()
+        track_model = sam2_model.get_tracking_context()
+    In this case, both the interactive and tracking contexts will be on the 'cuda' device.
+
+    Note that contexts do not instantiate new data (e.g doesn't increase VRAM use),
+    they're just used to group related functionality together. However, the core can be
+    deleted after creating contexts in order to recover memory from unused core components.
+
+    This core module also holds legacy implementations of segmentation/tracking functionality,
+    though this will be removed in future updates!
     """
 
     name = "samv2"
@@ -187,25 +207,8 @@ class SAMV2Model(nn.Module):
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
 
-    # .................................................................................................................
-
     def forward(self, *args, **kwargs) -> None:
-        """Placeholder to prevent users from trying to call this model using the forward function"""
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, use functions (in order):",
-            "  model.encode_image(...)",
-            "  model.encode_prompts(...)",
-            "  model.generate_masks(...)",
-            "",
-            "In order to generate mask & IoU predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+        _model_usage_error(self)
 
     # .................................................................................................................
 
@@ -416,31 +419,12 @@ class SAMV2InteractiveModel(nn.Module):
             custom_config=custom_config,
         )
 
-    # .................................................................................................................
-
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
 
-    # .................................................................................................................
-
     def forward(self, *args, **kwargs) -> None:
-        """Placeholder to prevent users from trying to call this model using the forward function"""
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, use functions (in order):",
-            "  model.encode_image(...)",
-            "  model.encode_prompts(...)",
-            "  model.generate_masks(...)",
-            "",
-            "In order to generate mask & IoU predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+        _model_usage_error(self)
 
     # .................................................................................................................
 
@@ -748,34 +732,12 @@ class SAMV2TrackingModel(nn.Module):
             custom_config=custom_config,
         )
 
-    # .................................................................................................................
-
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
 
-    # .................................................................................................................
-
     def forward(self, *args, **kwargs) -> None:
-        """Placeholder to prevent users from trying to call this model using the forward function"""
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, begin tracking using functions:",
-            "  model.encode_image(...)",
-            "  model.initialize_video_masking(...) OR: .initialize_from_mask(...)",
-            "",
-            "Continue tracking over frames using:",
-            "  model.encode_image(...)",
-            "  model.step_video_masking(...)",
-            "",
-            "In order to generate mask & IoU predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+        _model_usage_error(self)
 
     # .................................................................................................................
 
@@ -801,3 +763,9 @@ def _inference_mode(enable: bool = True):
     else:
         yield
     return
+
+
+def _model_usage_error(model: nn.Module) -> None:
+    """Helper used to provide an error when using the model in unintended ways. Prints out the model docstring"""
+    print("*" * 36, "Model usage error! See docstring:", "*" * 36, model.__doc__, sep="\n")
+    raise NotImplementedError("Unintended model usage! See explanation above")

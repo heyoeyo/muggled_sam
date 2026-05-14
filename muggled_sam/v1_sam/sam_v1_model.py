@@ -27,7 +27,18 @@ from .mask_decoder_model import SAMV1MaskDecoder
 
 class SAMV1Model(nn.Module):
     """
-    Wrapper around separated SAM model components, so that the model can be used as a singular entity
+    Holds SAMv1 model components.
+
+    This module is not meant to be used directly, instead, it's used to create
+    separate 'contexts' to perform specific tasks supported by the model.
+    For SAMv1, there is only a single context:
+        interact_model = sam1_model.get_interactive_context()
+
+    This makes the usage a bit over-complicated, but is done to enable inter-operability
+    with future SAM models (v2 & v3) that have additional capabilities.
+
+    This module also holds legacy implementations of segmentation functionality,
+    though this will be removed in future updates!
     """
 
     name = "samv1"
@@ -130,6 +141,9 @@ class SAMV1Model(nn.Module):
         """
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
+
+    def forward(self, *args, **kwargs) -> None:
+        _model_usage_error(self)
 
     # .................................................................................................................
 
@@ -335,31 +349,12 @@ class SAMV1InteractiveModel(nn.Module):
             custom_config=custom_config,
         )
 
-    # .................................................................................................................
-
     def toggle_inference_mode(self, enable_inference_mode: bool | None = None) -> bool:
         self._infmode = not self._infmode if enable_inference_mode is None else enable_inference_mode
         return self._infmode
 
-    # .................................................................................................................
-
     def forward(self, *args, **kwargs) -> None:
-        """Placeholder to prevent users from trying to call this model using the forward function"""
-
-        name = self.__class__.__name__
-        print(
-            "",
-            f"The .forward(...) function of this model ({name}) isn't meant to be called directly!",
-            "Instead, use functions (in order):",
-            "  model.encode_image(...)",
-            "  model.encode_prompts(...)",
-            "  model.generate_masks(...)",
-            "",
-            "In order to generate mask & IoU predictions",
-            sep="\n",
-        )
-
-        raise NotImplementedError("This model isn't meant to be called directly or used with .forward(...)")
+        _model_usage_error(self)
 
     # .................................................................................................................
 
@@ -385,3 +380,9 @@ def _inference_mode(enable: bool = True):
     else:
         yield
     return
+
+
+def _model_usage_error(model: nn.Module) -> None:
+    """Helper used to provide an error when using the model in unintended ways. Prints out the model docstring"""
+    print("*" * 36, "Model usage error! See docstring:", "*" * 36, model.__doc__, sep="\n")
+    raise NotImplementedError("Unintended model usage! See explanation above")
