@@ -206,10 +206,10 @@ input_image_bgr = loaded_image_bgr
 yx_crop_slice = None
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
-    _, history_crop_tlbr = history.read("crop_tlbr_norm")
-    yx_crop_slice, crop_tlbr_norm = run_crop_ui(loaded_image_bgr, display_size_px, history_crop_tlbr)
+    _, history_crop_xy1xy2 = history.read("crop_xy1xy2_norm")
+    yx_crop_slice, crop_xy1xy2_norm = run_crop_ui(loaded_image_bgr, display_size_px, history_crop_xy1xy2)
     input_image_bgr = loaded_image_bgr[yx_crop_slice]
-    history.store(crop_tlbr_norm=crop_tlbr_norm)
+    history.store(crop_xy1xy2_norm=crop_xy1xy2_norm)
 
 # Load reference image, if needed
 input_ref_image_bgr = cv2.imread(arg_ref_image_path) if have_different_ref_image else input_image_bgr.copy()

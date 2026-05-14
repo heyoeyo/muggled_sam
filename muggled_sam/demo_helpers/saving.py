@@ -269,10 +269,10 @@ def make_cropped_images(
 # .....................................................................................................................
 
 
-def make_prompt_save_data(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> dict[str, list]:
+def make_prompt_save_data(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> dict[str, list]:
     """Helper used to standardize save formatting of prompt data"""
     return {
-        "boxes": box_tlbr_norm_list,
+        "boxes": box_xy1xy2_norm_list,
         "fg_points": fg_xy_norm_list,
         "bg_points": bg_xy_norm_list,
     }
@@ -294,7 +294,7 @@ def make_uncropped_prompts(
     """
 
     # Unpack prompt data
-    box_tlbr_norm_list = all_prompts_dict.get("boxes", tuple())
+    box_xy1xy2_norm_list = all_prompts_dict.get("boxes", tuple())
     fg_xy_norm_list = all_prompts_dict.get("fg_points", tuple())
     bg_xy_norm_list = all_prompts_dict.get("bg_points", tuple())
 
@@ -308,8 +308,8 @@ def make_uncropped_prompts(
 
     # Apply un-crop function to every xy coord in prompts
     uncropped_box_list = []
-    for tlbr_xy in box_tlbr_norm_list:
-        uncropped_box_list.append([uncrop_xy(xy_norm) for xy_norm in tlbr_xy])
+    for xy1xy2 in box_xy1xy2_norm_list:
+        uncropped_box_list.append([uncrop_xy(xy_norm) for xy_norm in xy1xy2])
     uncropped_fg_xy_list = [uncrop_xy(xy_norm) for xy_norm in fg_xy_norm_list]
     uncropped_bg_xy_list = [uncrop_xy(xy_norm) for xy_norm in bg_xy_norm_list]
 

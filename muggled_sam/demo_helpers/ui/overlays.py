@@ -457,8 +457,8 @@ class BoxSelectOverlay(BaseOverlay):
 
     def __init__(self, color=(0, 255, 255), thickness=1, bg_color=(0, 0, 0)):
         super().__init__()
-        self._tlbr_norm_list: list[tuple[tuple[float, float], tuple[float, float]]] = []
-        self._tlbr_norm_inprog = None
+        self._xy1xy2_norm_list: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        self._xy1xy2_norm_inprog = None
         self._is_changed = False
 
         # Store display config
@@ -487,33 +487,33 @@ class BoxSelectOverlay(BaseOverlay):
     # .................................................................................................................
 
     def clear(self, flag_is_changed=True):
-        had_boxes = (len(self._tlbr_norm_list) > 0) or (self._tlbr_norm_inprog is not None)
+        had_boxes = (len(self._xy1xy2_norm_list) > 0) or (self._xy1xy2_norm_inprog is not None)
         self._is_changed = had_boxes and flag_is_changed
-        self._tlbr_norm_list = []
-        self._tlbr_norm_inprog = None
+        self._xy1xy2_norm_list = []
+        self._xy1xy2_norm_inprog = None
         return self
 
     # .................................................................................................................
 
     def check_is_in_progress(self) -> bool:
         """Helper used to check if a box is currently being drawn"""
-        return self._tlbr_norm_inprog is not None
+        return self._xy1xy2_norm_inprog is not None
 
     # .................................................................................................................
 
     def read(self, include_in_progress_box=True) -> tuple[bool, tuple]:
-        """Returns: is_changed, box_tlbr_list"""
+        """Returns: is_changed, box_xy1xy2_list"""
 
         # Toggle change state, if needed
         is_changed = self._is_changed
         self._is_changed = False
 
         # Get list of boxes including in-progress box if needed
-        out_list = self._tlbr_norm_list
+        out_list = self._xy1xy2_norm_list
         if include_in_progress_box:
-            is_valid, extra_tlbr = self._make_inprog_tlbr()
-            extra_tlbr_list = [extra_tlbr] if is_valid else []
-            out_list = self._tlbr_norm_list + extra_tlbr_list
+            is_valid, extra_xy1xy2 = self._make_inprog_xy1xy2()
+            extra_xy1xy2_list = [extra_xy1xy2] if is_valid else []
+            out_list = self._xy1xy2_norm_list + extra_xy1xy2_list
 
         return is_changed, tuple(out_list)
 
@@ -526,12 +526,12 @@ class BoxSelectOverlay(BaseOverlay):
             return
 
         # Begin new 'in-progress' box
-        self._tlbr_norm_inprog = [cbxy.xy_norm, cbxy.xy_norm]
+        self._xy1xy2_norm_inprog = [cbxy.xy_norm, cbxy.xy_norm]
 
         # Remove newest box if we're not shift-clicking
         if not cbflags.shift_key:
-            if len(self._tlbr_norm_list) > 0:
-                self._tlbr_norm_list.pop()
+            if len(self._xy1xy2_norm_list) > 0:
+                self._xy1xy2_norm_list.pop()
 
         self._is_changed = True
 
@@ -540,20 +540,20 @@ class BoxSelectOverlay(BaseOverlay):
     def on_drag(self, cbxy, cbflags):
 
         # Update second in-progress box point
-        if self._tlbr_norm_inprog is not None:
+        if self._xy1xy2_norm_inprog is not None:
             new_xy = np.clip(cbxy.xy_norm, 0.0, 1.0)
-            self._tlbr_norm_inprog[1] = tuple(new_xy)
+            self._xy1xy2_norm_inprog[1] = tuple(new_xy)
             self._is_changed = True
 
         return
 
     def on_left_up(self, cbxy, cbflags):
 
-        is_valid, new_tlbr = self._make_inprog_tlbr()
+        is_valid, new_xy1xy2 = self._make_inprog_xy1xy2()
         if is_valid:
-            self._tlbr_norm_list.append(new_tlbr)
+            self._xy1xy2_norm_list.append(new_xy1xy2)
             self._is_changed = True
-        self._tlbr_norm_inprog = None
+        self._xy1xy2_norm_inprog = None
 
         return
 
@@ -566,9 +566,9 @@ class BoxSelectOverlay(BaseOverlay):
     def _render_overlay(self, frame):
 
         # Check if we need to draw an in-progress box
-        is_valid, new_tlbr = self._make_inprog_tlbr()
-        extra_tlbr = [new_tlbr] if is_valid else []
-        boxes_to_draw = self._tlbr_norm_list + extra_tlbr
+        is_valid, new_xy1xy2 = self._make_inprog_xy1xy2()
+        extra_xy1xy2 = [new_xy1xy2] if is_valid else []
+        boxes_to_draw = self._xy1xy2_norm_list + extra_xy1xy2
 
         frame_h, frame_w = frame.shape[0:2]
         norm_to_px_scale = np.float32((frame_w - 1, frame_h - 1))
@@ -587,12 +587,12 @@ class BoxSelectOverlay(BaseOverlay):
 
     # .................................................................................................................
 
-    def add_boxes(self, *tlbr_norm_list):
+    def add_boxes(self, *xy1xy2_norm_list):
 
-        if len(tlbr_norm_list) == 0:
+        if len(xy1xy2_norm_list) == 0:
             return self
 
-        self._tlbr_norm_list.extend(tlbr_norm_list)
+        self._xy1xy2_norm_list.extend(xy1xy2_norm_list)
         self._is_changed = True
 
         return self
@@ -602,7 +602,7 @@ class BoxSelectOverlay(BaseOverlay):
     def remove_closest(self, xy_norm, frame_hw=None) -> None:
 
         # Can't remove boxes if there aren't any!
-        if len(self._tlbr_norm_list) == 0:
+        if len(self._xy1xy2_norm_list) == 0:
             return None
 
         # Default to 'fake' pixel count if not given (so we can re-use the same calculations)
@@ -614,33 +614,33 @@ class BoxSelectOverlay(BaseOverlay):
         # For each box, find the distance to the closest corner
         input_array = np.int32(xy_norm * norm_to_px_scale)
         closest_dist_list = []
-        for (x1, y1), (x2, y2) in self._tlbr_norm_list:
+        for (x1, y1), (x2, y2) in self._xy1xy2_norm_list:
             xy_px_array = np.float32([(x1, y1), (x2, y1), (x2, y2), (x1, y2)]) * norm_to_px_scale
             dist_to_pts = np.linalg.norm(xy_px_array - input_array, ord=2, axis=1)
             closest_dist_list.append(min(dist_to_pts))
 
         # Among all boxes, remove the one with the closest corner to the given click
         closest_pt_idx = np.argmin(closest_dist_list)
-        closest_tlbr_norm = self._tlbr_norm_list.pop(closest_pt_idx)
+        closest_xy1xy2_norm = self._xy1xy2_norm_list.pop(closest_pt_idx)
         self._is_changed = True
 
-        return closest_tlbr_norm
+        return closest_xy1xy2_norm
 
     # .................................................................................................................
 
-    def _make_inprog_tlbr(self):
+    def _make_inprog_xy1xy2(self):
         """
         Helper used to make a 'final' box out of in-progress data
         Includes re-arranging points to be in proper top-left/bottom-right order
         as well as discarding boxes that are 'too small'
         """
 
-        new_tlbr = None
-        is_valid = self._tlbr_norm_inprog is not None
+        new_xy1xy2 = None
+        is_valid = self._xy1xy2_norm_inprog is not None
         if is_valid:
 
             # Re-arrange points to make sure first xy is top-left, second is bottom-right
-            xy1_xy2 = np.float32(self._tlbr_norm_inprog)
+            xy1_xy2 = np.float32(self._xy1xy2_norm_inprog)
             tl_xy_norm = xy1_xy2.min(0)
             br_xy_norm = xy1_xy2.max(0)
 
@@ -648,9 +648,9 @@ class BoxSelectOverlay(BaseOverlay):
             xy_diff = br_xy_norm - tl_xy_norm
             is_valid = np.all(xy_diff > 1e-4)
             if is_valid:
-                new_tlbr = (tl_xy_norm.tolist(), br_xy_norm.tolist())
+                new_xy1xy2 = (tl_xy_norm.tolist(), br_xy_norm.tolist())
 
-        return is_valid, new_tlbr
+        return is_valid, new_xy1xy2
 
     # .................................................................................................................
 
@@ -745,9 +745,9 @@ class EditBoxOverlay(BaseOverlay):
         """
         Read current box state
         Returns:
-            is_changed, is_valid, box_tlbr_norm
+            is_changed, is_valid, box_xy1xy2_norm
             -> 'is_box_valid' is based on the minimum box area setting
-            -> box_tlbr_norm is in format: ((x1, y1), (x2, y2))
+            -> box_xy1xy2_norm is in format: ((x1, y1), (x2, y2))
         """
 
         # Toggle change state, if needed
@@ -757,20 +757,20 @@ class EditBoxOverlay(BaseOverlay):
         # Get top-left/bottom-right output if it exists
         x1, _, x2 = sorted(self._x_norms.tolist())
         y1, _, y2 = sorted(self._y_norms.tolist())
-        box_tlbr_norm = ((x1, y1), (x2, y2))
+        box_xy1xy2_norm = ((x1, y1), (x2, y2))
         is_valid = ((x2 - x1) * abs(y2 - y1)) > self._minimum_area_norm
 
-        return is_changed, is_valid, box_tlbr_norm
+        return is_changed, is_valid, box_xy1xy2_norm
 
     # .................................................................................................................
 
-    def set_box(self, tlbr_norm: tuple[tuple[float, float], tuple[float, float]]):
+    def set_box(self, xy1xy2_norm: tuple[tuple[float, float], tuple[float, float]]):
         """
         Update box coordinates. Input is expected in top-left/bottom-right format:
             ((x1, y1), (x2, y2))
         """
 
-        (x1, y1), (x2, y2) = tlbr_norm
+        (x1, y1), (x2, y2) = xy1xy2_norm
         x_mid, y_mid = (x1 + x2) * 0.5, (y1 + y2) * 0.5
         self._x_norms = np.float32((x1, x_mid, x2))
         self._y_norms = np.float32((y1, y_mid, y2))

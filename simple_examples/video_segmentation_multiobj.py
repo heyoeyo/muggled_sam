@@ -37,21 +37,21 @@ imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
 prompts_per_frame_index = {
     0: {
         "obj1": {
-            "box_tlbr_norm_list": [],
+            "box_xy1xy2_norm_list": [],
             "fg_xy_norm_list": [(0.79, 0.70)],
             "bg_xy_norm_list": [],
         }
     },
     90: {
         "obj2": {
-            "box_tlbr_norm_list": [[(0.06, 0.62), (0.22, 0.80)]],
+            "box_xy1xy2_norm_list": [[(0.06, 0.62), (0.22, 0.80)]],
             "fg_xy_norm_list": [],
             "bg_xy_norm_list": [],
         }
     },
     140: {
         "obj3": {
-            "box_tlbr_norm_list": [[(0.01, 0.61), (0.21, 0.85)]],
+            "box_xy1xy2_norm_list": [[(0.01, 0.61), (0.21, 0.85)]],
             "fg_xy_norm_list": [],
             "bg_xy_norm_list": [],
         }
@@ -118,7 +118,7 @@ try:
                     for xy_norm in obj_prompts.get("bg_xy_norm_list", []):
                         xy_px = np.int32(xy_norm * norm_to_px_factor)
                         cv2.circle(prompt_vis_frame, xy_px, 3, (0, 0, 255), -1)
-                    for xy1_norm, xy2_norm in obj_prompts.get("box_tlbr_norm_list", []):
+                    for xy1_norm, xy2_norm in obj_prompts.get("box_xy1xy2_norm_list", []):
                         xy1_px = np.int32(xy1_norm * norm_to_px_factor)
                         xy2_px = np.int32(xy2_norm * norm_to_px_factor)
                         cv2.rectangle(prompt_vis_frame, xy1_px, xy2_px, (0, 255, 255), 2)

@@ -30,7 +30,7 @@ if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
 # Define prompts using xy coordinates normalized between 0 and 1
-boxes_tlbr_norm_list = []  # Example:  [[(0.25, 0.25), (0.75, 0.75)]]
+boxes_xy1xy2_norm_list = []  # Example:  [[(0.25, 0.25), (0.75, 0.75)]]
 fg_xy_norm_list = [(0.5, 0.5)]
 bg_xy_norm_list = []
 imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
@@ -63,7 +63,7 @@ is_samv3p0 = sam_core.name == "samv3" and not is_samv3p1
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
 init_mask, init_mem, init_ptr = track_model.initialize_video_masking(
-    init_encoded_img, boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=None
+    init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=None
 )
 
 # Set up data storage for prompted object (repeat this for each unique object)

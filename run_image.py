@@ -193,10 +193,10 @@ input_image_bgr = loaded_image_bgr
 yx_crop_slice = None
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
-    _, history_crop_tlbr = history.read("crop_tlbr_norm")
-    yx_crop_slice, crop_tlbr_norm = run_crop_ui(loaded_image_bgr, display_size_px, history_crop_tlbr)
+    _, history_crop_xy1xy2 = history.read("crop_xy1xy2_norm")
+    yx_crop_slice, crop_xy1xy2_norm = run_crop_ui(loaded_image_bgr, display_size_px, history_crop_xy1xy2)
     input_image_bgr = loaded_image_bgr[yx_crop_slice]
-    history.store(crop_tlbr_norm=crop_tlbr_norm)
+    history.store(crop_xy1xy2_norm=crop_xy1xy2_norm)
 
 # Try loading the given mask hint
 mask_hint_img = None
@@ -223,8 +223,8 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Run model without prompts as sanity check. Also gives initial result values
-box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
-encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list = [], [], []
+encoded_prompts = interact_model.encode_prompts(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = interact_model.generate_masks(
     encoded_img, encoded_prompts, blank_promptless_output=disable_promptless_masks
 )
@@ -380,7 +380,7 @@ try:
     while True:
 
         # Read prompt input data & selected mask
-        is_prompt_changed, (box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) = uictrl.read_prompts()
+        is_prompt_changed, (box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list) = uictrl.read_prompts()
         is_mask_changed, mselect_idx, selected_mask_btn = ui_elems.masks_constraint.read()
 
         # Read secondary controls
@@ -406,7 +406,7 @@ try:
         # Only run the model when an input affecting the output has changed!
         need_prompt_encode = is_prompt_changed or is_mhint_changed
         if need_prompt_encode:
-            encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            encoded_prompts = interact_model.encode_prompts(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
             mask_preds, iou_preds = interact_model.generate_masks(
                 encoded_img,
                 encoded_prompts,
@@ -456,7 +456,7 @@ try:
 
             # Get additional data for saving
             disp_image = ui_elems.display_block.rerender()
-            all_prompts_dict = make_prompt_save_data(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            all_prompts_dict = make_prompt_save_data(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
             # Make raw result matching input image sizing
             loaded_hw = loaded_image_bgr.shape[0:2]

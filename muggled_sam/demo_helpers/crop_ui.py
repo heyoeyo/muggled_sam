@@ -27,7 +27,7 @@ from numpy import ndarray
 # %% Functions
 
 
-def make_crop_ui(image_bgr: ndarray, fg_line_color=(0, 255, 0), initial_crop_tlbr_norm=None):
+def make_crop_ui(image_bgr: ndarray, fg_line_color=(0, 255, 0), initial_crop_xy1xy2_norm=None):
     """Function used to generate a simple UI for cropping images"""
 
     # Set up displays for showing image + zoomed area + cropped result
@@ -37,13 +37,13 @@ def make_crop_ui(image_bgr: ndarray, fg_line_color=(0, 255, 0), initial_crop_tlb
     zoom_poly_olay = DrawPolygonsOverlay(fg_line_color)
 
     # Use default initial crop boundary, slightly inset as easier to see hint for user
-    if initial_crop_tlbr_norm is None:
-        initial_crop_tlbr_norm = ((0.25, 0.25), (0.75, 0.75))
+    if initial_crop_xy1xy2_norm is None:
+        initial_crop_xy1xy2_norm = ((0.25, 0.25), (0.75, 0.75))
 
     # Set up interactive elements for user interactions
     zoom_olay = HoverOverlay()
     zoom_slider = HSlider("Zoom Factor", 0.5, 0, 1, step_size=0.05, marker_steps=5, enable_value_display=False)
-    crop_olay = EditBoxOverlay(image_bgr.shape, fg_line_color, 2).set_box(initial_crop_tlbr_norm)
+    crop_olay = EditBoxOverlay(image_bgr.shape, fg_line_color, 2).set_box(initial_crop_xy1xy2_norm)
 
     # Set up text blocks for feedback
     xy1_txt = ValueBlock("Crop XY1: ", "(0,0)")
@@ -92,7 +92,7 @@ def make_crop_ui(image_bgr: ndarray, fg_line_color=(0, 255, 0), initial_crop_tlb
 def run_crop_ui(
     image_bgr: ndarray,
     render_height=800,
-    initial_crop_tlbr_norm=None,
+    initial_crop_xy1xy2_norm=None,
     fg_line_color=(0, 255, 0),
     bg_line_color=(0, 0, 0),
     window_title="Crop Image - q to close",
@@ -100,11 +100,11 @@ def run_crop_ui(
     """
     Helper used to launch a (temporary) UI for cropping an image
     Returns:
-        yx_crop_slices, crop_tlbr_norm
+        yx_crop_slices, crop_xy1xy2_norm
 
     - The slices are given in pixel units. To crop an image use:
         cropped_image = image[yx_crop_slices]
-    - The crop_tlbr_norm is a normalize (0 to 1) d top-left/bottom-right box
+    - The crop_xy1xy2_norm is a normalized (0 to 1) top-left/bottom-right box
 
     If the actual crop x/y values are needed, they can be accessed using:
         y_crop_slice, x_crop_slice = yx_crop_slices
@@ -113,7 +113,7 @@ def run_crop_ui(
     """
 
     # Create & unpack ui elements
-    crop_ui, ui_interact, ui_displays, ui_text = make_crop_ui(image_bgr, fg_line_color, initial_crop_tlbr_norm)
+    crop_ui, ui_interact, ui_displays, ui_text = make_crop_ui(image_bgr, fg_line_color, initial_crop_xy1xy2_norm)
     zoom_olay, zoom_slider, crop_olay = ui_interact
     main_disp, zoom_disp, zoom_poly_olay, crop_disp, done_btn = ui_displays
     crop_xy1_txt, crop_wh_txt, crop_xy2_txt = ui_text
@@ -149,7 +149,7 @@ def run_crop_ui(
             # Read overlays for user input
             is_zoom_changed, _, zoom_event_xy = zoom_olay.read()
             is_zoom_slider_changed, zoom_factor_norm = zoom_slider.read()
-            is_crop_changed, is_valid_cropbox, crop_tlbr_norm = crop_olay.read()
+            is_crop_changed, is_valid_cropbox, crop_xy1xy2_norm = crop_olay.read()
 
             if is_zoom_slider_changed:
                 zoom_boundary_px = 3 + int((1.0 - zoom_factor_norm) * 200)
@@ -159,12 +159,12 @@ def run_crop_ui(
             # If we don't have a valid box set, then just crop to the full image
             # -> Easier to reason about later, instead of always worrying about crop validity!
             if not is_valid_cropbox:
-                crop_tlbr_norm = tuple(((0.0, 0.0), (1.0, 1.0)))
+                crop_xy1xy2_norm = tuple(((0.0, 0.0), (1.0, 1.0)))
 
             # Update cropping coords whenever the crop changes
             if is_crop_changed:
 
-                xy1_norm, xy2_norm = crop_tlbr_norm
+                xy1_norm, xy2_norm = crop_xy1xy2_norm
                 xy1_px = np.int32(np.round(xy1_norm * max_wh_float))
                 xy2_px = np.int32(np.round(xy2_norm * max_wh_float))
 
@@ -248,4 +248,4 @@ def run_crop_ui(
     y_crop_slice = slice(int(crop_y1), int(crop_y2))
     yx_crop_slices = (y_crop_slice, x_crop_slice)
 
-    return yx_crop_slices, crop_tlbr_norm
+    return yx_crop_slices, crop_xy1xy2_norm

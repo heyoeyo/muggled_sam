@@ -382,7 +382,7 @@ class PromptUIControl(BaseUIControl):
         """
         Helper used to manage prompt reading, as well as quality-of-life behaviors when interpretting prompts
         Returns:
-            need_prompt_reencoding, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+            need_prompt_reencoding, (boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
         """
 
         need_prompt_clear = self.elems.tools.clear.read()
@@ -453,11 +453,11 @@ def read_prompts(
     hover/box/fg/bg UI.
 
     Returns:
-        is_prompt_changed, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+        is_prompt_changed, (boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
     """
 
     # Read all overlay states (which is where prompts are actually held!)
-    box_prompt_changed, boxes_tlbr_norm_list = overlays_group.box.read()
+    box_prompt_changed, boxes_xy1xy2_norm_list = overlays_group.box.read()
     fg_prompt_changed, fg_xy_norm_list = overlays_group.fgpt.read()
     bg_prompt_changed, bg_xy_norm_list = overlays_group.bgpt.read()
     _, _, selected_tool_elem = tools_constraint.read()
@@ -478,14 +478,14 @@ def read_prompts(
 
     # Toggle back to hover in case where an fg point is removed and no other points remain
     if fg_prompt_changed:
-        no_prompts = sum(len(pts) for pts in (fg_xy_norm_list, boxes_tlbr_norm_list, bg_xy_norm_list)) == 0
+        no_prompts = sum(len(pts) for pts in (fg_xy_norm_list, boxes_xy1xy2_norm_list, bg_xy_norm_list)) == 0
         if no_prompts:
             tools_constraint.change_to(tools_group.hover)
 
     # Bundle all prompt changes into single check for convenience
     is_prompt_changed = any((hover_changed, box_prompt_changed, fg_prompt_changed, bg_prompt_changed))
 
-    return is_prompt_changed, (boxes_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+    return is_prompt_changed, (boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
 
 # .....................................................................................................................

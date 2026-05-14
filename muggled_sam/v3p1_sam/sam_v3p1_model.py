@@ -117,9 +117,9 @@ class SAMV3p1Model(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV3p1InteractiveModel.encode_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+        return SAMV3p1InteractiveModel.encode_prompts(self, box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     def encode_image(
         self,
@@ -145,7 +145,7 @@ class SAMV3p1Model(nn.Module):
     def initialize_video_masking(
         self,
         encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
-        box_tlbr_norm_list: list,
+        box_xy1xy2_norm_list: list,
         fg_xy_norm_list: list,
         bg_xy_norm_list: list,
         mask_hint: Tensor | int | None = None,
@@ -155,7 +155,7 @@ class SAMV3p1Model(nn.Module):
         return SAMV3p1TrackingModel.initialize_video_masking(
             self,
             encoded_image_features_list,
-            box_tlbr_norm_list,
+            box_xy1xy2_norm_list,
             fg_xy_norm_list,
             bg_xy_norm_list,
             mask_hint,
@@ -344,7 +344,7 @@ class SAMV3p1InteractiveModel(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """
         Function used to encode prompt coordinates. Inputs should be given as lists
         of prompts. The length of each list does not need to match. Enter either
@@ -376,7 +376,7 @@ class SAMV3p1InteractiveModel(nn.Module):
         """
 
         with _inference_mode(self._infmode):
-            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
+            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_xy1xy2_norm_list)
             fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
             box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
             encoded_prompts_bnc = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
@@ -570,7 +570,7 @@ class SAMV3p1TrackingModel(nn.Module):
     def initialize_video_masking(
         self,
         encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
-        box_tlbr_norm_list: list,
+        box_xy1xy2_norm_list: list,
         fg_xy_norm_list: list,
         bg_xy_norm_list: list,
         mask_hint: Tensor | int | None = None,
@@ -595,7 +595,7 @@ class SAMV3p1TrackingModel(nn.Module):
         # Encode initial prompts (re-use interactive implementation as it's the same process)
         # -> This lets us 'hide' the prompt encoding function, which isn't meant to be used on tracking model
         encoded_prompts = SAMV3p1InteractiveModel.encode_prompts(
-            self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list
+            self, box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list
         )
 
         with _inference_mode(self._infmode):

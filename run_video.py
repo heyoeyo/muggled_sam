@@ -250,10 +250,10 @@ video_fps = vreader.get_fps()
 sample_frame = vreader.get_sample_frame()
 if enable_crop_ui:
     print("", "Cropping enabled: Adjust box to select image area for further processing", sep="\n", flush=True)
-    _, history_crop_tlbr = history.read("crop_tlbr_norm")
-    yx_crop_slice, crop_tlbr_norm = run_crop_ui(sample_frame, display_size_px, history_crop_tlbr)
+    _, history_crop_xy1xy2 = history.read("crop_xy1xy2_norm")
+    yx_crop_slice, crop_xy1xy2_norm = run_crop_ui(sample_frame, display_size_px, history_crop_xy1xy2)
     sample_frame = sample_frame[yx_crop_slice]
-    history.store(crop_tlbr_norm=crop_tlbr_norm)
+    history.store(crop_xy1xy2_norm=crop_xy1xy2_norm)
 
 # Initial model run to make sure everything succeeds
 print("", "Encoding image data...", sep="\n", flush=True)

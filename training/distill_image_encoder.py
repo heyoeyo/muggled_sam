@@ -732,7 +732,7 @@ request_display_only_update = True
 need_save_on_crash = False
 loss_scaling = tuple([1.0, (1 / 2), (1 / 4)] * 3)
 imgenc_config_dict = {"max_side_length": imgenc_init_size, "use_square_sizing": use_square_sizing}
-prompts_dict = {"box_tlbr_norm_list": [], "fg_xy_norm_list": [], "bg_xy_norm_list": []}
+prompts_dict = {"box_xy1xy2_norm_list": [], "fg_xy_norm_list": [], "bg_xy_norm_list": []}
 mask_idx_select = None
 
 # Force ui updates on start
@@ -782,7 +782,7 @@ try:
         if is_imgsize_changed or is_prompt_changed:
             imgenc_config_dict = {"max_side_length": imgsize_px, "use_square_sizing": use_square_sizing}
             prompts_dict["fg_xy_norm_list"] = point_xy_norm_list
-            prompts_dict["box_tlbr_norm_list"] = box_xy1xy2_norm_list
+            prompts_dict["box_xy1xy2_norm_list"] = box_xy1xy2_norm_list
             if is_imgsize_changed:
                 teacher_cache.clear()
 

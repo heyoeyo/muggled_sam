@@ -188,7 +188,7 @@ class BoxEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, posenc_tlbr_points: Tensor) -> Tensor:
+    def forward(self, posenc_xy1xy2_points: Tensor) -> Tensor:
         """
         Adds top-left/bottom-right embedding to provided bounding boxes.
         The input is expected to have a shape of: BxNx2xF
@@ -201,10 +201,10 @@ class BoxEncoder(nn.Module):
             -> Has shape: Bx(2N)xF
         """
 
-        posenc_tlbr_points[:, :, 0, :] += self.tl_embed
-        posenc_tlbr_points[:, :, 1, :] += self.br_embed
+        posenc_xy1xy2_points[:, :, 0, :] += self.tl_embed
+        posenc_xy1xy2_points[:, :, 1, :] += self.br_embed
 
         # Stack top-left/bot-right embeddings together, so shape becomes: BxNx2xF -> Bx(2N)xF
-        return posenc_tlbr_points.flatten(1, 2)
+        return posenc_xy1xy2_points.flatten(1, 2)
 
     # .................................................................................................................

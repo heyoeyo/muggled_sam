@@ -25,7 +25,7 @@ if torch.cuda.is_available():
     device, dtype = "cuda", torch.bfloat16
 
 # Define prompts using xy coordinates normalized between 0 and 1
-box_tlbr_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy), (bottom-right xy)]
+box_xy1xy2_norm_list = [[(0.25, 0.25), (0.75, 0.75)]]  # Format is: [(top-left xy), (bottom-right xy)]
 fg_xy_norm_list = []  # Example: [(0.5, 0.5)]
 bg_xy_norm_list = []
 mask_hint = None  # Example: torch.randn((1, 256, 256))
@@ -46,7 +46,7 @@ interact_model.to(device=device, dtype=dtype)
 # Process data
 print("Generating masks...")
 encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(img_bgr, max_side_length, use_square_sizing)
-encoded_prompts = interact_model.encode_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+encoded_prompts = interact_model.encode_prompts(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
 # Feedback

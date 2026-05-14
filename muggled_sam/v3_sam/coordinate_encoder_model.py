@@ -163,14 +163,14 @@ class SAMV3CoordinateEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def prepare_boxes(self, box_tlbr_norm_list: list[list] | None) -> Tensor:
+    def prepare_boxes(self, box_xy1xy2_norm_list: list[list] | None) -> Tensor:
         """Helper used to convert box inputs into a format usable by the model"""
 
         # Fill in a blank box entry if none is given
-        if box_tlbr_norm_list is None or len(box_tlbr_norm_list) == 0:
-            box_tlbr_norm_list = np.empty((0, 2, 2))
+        if box_xy1xy2_norm_list is None or len(box_xy1xy2_norm_list) == 0:
+            box_xy1xy2_norm_list = np.empty((0, 2, 2))
 
-        return torch.tensor(box_tlbr_norm_list, device=self.twopi.device, dtype=self.twopi.dtype).unsqueeze(0)
+        return torch.tensor(box_xy1xy2_norm_list, device=self.twopi.device, dtype=self.twopi.dtype).unsqueeze(0)
 
     # .................................................................................................................
 

@@ -75,9 +75,9 @@ class SAMV1Model(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV1InteractiveModel.encode_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
+        return SAMV1InteractiveModel.encode_prompts(self, box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     def encode_image(
         self,
@@ -224,7 +224,7 @@ class SAMV1InteractiveModel(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """
         Function used to encode prompt coordinates. Inputs should be given as lists
         of prompts. The length of each list does not need to match. Enter either
@@ -256,7 +256,7 @@ class SAMV1InteractiveModel(nn.Module):
         """
 
         with _inference_mode(self._infmode):
-            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_tlbr_norm_list)
+            boxes_tensor = self.coordinate_encoder.prepare_boxes(box_xy1xy2_norm_list)
             fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
             box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
             encoded_prompts_bnc = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
