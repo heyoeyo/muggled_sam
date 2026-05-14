@@ -149,9 +149,30 @@ class SAMV1MaskDecoder(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def get_best_mask_index(iou_predictions) -> int:
-        """Helper used to select the index of the 'best' output, based on the highest IoU prediction score"""
-        return int(iou_predictions.cpu().argmax())
+    def get_best_decoder_results(
+        mask_preds_bnhw: Tensor, iou_preds_bn: Tensor, exclude_0th_index: bool = True
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Helper used to keep only the 'best' result from the mask decoder predictions.
+        The 'exclude_0th_index' flag is used to ignore the mask normally associated
+        with 'multi-prompt' masking (which is stored in the 0th index of the results)
+
+        Returns:
+            best_index, best_mask_prediction, best_iou_score
+            -> Best index is a tensor (!) with shape: B (i.e. 1 index for each batch entry)
+            -> Mask prediction has shape: Bx1xHxW
+            -> IoU has shape: Bx1
+        """
+
+        # Each mask prediction contains multiple (4 by default) options, here we select which to use
+        b_idx = torch.arange(mask_preds_bnhw.shape[0], device=iou_preds_bn.device)
+        best_n_idx = 1 + iou_preds_bn[:, 1:].argmax(dim=-1) if exclude_0th_index else iou_preds_bn.argmax(dim=-1)
+
+        # Index out best entries, while accounting for batch dimension
+        best_mask_b1hw = mask_preds_bnhw[b_idx, best_n_idx].unsqueeze(1)
+        best_iou_b1 = iou_preds_bn[b_idx, best_n_idx].unsqueeze(1)
+
+        return best_n_idx, best_mask_b1hw, best_iou_b1
 
     # .................................................................................................................
 

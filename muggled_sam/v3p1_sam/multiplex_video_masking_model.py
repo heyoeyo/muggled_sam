@@ -177,13 +177,6 @@ class SAMV3p1MultiplexVideoMasking(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def get_best_mask_index(iou_predictions: Tensor) -> Tensor:
-        """Helper used to select the index of the 'best' output, based on the highest IoU prediction score"""
-        return torch.argmax(iou_predictions, dim=-1)
-
-    # .................................................................................................................
-
-    @staticmethod
     def get_best_decoder_results(
         mask_preds_mnhw: Tensor,
         iou_preds_mn: Tensor,

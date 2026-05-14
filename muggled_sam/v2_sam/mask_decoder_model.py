@@ -169,13 +169,6 @@ class SAMV2MaskDecoder(nn.Module):
     # .................................................................................................................
 
     @staticmethod
-    def get_best_mask_index(iou_predictions) -> int:
-        """Helper used to select the index of the 'best' output, based on the highest IoU prediction score"""
-        return int(iou_predictions.cpu().argmax())
-
-    # .................................................................................................................
-
-    @staticmethod
     def get_best_decoder_results(
         mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, exclude_0th_index=True
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:

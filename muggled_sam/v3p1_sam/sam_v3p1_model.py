@@ -635,7 +635,7 @@ class SAMV3p1TrackingModel(nn.Module):
 
             # Fill in missing index with 'best' based on IoU
             if mask_index_select is None:
-                mask_index_select = self.mask_decoder.get_best_mask_index(iou_preds_mn)
+                mask_index_select = iou_preds_mn[0].argmax()
 
             # Make sure we have a slice/tensor-style index
             if isinstance(mask_index_select, int):

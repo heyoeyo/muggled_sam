@@ -619,7 +619,7 @@ class SAMV3TrackingModel(nn.Module):
 
             # Select mask to use for initial encodings (auto-select if not given an index)
             if mask_index_select is None:
-                mask_index_select = self.mask_decoder.get_best_mask_index(iou_preds)
+                mask_index_select = iou_preds[0].argmax()
             best_mask_pred = mask_preds[:, [mask_index_select], :, :]
             best_obj_ptr = obj_ptrs[:, [mask_index_select]]
 

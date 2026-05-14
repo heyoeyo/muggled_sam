@@ -414,7 +414,7 @@ try:
                 blank_promptless_output=disable_promptless_masks,
             )
             if use_best_mask:
-                best_mask_idx = interact_model.get_best_mask_index(iou_preds)
+                best_mask_idx = int(iou_preds.argmax(-1))
                 ui_elems.masks_constraint.change_to(best_mask_idx)
 
         # Update mask previews & selected mask for outlines
