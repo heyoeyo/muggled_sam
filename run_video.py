@@ -37,6 +37,7 @@ from muggled_sam.demo_helpers.crop_ui import run_crop_ui
 from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
+from muggled_sam.demo_helpers.prompts import check_have_prompts
 from muggled_sam.demo_helpers.contours import get_contours_from_mask
 from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
 from muggled_sam.demo_helpers.saving import save_video_frames, get_save_name
@@ -619,7 +620,7 @@ try:
             track_btn.toggle(True, flag_if_changed=False)
 
             # If a prompt exists when tracking begins, assume we should use it
-            if interact_model.check_have_prompts(*prompts):
+            if check_have_prompts(*prompts):
                 _, init_mem, init_ptr = tracking_model.initialize_video_masking(
                     encoded_img,
                     *prompts,
@@ -647,7 +648,7 @@ try:
             # Look for user interactions
             _, paused_mask_idx, _ = ui_elems.masks_constraint.read()
             need_prompt_encode, prompts = uictrl.read_prompts()
-            have_user_prompts = interact_model.check_have_prompts(*prompts)
+            have_user_prompts = check_have_prompts(*prompts)
             have_track_prompts = any(mem.check_has_prompts() for mem in memory_list)
             if need_prompt_encode and (have_user_prompts or not have_track_prompts):
                 encoded_prompts = interact_model.encode_prompts(*prompts)

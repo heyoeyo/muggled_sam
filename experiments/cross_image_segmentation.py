@@ -46,6 +46,7 @@ from muggled_sam.demo_helpers.shared_ui_layout import (
 )
 
 from muggled_sam.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
+from muggled_sam.demo_helpers.prompts import check_have_prompts
 from muggled_sam.demo_helpers.contours import MaskContourData, get_contours_from_mask
 from muggled_sam.demo_helpers.mask_postprocessing import calculate_mask_stability_score
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
@@ -479,8 +480,8 @@ try:
 
             # Get data for saving -> want to save image that isn't prompted
             # (though we'll save the prompts from the other image, just because...)
-            is_side_a_prompted = interact_model.check_have_prompts(*prompts_a)
-            is_side_b_prompted = interact_model.check_have_prompts(*prompts_b)
+            is_side_a_prompted = check_have_prompts(*prompts_a)
+            is_side_b_prompted = check_have_prompts(*prompts_b)
             if not (is_side_a_prompted or is_side_b_prompted):
                 print("", "No prompts! Will skip saving...", sep="\n", flush=True)
                 continue

@@ -89,10 +89,6 @@ class SAMV1Model(nn.Module):
             self, encoded_image_features_list, encoded_prompts, mask_hint, blank_promptless_output
         )
 
-    def check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list) -> bool:
-        """Temporary placeholder for backwards compatibility"""
-        return SAMV1InteractiveModel.check_have_prompts(self, box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
-
     def prepare_image_batch(
         self,
         images_bgr_list: list[ndarray],
@@ -310,12 +306,6 @@ class SAMV1InteractiveModel(nn.Module):
             assert all(all_w_list[0] == w for w in all_w_list), "Mismatched image widths (different aspect ratios)"
 
         return torch.concat(img_tensors_list, dim=0)
-
-    # .................................................................................................................
-
-    def check_have_prompts(self, box_tlbr_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> bool:
-        """Helper used to check if there are any prompts (returns False if all inputs are empty)"""
-        return self.prompt_encoder.check_have_prompts(box_tlbr_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     # .................................................................................................................
 
