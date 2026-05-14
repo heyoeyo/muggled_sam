@@ -62,7 +62,7 @@ enc_ref_exemplars = detect_model.encode_exemplars(
 # Detect exemplars on *target* image
 enc_targ_img, token_hw, preencode_hw = detect_model.encode_detection_image(target_img_bgr, **imgenc_config_dict)
 mask_preds, box_preds, detection_scores, pres_score = detect_model.generate_detections(enc_targ_img, enc_ref_exemplars)
-filtered_masks, filtered_boxes, filtered_scores, pres_score = detect_model.filter_results(
+filtered_masks, filtered_boxes, filtered_scores, pres_score = detect_model.filter_detections(
     mask_preds, box_preds, detection_scores, pres_score, detection_score_threshold
 )
 

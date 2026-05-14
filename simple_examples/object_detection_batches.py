@@ -65,7 +65,7 @@ for b_idx, txt in enumerate(text_prompts_list):
 
     # Filter out 'good' detections (model always produces 200 guesses, we keep only the ones with high scores)
     # -> Cannot be done as a batch operation, since results are usually different shapes (i.e. different 'N')
-    mask_nhw, boxes_n22, scores_n22, presence_score = detect_model.filter_results(
+    mask_nhw, boxes_n22, scores_n22, presence_score = detect_model.filter_detections(
         mask_preds_bnhw[b_idx],
         box_preds_bn22[b_idx],
         detection_scores_bn[b_idx],

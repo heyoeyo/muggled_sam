@@ -1115,7 +1115,7 @@ class SAMV3p1DetectorModel(nn.Module):
 
     # .................................................................................................................
 
-    def filter_results(
+    def filter_detections(
         self,
         mask_predictions: Tensor | None,
         box_predictions: Tensor | None,
@@ -1128,7 +1128,7 @@ class SAMV3p1DetectorModel(nn.Module):
         Note that the arguments to this function are set up to match the output of:
             outputs = model.generate_detections(...)
         So it can be called using:
-            results = model.filter_results(*outputs, score_threshold=0.75)
+            results = model.filter_detections(*outputs, score_threshold=0.75)
 
         If needed, masks and/or box inputs can be set to 'None' to skip filtering
         if they are not being used. Though no matter what inputs are provided,

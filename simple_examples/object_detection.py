@@ -58,7 +58,7 @@ enc_exemplars = detect_model.encode_exemplars(
 mask_preds, box_preds, detection_scores, presence_score = detect_model.generate_detections(enc_img, enc_exemplars)
 
 # (Optional) Typical post-processing to filter out low-scoring results
-filtered_masks, filtered_boxes, filtered_scores, presence_score = detect_model.filter_results(
+filtered_masks, filtered_boxes, filtered_scores, presence_score = detect_model.filter_detections(
     mask_preds, box_preds, detection_scores, presence_score, detection_score_threshold
 )
 
