@@ -35,6 +35,7 @@ fg_xy_norm_list = [(0.5, 0.5)]
 bg_xy_norm_list = []
 imgenc_config_dict = {"max_side_length": None, "use_square_sizing": True}
 enable_compilation = False
+display_scale = 0.5
 
 # Read first frame
 vcap = cv2.VideoCapture(video_path)
@@ -56,11 +57,11 @@ if enable_compilation:
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
-init_mask, init_mem, init_ptr = track_model.initialize_video_masking(
-    init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index_select=None
+_, init_mem, init_ptr = track_model.encode_prompt_memory(
+    init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index=None
 )
 
-# Set up data storage for prompted object (repeat this for each unique object)
+# Set up 'memory bank' for tracked object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
 prompt_ptrs = deque([init_ptr])
 prev_mems = deque([], maxlen=6)
@@ -80,40 +81,52 @@ try:
         if not ok_frame:
             break
 
-        # Process video frames with model
+        # Process video frames (with timing)
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()
-        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
-            encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
+        masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
+            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, return_best_only=False
         )
         if is_using_cuda:
             torch.cuda.synchronize()
         t3 = perf_counter()
-        print(f"Encode: {round(1000 * (t2 - t1))} ms | Track: {round(1000*(t3-t2))} ms")
+        print(f"Encode: {round(1000 * (t2 - t1))} ms | Track: {round(1000 * (t3 - t2))} ms")
 
-        # Store object results for future frames
-        if obj_score < 0:
-            print("Bad object score! Implies broken tracking!")
-        else:
+        # Pick the 'best' prediction. Equivalent to using 'return_best_only=True' above
+        # -> Manually indexing like this gives access to all masks, which may be desirable in some cases
+        # -> This approach also allows for custom mask selection logic (see: SAMURAI, for example)
+        best_idx = ious_bn[0].argmax()
+        best_mask = masks_bnhw[:, [best_idx], :, :]
+        best_iou_float = float(ious_bn[0, best_idx])
+        score_float = float(obj_score_b[0])
+
+        # Encode and store memory for future frame tracking
+        if score_float > 0:
+            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b, best_idx)
             prev_mems.appendleft(mem_enc)
             prev_ptrs.appendleft(obj_ptr)
+        else:
+            print("Bad object score! Implies broken tracking!")
 
         # Create mask for display
+        scaled_frame = cv2.resize(frame, dsize=None, fx=display_scale, fy=display_scale)
         dispres_mask = torch.nn.functional.interpolate(
-            mask_preds[:, best_mask_idx, :, :],
-            size=frame.shape[0:2],
+            best_mask,
+            size=scaled_frame.shape[0:2],
             mode="bilinear",
             align_corners=False,
         )
         disp_mask = ((dispres_mask > 0.0).byte() * 255).cpu().numpy().squeeze()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
+        cv2.putText(disp_mask, f"ObjScore: {score_float:.1f}", (5, 16), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(disp_mask, f"IoU: {best_iou_float:.3f}", (5, 34), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
 
         # Show frame and mask
-        sidebyside = stack_func((frame, disp_mask))
-        cv2.imshow("Video Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
+        sidebyside = stack_func((scaled_frame, disp_mask))
+        cv2.imshow("Video Segmentation Result - q to quit", sidebyside)
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break

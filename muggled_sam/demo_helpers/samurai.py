@@ -5,7 +5,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-import torch
 import cv2
 import numpy as np
 
@@ -13,13 +12,14 @@ from .bounding_boxes import get_one_mask_bounding_box, box_xy1xy2_to_xywh, box_x
 
 # For type hints
 from torch import Tensor
+from numpy import ndarray
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 
 
-class SimpleSamurai:
+class MuggledSAMURAI:
     """
     Simplified interpretation of the SAM mask post-processing steps described in the paper:
         "SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory"
@@ -126,13 +126,71 @@ class SimpleSamurai:
 
     # .................................................................................................................
 
-    def get_best_decoder_results(
+    def __call__(
+        self,
+        mask_predictions_bnhw: Tensor,
+        iou_predictions_bn: Tensor,
+        object_score_b: Tensor,
+    ) -> tuple[bool, int, tuple[ndarray, ndarray]]:
+        """Convenience wrapper around .update(...) function"""
+        return self.update(mask_predictions_bnhw, iou_predictions_bn, object_score_b)
+
+    # .................................................................................................................
+
+    def update(
+        self,
+        mask_predictions_bnhw: Tensor,
+        iou_predictions_bn: Tensor,
+        object_score_b: Tensor,
+    ) -> tuple[bool, int, tuple[ndarray, ndarray]]:
+        """
+        Main SAMURAI function. This is meant to be called after predicting masks
+        on a video frame, but before encoding/storing memory data.
+
+        This function is used to decide which (if any) mask should be stored,
+        as an alternative to the original SAM approach of simply picking the
+        mask with the highest IoU prediction. It works be independently
+        predicting the bounding box of the mask (using a Kalman filter)
+        which is then compared to the SAM mask predictions and used to
+        select the best match. See section 4.2 and equation (9) from
+        the SAMURAI paper for more details.
+
+        The inputs are expected to be the unfiltered results from the SAM model,
+        that is the masks should have shape: BxNxHxW, IoU shaped: BxN, score shaped: B
+
+        Returns:
+            is_ok_mask, best_mask_index, box_xy1xy2_prediction
+            -> is_ok_mask is True if the mask is 'good enough' to use for memory encoding
+            -> The best_mask_index is the index of the mask predictions to use (according to SAMURAI)
+            -> box_xy1xy2_prediction is formatted as: [(x1, y1), (x2, y2)] in normalized (0 to 1) units
+        """
+
+        # Use samurai predictions to pick the best mask, instead of just using SAM IoUs
+        best_mask_idx, best_samurai_iou, xy1xy2_kal_px = self._step_kalman(mask_predictions_bnhw, iou_predictions_bn)
+        best_iou_pred = iou_predictions_bn[:, [best_mask_idx], ...]
+
+        # Decide if mask should be used for memory encoding
+        ok_obj = object_score_b > self.threshold_objscore
+        ok_iou = best_iou_pred > self.threshold_affinity
+        ok_kf = best_samurai_iou > self.threshold_kf
+        is_ok_mask = ok_obj and ok_iou and ok_kf
+
+        # Normalize box prediction coords. for easier usage
+        _, _, mask_h, mask_w = mask_predictions_bnhw.shape
+        xy_norm_scale = 1.0 / np.float32((mask_w - 1, mask_h - 1))
+        xy1xy2_kal_norm = [xy * xy_norm_scale for xy in xy1xy2_kal_px]
+
+        return is_ok_mask, best_mask_idx, xy1xy2_kal_norm
+
+    # .................................................................................................................
+
+    def _step_kalman(
         self, mask_predictions: Tensor, iou_predictions: Tensor, exclude_0th_index=True
     ) -> tuple[int, float, tuple]:
         """
-        Function used to pick the best mask prediction for tracking.
-        Uses a kalman filter to predict where the object bounding box should be
-        based on previous frames. The masks are scored based one the overlap
+        Function used to advance the SAMURAI tracking predictions.
+        Uses a kalman filter to predict where the object bounding box *should*
+        be based on previous frames. The masks are scored based on the overlap
         with the kalman prediction. The 'best' mask is then selected based on
         a weighted sum of the kalman filter score and original SAM IoU score.
 
@@ -145,7 +203,7 @@ class SimpleSamurai:
 
         # Make sure we don't get batched data
         batch_size, num_masks = mask_predictions.shape[0:2]
-        assert batch_size == 1, "Error! No support for batched inputs. Run .update(...) over the batch instead"
+        assert batch_size == 1, "Error, no support for batched inputs! Each batch item needs it's own SAMURAI instance"
 
         # Get bounding box of each mask
         mask_xy1xy2_list = [get_one_mask_bounding_box(mask_predictions[0, midx]) for midx in range(num_masks)]
@@ -165,7 +223,7 @@ class SimpleSamurai:
 
         # Pick the highest score between weighted samurai + original sam predictions
         best_idx = np.argmax(weighted_samurai_score)
-        best_iou = weighted_samurai_score[best_idx]
+        best_samurai_iou = weighted_samurai_score[best_idx]
 
         # Get the best mask bounding box in terms of kalman filter state variables, for measurement update
         is_valid_mask, best_box_as_xy1xy2 = mask_xy1xy2_list[best_idx]
@@ -174,89 +232,7 @@ class SimpleSamurai:
             kal_measurement = np.array([best_box_as_xywh], dtype=np.float32).T
             self._kalman.correct(kal_measurement)
 
-        return best_idx, best_iou, kal_predict_as_xy1xy2
-
-    # .................................................................................................................
-
-    def step_video_masking(
-        self,
-        sammodel,
-        encoded_image_features_list: list[Tensor],
-        prompt_memory_encodings: list[Tensor],
-        prompt_object_pointers: list[Tensor],
-        previous_memory_encodings: list[Tensor],
-        previous_object_pointers: list[Tensor],
-    ) -> [bool, Tensor, Tensor, Tensor, tuple[tuple, tuple]]:
-        """
-        Variant of original SAMv2 video tracking function, instead of using
-        SAMv2 IoU predictions to select mask during tracking, this function
-        uses SAMURAI to select the best mask.
-
-        Returns:
-            is_ok_memory, best_mask_prediction, memory_encoding, best_object_point, xy1xy2_kalman_prediction
-
-        - The returned kalman box is formatted as: [(x1, y1), (x2, y2)] in normalized (0 to 1) units
-        """
-
-        with torch.inference_mode():
-
-            # Encode image features with previous memory encodings & object pointer data
-            lowres_imgenc, *hires_imgenc = encoded_image_features_list
-            memfused_encimg = sammodel.memory_image_fusion(
-                lowres_imgenc,
-                prompt_memory_encodings,
-                prompt_object_pointers,
-                previous_memory_encodings,
-                previous_object_pointers,
-            )
-
-            # Run mask decoder on memory-fused features
-            patch_grid_hw = memfused_encimg.shape[2:]
-            grid_posenc = sammodel.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds, iou_preds, obj_ptrs, obj_score = sammodel.mask_decoder(
-                [memfused_encimg, *hires_imgenc],
-                sammodel.prompt_encoder.create_video_no_prompt_encoding(),
-                grid_posenc,
-                mask_hint=None,
-                blank_promptless_output=False,
-            )
-
-            # Use samurai predictions to pick the best mask, instead of just using SAM IoUs
-            # (this is the main difference between SAMv2 vs. SAMURAI)
-            best_mask_idx, best_samurai_iou, xy1xy2_kal_px = self.get_best_decoder_results(mask_preds, iou_preds)
-            best_mask_pred = mask_preds[:, [best_mask_idx], ...]
-            best_iou_pred = iou_preds[:, [best_mask_idx], ...]
-            best_obj_ptr = obj_ptrs[:, [best_mask_idx], ...]
-
-            # Encode new memory features
-            # -> we could skip this if memory check comes back bad
-            # -> include anyways for the sake of debugging/inspection
-            is_ok_mem = self._check_memory_ok(obj_score, best_iou_pred, best_samurai_iou)
-            memory_encoding = sammodel.memory_encoder(lowres_imgenc, best_mask_pred, obj_score)
-
-            # Normalize box prediction coords. for easier usage
-            _, _, mask_h, mask_w = best_mask_pred.shape
-            xy_norm_scale = 1.0 / np.float32((mask_w - 1, mask_h - 1))
-            xy1xy2_kal_norm = [xy * xy_norm_scale for xy in xy1xy2_kal_px]
-
-        return is_ok_mem, best_mask_pred, memory_encoding, best_obj_ptr, xy1xy2_kal_norm
-
-    # .................................................................................................................
-
-    def _check_memory_ok(self, object_score, iou_score, kf_score) -> bool:
-        """
-        Helper used to decide if a memory encoding should be stored for re-use
-        Storage is based on scoring passing several thresholds, similar to
-        the original SAMv2, but with extra parameters.
-
-        See section 4.2 and equation (9) from the SAMURAI paper for more details.
-        """
-
-        ok_obj = object_score > self.threshold_objscore
-        ok_iou = iou_score > self.threshold_affinity
-        ok_kf = kf_score > self.threshold_kf
-
-        return ok_obj and ok_iou and ok_kf
+        return best_idx, best_samurai_iou, kal_predict_as_xy1xy2
 
     # .................................................................................................................
 

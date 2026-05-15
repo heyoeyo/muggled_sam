@@ -8,7 +8,7 @@
 import json
 import torch
 
-from .sam_v3_model import SAMV3Model
+from .sam_v3_model import SAMV3Core
 
 from .image_encoder_model import SAMV3ImageEncoder
 from .image_projection_model import SAMV3ImageProjection
@@ -35,7 +35,7 @@ from .state_dict_conversion.convert_original_state_dict_keys import SAM3ModuleTy
 
 def make_samv3_from_original_state_dict(
     original_state_dict: dict | str, strict_load=True, weights_only=True
-) -> [dict, SAMV3Model]:
+) -> [dict, SAMV3Core]:
     """
     Function used to initialize a SAMV3 model from a state dictionary (i.e. model weights) file.
     This function will automatically figure out the model sizing parameters from the state dict,
@@ -124,7 +124,7 @@ def make_samv3_from_muggled_state_dict(
     muggled_state_dict: dict | str,
     strict_load: bool = True,
     weights_only: bool = True,
-) -> [dict, SAMV3Model]:
+) -> [dict, SAMV3Core]:
     """
     Similar to the '...from_original_state_dict' function, this function instantiates a
     SAMV3 model from a state dictionary file (e.g. model weights) and automatically
@@ -202,7 +202,7 @@ def make_sam_v3(
     exmdetector_num_blocks=6,
     exmdetector_num_heads=8,
     exmsegment_num_heads=8,
-) -> SAMV3Model:
+) -> SAMV3Core:
     """
     Helper used to build all SAMV3 model components. The arguments for this function are
     expected to come from the 'make_samv3_from_original_state_dict' function, which
@@ -271,7 +271,7 @@ def make_sam_v3(
     exmseg_model = SAMV3ExemplarSegmentation(features_per_detection_token, exmsegment_num_heads)
 
     # Bundle components into final model
-    return SAMV3Model(
+    return SAMV3Core(
         imgenc_model,
         imgproj_model,
         coordenc_model,

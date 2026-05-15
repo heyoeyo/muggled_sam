@@ -8,7 +8,7 @@
 import json
 import torch
 
-from .sam_v1_model import SAMV1Model
+from .sam_v1_model import SAMV1Core
 
 from .image_encoder_model import SAMV1ImageEncoder
 from .coordinate_encoder_model import SAMV1CoordinateEncoder
@@ -27,7 +27,7 @@ from .state_dict_conversion.convert_original_state_dict_keys import SAM1ModuleTy
 
 def make_samv1_from_original_state_dict(
     original_state_dict: dict | str, strict_load=True, weights_only=True
-) -> [dict, SAMV1Model]:
+) -> [dict, SAMV1Core]:
     """
     Function used to initialize a SAM (v1) model from a state dictionary (i.e. model weights) file.
     This function will automatically figure out the model sizing parameters from the state dict,
@@ -82,7 +82,7 @@ def make_samv1_from_muggled_state_dict(
     muggled_state_dict: dict | str,
     strict_load: bool = True,
     weights_only: bool = True,
-) -> [dict, SAMV1Model]:
+) -> [dict, SAMV1Core]:
     """
     Similar to the '...from_original_state_dict' function, this function instantiates a
     SAMV1 model from a state dictionary file (e.g. model weights) and automatically
@@ -142,7 +142,7 @@ def make_sam_v1(
     num_decoder_blocks=2,
     num_decoder_heads=8,
     num_output_mask_tokens=4,
-) -> SAMV1Model:
+) -> SAMV1Core:
     """
     Helper used to build all SAM model components. The arguments for this function are
     expected to come from the 'make_samv1_from_original_state_dict' function, which
@@ -225,4 +225,4 @@ def make_sam_v1(
     )
 
     # Bundle components into complete SAM model!
-    return SAMV1Model(imgenc_model, coordenc_model, promptenc_model, maskdec_model, config_bytes)
+    return SAMV1Core(imgenc_model, coordenc_model, promptenc_model, maskdec_model, config_bytes)

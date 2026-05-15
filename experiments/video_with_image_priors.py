@@ -57,7 +57,6 @@ default_display_size = 900
 default_base_size = None
 default_max_memory_history = 6
 default_max_pointer_history = 15
-default_show_iou_preds = False
 
 # Define script arguments
 parser = argparse.ArgumentParser(description="Run SAMV2/V3 video segmentation with prompting from a separate image")
@@ -124,6 +123,12 @@ parser.add_argument(
     help="If set, segmentation will not be enabled once video playback begins",
 )
 parser.add_argument(
+    "-q",
+    "--hide_iou",
+    action="store_true",
+    help="Hide mask quality estimates",
+)
+parser.add_argument(
     "--hide_info",
     default=False,
     action="store_true",
@@ -144,6 +149,7 @@ max_memory_history = args.max_memories
 max_pointer_history = args.max_pointers
 discard_on_bad_objscore = args.discard_on_bad_objscore
 segment_video_on_startup = not args.disable_segment_on_startup
+show_iou_preds = not args.hide_iou
 show_info = not args.hide_info
 
 # Set up device config
@@ -311,9 +317,7 @@ try:
         if record_prompt_btn.read():
 
             # Produce prompt to be recorded for video segmentation
-            _, init_mem, init_ptr = track_model.initialize_video_masking(
-                encoded_img, *prompts, mask_index_select=mselect_idx
-            )
+            _, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
             objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
             # Report the number of store prompt memories
@@ -392,7 +396,7 @@ if no_buffer and has_prompts:
     )
 
     # Store encoding associated with last active prompt data
-    _, init_mem, init_ptr = track_model.initialize_video_masking(encoded_img, *prompts, mask_index_select=mselect_idx)
+    _, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
     objbuffer.store_prompt_result(0, init_mem, init_ptr)
 
 
@@ -476,26 +480,29 @@ try:
 
         # Only run segmentation on unseen frames
         if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
-            encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
-            obj_score, best_mask_idx, video_preds, mem_enc, obj_ptr = track_model.step_video_masking(
-                encoded_imgs_list, **objbuffer.to_dict()
+            encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+            video_masks, video_ious, ptrs, obj_score = track_model.step_video_masking(
+                encoded_img, **objbuffer.to_dict(), return_best_only=False
             )
 
-            # Only store history for high-scoring predictions
-            obj_score = float(obj_score.squeeze().float().cpu().numpy())
-            if obj_score < 0 and discard_on_bad_objscore:
-                video_preds = video_preds * 0.0
+            # Only store memory for high-scoring predictions
+            best_idx = int(video_ious.argmax(dim=-1))
+            obj_score_float = float(obj_score)
+            if obj_score_float < 0 and discard_on_bad_objscore:
+                video_masks = video_masks * 0.0
             elif enable_prevframe_storage:
+                mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, video_masks, ptrs, obj_score, best_idx)
                 objbuffer.store_frame_result(frame_idx, mem_enc, obj_ptr)
-            objscore_text.set_value(round(obj_score, 1))
+            objscore_text.set_value(round(obj_score_float, 1))
 
             # Update the mask indicator to show which mask the model has chosen each frame
-            best_mask_idx = int(best_mask_idx.squeeze().cpu())
-            ui_elems.masks_constraint.change_to(best_mask_idx)
-            uictrl.update_mask_previews(video_preds)
+            ui_elems.masks_constraint.change_to(best_idx)
+            uictrl.update_mask_previews(video_masks)
+            if show_iou_preds:
+                uictrl.draw_iou_predictions(video_ious)
 
             # Process contour data
-            selected_mask_uint8 = uictrl.create_hires_mask_uint8(video_preds, best_mask_idx, preencode_img_hw)
+            selected_mask_uint8 = uictrl.create_hires_mask_uint8(video_masks, best_idx, preencode_img_hw)
             ok_contours, mask_contours_norm = get_contours_from_mask(selected_mask_uint8, normalize=True)
 
             # Record the fact we worked on this frame

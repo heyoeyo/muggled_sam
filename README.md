@@ -114,12 +114,13 @@ bg_xys = []
 
 # Load image & model
 image_bgr = cv2.imread("/path/to/image.jpg")
-_, model = make_sam_from_state_dict("/path/to/model.pth")
+_, sam_core = make_sam_from_state_dict("/path/to/model.pth")
+interact_model = sam_core.get_interactive_context()
 
 # Process data
-encoded_img, _, _ = model.encode_image(image_bgr)
-encoded_prompts = model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
-mask_preds, iou_preds = model.generate_masks(encoded_img, encoded_prompts)
+enc_img, _, _ = interact_model.encode_image(image_bgr)
+enc_prompts = interact_model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
+mask_preds, iou_preds = interact_model.generate_masks(enc_img, enc_prompts)
 ```
 
 More examples can be found in the [simple_examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) folder.

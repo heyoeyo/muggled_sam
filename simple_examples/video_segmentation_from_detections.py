@@ -110,19 +110,18 @@ try:
         t1 = perf_counter()
 
         # Encode image data for tracking (this is the heaviest part of video inference)
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict_track)
+        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict_track)
 
         # Advance video tracking for all known objects
         objs_to_remove_list = []
         masks_on_frame_list = []
         for idx_obj, obj_memory in memory_per_obj_dict.items():
-            obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
-                encoded_imgs_list, **obj_memory.to_dict()
+            mask_pred, iou_pred, obj_ptr, obj_score = track_model.step_video_masking(
+                encoded_img, **obj_memory.to_dict()
             )
 
             # Skip storage for bad results
-            obj_score = obj_score.item()
-            if obj_score < 0:
+            if obj_score[0] < 0:
                 missed_frames_per_obj_dict[idx_obj] += 1
                 if missed_frames_per_obj_dict[idx_obj] > remove_after_n_missed_frames:
                     objs_to_remove_list.append(idx_obj)
@@ -130,20 +129,21 @@ try:
             missed_frames_per_obj_dict[idx_obj] = 0
 
             # Store memory encodings for continued tracking and 'best' mask for display
+            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, mask_pred, obj_ptr, obj_score)
             obj_memory.store_frame_result(idx_frame, mem_enc, obj_ptr)
-            masks_on_frame_list.append(mask_preds[0, best_mask_idx, :, :])
+            masks_on_frame_list.append(mask_pred)
 
         # Run detections to pick up new objects
         no_tracked_objects = len(memory_per_obj_dict) == 0
         need_detection = ((idx_frame - initial_frame_index) % detect_every_n_frames) == 0 or no_tracked_objects
         if need_detection:
             print(f"Performing detection update! (frame {idx_frame})")
-            det_encimgs = encoded_imgs_list
+            det_encimg = encoded_img
             if needs_detect_reencode:
-                det_encimgs, _, _ = detect_model.encode_detection_image(frame, **imgenc_config_dict_detect)
-            det_exemplars = detect_model.encode_exemplars(det_encimgs, **detection_prompts_dict)
+                det_encimg, _, _ = detect_model.encode_detection_image(frame, **imgenc_config_dict_detect)
+            det_exemplars = detect_model.encode_exemplars(det_encimg, **detection_prompts_dict)
             det_masks, det_boxes, _, _ = detect_model.generate_detections(
-                det_encimgs, det_exemplars, detection_filter_threshold=detection_score_threshold
+                det_encimg, det_exemplars, detection_filter_threshold=detection_score_threshold
             )
 
             # If we get new detections, compare to existing objects to see if anything new has appeared
@@ -154,7 +154,7 @@ try:
                 # Get bounding boxes of existing objects
                 known_boxes_list = []
                 for mask_tensor in masks_on_frame_list:
-                    mask_uint8 = (mask_tensor[0] > 0).byte().cpu().numpy()
+                    mask_uint8 = (mask_tensor > 0).byte().cpu().numpy().squeeze()
                     contours_list, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     if len(contours_list) == 0:
                         continue
@@ -196,11 +196,11 @@ try:
                 if num_new_objs > 0:
                     print(f"  -> Adding {num_new_objs} new objects")
                 for idx_offset, det_idx in enumerate(new_det_idxs_list):
-                    raw_det_mask = det_masks[0, det_idx]
-                    init_mem, init_ptr = track_model.initialize_from_mask(encoded_imgs_list, raw_det_mask)
+                    raw_det_mask = det_masks[:, [det_idx]]
+                    init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(encoded_img, raw_det_mask)
                     new_idx = next_new_idx + idx_offset
                     memory_per_obj_dict[new_idx].store_prompt_result(idx_frame, init_mem, init_ptr)
-                    masks_on_frame_list.append(raw_det_mask.unsqueeze(0))
+                    masks_on_frame_list.append(raw_det_mask)
                 pass
 
         # Finish timing model inference
@@ -220,11 +220,11 @@ try:
         combined_mask_result = np.zeros(display_frame.shape[0:2], dtype=bool)
         for mask_tensor in masks_on_frame_list:
             scaled_mask = torch.nn.functional.interpolate(
-                mask_tensor.unsqueeze(0),
+                mask_tensor,
                 size=display_frame.shape[0:2],
                 mode="bilinear",
                 align_corners=False,
-            ).squeeze(0)
+            )
             mask_binary = (scaled_mask > 0.0).cpu().numpy().squeeze()
             combined_mask_result = np.bitwise_or(combined_mask_result, mask_binary)
 

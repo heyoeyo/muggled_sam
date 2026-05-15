@@ -55,13 +55,12 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 print("Loading model...")
 model_config_dict, sam_core = make_sam_from_state_dict(model_path)
 sam_core.to(device=device, dtype=dtype)
-track_model = sam_core.get_tracking_context()
-detect_model = sam_core.get_detector_context()
 
-# Warning for non-v3.1 (e.g. v3 which doesn't do multiplexing)
-is_v3p1 = hasattr(track_model, "multiplex_video_masking")
-if not is_v3p1:
-    print("", "WARNING: Model is not SAMv3.1", "Multiplexing may not be properly supported", "", sep="\n")
+# Set up contexts and warn about missing support if needed
+track_model = sam_core.get_tracking_context()
+if not hasattr(track_model, "step_video_masking_multiplex"):
+    raise TypeError("Multiplexing is not supported on this model (requires SAMv3.1)")
+detect_model = sam_core.get_detector_context()
 
 # Run initial detection to get objects to track
 init_encimgs, _, _ = detect_model.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
@@ -85,7 +84,7 @@ if max_side_length_detect != max_side_length_track:
     init_encimgs, _, _ = track_model.encode_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
-init_mem, init_ptr = track_model.initialize_from_mask(init_encimgs, init_masks)
+init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(init_encimgs, init_masks)
 prompt_mems = deque([init_mem])
 prompt_ptrs = deque([init_ptr])
 prev_mems = deque([], maxlen=6)
@@ -116,9 +115,9 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
-        obj_score, best_idx_m, mask_preds_mnhw, mem_enc, obj_ptr = track_model.step_video_masking(
-            encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, num_multiplex_objects=num_objects
+        encoded_img, _, _ = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
+        masks_m1hw, ious_m1, ptrs_m1c, obj_scores_m = track_model.step_video_masking_multiplex(
+            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, num_multiplex_objects=num_objects
         )
         if is_using_cuda:
             torch.cuda.synchronize()
@@ -126,9 +125,10 @@ try:
         txt_time_ms = f"{round(1000 * (t2 - t1))} ms"
 
         # Store object results for future frames
-        ok_obj_track = obj_score > 0
+        ok_obj_track = obj_scores_m > 0
         total_tracked_objs = ok_obj_track.sum().int().item()
         if total_tracked_objs > 0:
+            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_m1hw, ptrs_m1c, obj_scores_m)
             prev_mems.appendleft(mem_enc)
             prev_ptrs.appendleft(obj_ptr)
         else:
@@ -136,20 +136,18 @@ try:
         txt_obj_count = f"{total_tracked_objs}/{num_objects} objects"
 
         # For clarity, we index out the 'best' masks while properly handling the multiplex dimension & missing objs
-        num_multiplex = mask_preds_mnhw.shape[0]
-        best_masks_mhw = mask_preds_mnhw[torch.arange(num_multiplex), best_idx_m]
-        best_masks_mhw = best_masks_mhw[ok_obj_track]  # Remove 'missing' masks
-        if best_masks_mhw.shape[0] == 0:
-            best_masks_mhw = torch.full((1, 4, 4), -10.0, device=best_masks_mhw.device, dtype=best_masks_mhw.dtype)
+        best_masks_m1hw = masks_m1hw[ok_obj_track]  # Remove 'missing' masks
+        if best_masks_m1hw.shape[0] == 0:
+            best_masks_m1hw = torch.full((1, 1, 4, 4), -10.0, device=masks_m1hw.device, dtype=masks_m1hw.dtype)
 
         # Create combined mask for display
-        dispres_mask_1mhw = torch.nn.functional.interpolate(
-            best_masks_mhw.unsqueeze(0),
+        dispres_mask_m1hw = torch.nn.functional.interpolate(
+            best_masks_m1hw,
             size=scaled_frame.shape[0:2],
             mode="bilinear",
             align_corners=False,
         )
-        combined_masks_binary = (dispres_mask_1mhw[0] > 0.0).any(dim=0)
+        combined_masks_binary = (dispres_mask_m1hw > 0.0).any(dim=0).squeeze(0)
         disp_mask = (combined_masks_binary.byte() * 255).cpu().numpy()
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
         cv2.putText(disp_mask, txt_time_ms, (5, 18), 0, 0.5, (255, 0, 255), 1, cv2.LINE_AA)

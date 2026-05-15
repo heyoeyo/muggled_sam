@@ -25,9 +25,9 @@ from .mask_decoder_model import SAMV1MaskDecoder
 # %% Classes
 
 
-class SAMV1Model(nn.Module):
+class SAMV1Core(nn.Module):
     """
-    Holds SAMv1 model components.
+    Holds core SAMv1 model components.
 
     This module is not meant to be used directly, instead, it's used to create
     separate 'contexts' to perform specific tasks supported by the model.
@@ -198,8 +198,8 @@ class SAMV1InteractiveModel(nn.Module):
         Encode image data, this is one of the inputs needed to generate masks
 
         Returns:
-            encoded_images_list, patch_grid_hw, preencoded_image_hw
-            -> The encoded images list contains a single feature map with
+            encoded_image, patch_grid_hw, preencoded_image_hw
+            -> The encoded image is a list containing a single feature map with
                shape: Bx256x64x64 (using default settings). This is
                wrapped in a list for compatibility with SAMv2/v3
             -> The patch_grid_hw contains the height & width of the low-res
@@ -212,15 +212,15 @@ class SAMV1InteractiveModel(nn.Module):
         with _inference_mode(self._infmode):
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
             image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
-            encoded_image = self.image_encoder(image_rgb_normalized_bchw)
-
-        # Create list version of image encoding, purely for compatibility with SAMv2/v3
-        encoded_images_list = [encoded_image]
+            encoded_image_tensor = self.image_encoder(image_rgb_normalized_bchw)
 
         # Get patch sizing of the encoded image tokens (as needed by other components)
-        patch_grid_hw = encoded_image.shape[2:]
+        patch_grid_hw = encoded_image_tensor.shape[2:]
 
-        return encoded_images_list, patch_grid_hw, image_preenc_hw
+        # Create list version of image encoding, purely for compatibility with SAMv2/v3
+        encoded_image = [encoded_image_tensor]
+
+        return encoded_image, patch_grid_hw, image_preenc_hw
 
     # .................................................................................................................
 
@@ -267,7 +267,7 @@ class SAMV1InteractiveModel(nn.Module):
 
     def generate_masks(
         self,
-        encoded_image_features_list: list[Tensor],
+        encoded_image: list[Tensor],
         encoded_prompts: Tensor,
         mask_hint: Tensor | None = None,
         blank_promptless_output: bool = True,
@@ -284,14 +284,14 @@ class SAMV1InteractiveModel(nn.Module):
         """
 
         with _inference_mode(self._infmode):
-            encoded_image = encoded_image_features_list[0]
-            patch_grid_hw = encoded_image.shape[2:]
+            encoded_img_tensor = encoded_image[0]
+            patch_grid_hw = encoded_img_tensor.shape[2:]
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds_bnhw, iou_preds_bn, _ = self.mask_decoder(
-                encoded_image, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
+            masks_bnhw, ious_bn, _ = self.mask_decoder(
+                encoded_img_tensor, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 
-        return mask_preds_bnhw, iou_preds_bn
+        return masks_bnhw, ious_bn
 
     # .................................................................................................................
 

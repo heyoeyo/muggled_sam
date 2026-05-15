@@ -53,7 +53,7 @@ track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(init_mask_image, **imgenc_config_dict)
-init_mem, init_ptr = track_model.initialize_from_mask(init_encoded_img, init_mask)
+init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(init_encoded_img, init_mask)
 
 # Set up data storage for prompted object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
@@ -77,25 +77,26 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
-        obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
-            encoded_imgs_list, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
+        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        mask_preds, iou_preds, obj_ptr, obj_score = track_model.step_video_masking(
+            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
         )
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()
         print(f"Took {round(1000 * (t2 - t1))} ms")
 
-        # Store object results for future frames
-        if obj_score < 0:
-            print("Bad object score! Implies broken tracking!")
-        else:
+        # Encode/store memory for tracking on future frames
+        if obj_score > 0:
+            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, mask_preds, obj_ptr, obj_score)
             prev_mems.appendleft(mem_enc)
             prev_ptrs.appendleft(obj_ptr)
+        else:
+            print("Bad object score! Implies broken tracking!")
 
         # Create mask for display
         dispres_mask = torch.nn.functional.interpolate(
-            mask_preds[:, best_mask_idx, :, :],
+            mask_preds,
             size=frame.shape[0:2],
             mode="bilinear",
             align_corners=False,

@@ -96,7 +96,7 @@ try:
         scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
 
         # Encode frame data (shared for all objects)
-        encoded_imgs_list, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
 
         # Generate & store prompt memory encodings for each object as needed
         prompts_dict = prompts_per_frame_index.get(frame_idx, None)
@@ -105,7 +105,7 @@ try:
             # Loop over all sets of prompts for the current frame
             for obj_key_name, obj_prompts in prompts_dict.items():
                 print(f"Generating prompt for object: {obj_key_name} (frame {frame_idx})")
-                init_mask, init_mem, init_ptr = track_model.initialize_video_masking(encoded_imgs_list, **obj_prompts)
+                init_mask, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, **obj_prompts)
                 memory_per_obj_dict[obj_key_name].store_prompt_result(frame_idx, init_mem, init_ptr)
 
                 # Draw prompts for debugging
@@ -134,24 +134,25 @@ try:
         # Update tracking using newest frame
         combined_mask_result = np.zeros(scaled_frame.shape[0:2], dtype=bool)
         for obj_key_name, obj_memory in memory_per_obj_dict.items():
-            obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = track_model.step_video_masking(
-                encoded_imgs_list, **obj_memory.to_dict()
+            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
+                encoded_img, **obj_memory.to_dict(),
             )
 
             # Skip storage for bad results (often due to occlusion)
-            obj_score = obj_score.item()
-            if obj_score < 0:
+            obj_score_float = float(obj_score_b)
+            if obj_score_float < 0:
                 print(f"Bad object score for {obj_key_name}! Skipping memory storage...")
                 continue
 
             # Store 'recent' memory encodings from current frame (helps track objects with changing appearance)
             # -> This can be commented out and tracking may still work, if object doesn't change much
+            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b)
             obj_memory.store_frame_result(frame_idx, mem_enc, obj_ptr)
 
             # Add object mask prediction to 'combine' mask for display
             # -> This is just for visualization, not needed for tracking
             obj_mask = torch.nn.functional.interpolate(
-                mask_preds[:, best_mask_idx, :, :],
+                masks_bnhw,
                 size=combined_mask_result.shape,
                 mode="bilinear",
                 align_corners=False,

@@ -34,9 +34,9 @@ from .exemplar_segmentation_model import SAMV3ExemplarSegmentation
 # %% Classes
 
 
-class SAMV3Model(nn.Module):
+class SAMV3Core(nn.Module):
     """
-    Holds all core SAMv3 model components.
+    Holds core SAMv3 model components.
 
     This module is not meant to be used directly, instead, it's used to create
     separate 'contexts' to perform specific tasks supported by the model.
@@ -149,8 +149,7 @@ class SAMV3Model(nn.Module):
         mask_index_select: int | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV3TrackingModel.initialize_video_masking(
-            self,
+        return self.get_tracking_context().encode_prompt_memory(
             encoded_image_features_list,
             box_xy1xy2_norm_list,
             fg_xy_norm_list,
@@ -165,7 +164,7 @@ class SAMV3Model(nn.Module):
         mask_image: ndarray | Tensor,
     ) -> tuple[Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV3TrackingModel.initialize_from_mask(self, encoded_image_features_list, mask_image)
+        return self.get_tracking_context().encode_prompt_memory_from_mask(encoded_image_features_list, mask_image)
 
     def step_video_masking(
         self,
@@ -177,15 +176,32 @@ class SAMV3Model(nn.Module):
         num_multiplex_objects: int = 1,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV3TrackingModel.step_video_masking(
-            self,
+        # Run mask prediction
+        track_model = self.get_tracking_context()
+        masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
             encoded_image_features_list,
             prompt_memory_encodings,
             prompt_object_pointers,
             previous_memory_encodings,
             previous_object_pointers,
-            num_multiplex_objects,
+            return_best_only=False,
         )
+
+        # Find 'best' result (can't use 'return_best_only' because old API always returned all masks)
+        best_mask_idx, best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
+            masks_bnhw,
+            ious_bn,
+            ptrs_bnc,
+            exclude_0th_index=True,
+        )
+
+        # Run memory encoding
+        memory_encoding, best_obj_ptr = track_model.encode_frame_memory(
+            encoded_image_features_list, best_mask_pred, best_obj_ptr, obj_score_b
+        )
+
+        # Old API returned a combination of predictions & memory encoding!
+        return obj_score_b, best_mask_idx, masks_bnhw, memory_encoding, best_obj_ptr
 
     def prepare_image_batch(
         self,
@@ -313,10 +329,10 @@ class SAMV3InteractiveModel(nn.Module):
         or scaled (to the max_side_length) based on it's original aspect ratio.
 
         Returns:
-            encoded_images_list, patch_grid_hw, preencoded_image_hw
-            -> Encoded images list contains 2 sets of multi-resolution
+            encoded_image, patch_grid_hw, preencoded_image_hw
+            -> Encoded image is a list containing 2 sets of multi-resolution
                feature maps, which correspond to SAMv2 or SAMv3 tasks.
-               Each entry is itself contains 3 tensors where are
+               Each entry itself contains 3 tensors where are
                multiresolution image features. The 0th entry is always
                the lowest resolution map with the 1st and 2nd index
                entries being 2x and 4x larger.
@@ -384,7 +400,7 @@ class SAMV3InteractiveModel(nn.Module):
 
     def generate_masks(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: tuple[list[Tensor], list[Tensor]],
         encoded_prompts: Tensor,
         mask_hint: Tensor | int | None = None,
         blank_promptless_output: bool = True,
@@ -411,16 +427,16 @@ class SAMV3InteractiveModel(nn.Module):
         """
 
         # Get sizing of the lowest-resolution image encoding
-        v12_encimgs = encoded_image_features_list[0]
+        v12_encimgs = encoded_image[0]
         patch_grid_hw = v12_encimgs[0].shape[2:]
 
         with _inference_mode(self._infmode):
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
+            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = self.mask_decoder(
                 v12_encimgs, encoded_prompts, grid_posenc, mask_hint, blank_promptless_output
             )
 
-        return mask_preds, iou_preds
+        return masks_bnhw, ious_bn
 
     # .................................................................................................................
 
@@ -499,11 +515,12 @@ class SAMV3TrackingModel(nn.Module):
 
     The basic usage for encoding an initial object is:
         model.encode_image(...)
-        model.initialize_video_masking(...) OR .initialize_from_mask(...)
+        model.encode_prompt_memory(...) OR .encode_prompt_memory_from_mask(...)
 
     The usage for repeatedly encoding new frames is:
         model.encode_image(...)
         model.step_video_masking(...)
+        model.encode_frame_memory(...)
 
     See the video segmentation example for more details:
     https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation.py
@@ -551,36 +568,40 @@ class SAMV3TrackingModel(nn.Module):
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
         of the image before encoding.
         Returns:
-            encoded_images_list, patch_grid_hw, preencoded_image_hw
+            encoded_image, patch_grid_hw, preencoded_image_hw
         """
 
         return SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
     # .................................................................................................................
 
-    def initialize_video_masking(
+    def encode_prompt_memory(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: tuple[list[Tensor], list[Tensor]],
         box_xy1xy2_norm_list: list,
         fg_xy_norm_list: list,
         bg_xy_norm_list: list,
         mask_hint: Tensor | int | None = None,
-        mask_index_select: int | None = None,
+        mask_index: int | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """
-        Creates initial 'prompt memory' for segmenting objects through a video.
-        Similar to calling the prompt encoder & mask decoder, however, this function
-        outputs a single mask prediction along with a memory encoding and
-        object pointer, both of which must be passed along to the per-frame video
-        masking function.
+        This function acts similarly to encoding prompts on the interactive
+        usage of the model. However, this instead creates a 'memory encoding',
+        which acts like a prompt encodings, but for video segmentation. This
+        function also returns the mask associated with the provided prompt.
+        The mask will be chosen according to the 'mask_index' input, or if
+        an index isn't provided, a 'best' mask will be chosen automatically.
 
-        If a 'mask_index_select' isn't given, then the 'best' mask will be chosen automatically.
+        In addition to 'prompt memory' there are 'frame memory' encodings. These
+        both serve the same role, but prompt memory is expected to come from user
+        input, and has a stronger influnce on tracking.
 
         This function roughly corresponds to `add_new_points_or_box` in the SAMv3 implementation:
         https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracking_predictor.py#L179
+        -> The original implementation uses the term 'cond_frame_outputs' instead of 'prompt memory'
 
         Returns:
-            best_mask_prediction, memory_encoding, object_pointer
+            mask_prediction, memory_encoding, object_pointer
         """
 
         # Encode initial prompts (re-use interactive implementation as it's the same process)
@@ -592,13 +613,13 @@ class SAMV3TrackingModel(nn.Module):
         with _inference_mode(self._infmode):
 
             # For convenience
-            v12_encimgs = encoded_image_features_list[0]
+            v12_encimgs = encoded_image[0]
             lowres_imgenc, *hires_imgenc = v12_encimgs
             token_hw = lowres_imgenc.shape[2:]
 
             # Generate mask prediction from image/prompt encodings, as usual
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
-            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
+            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = self.mask_decoder(
                 v12_encimgs,
                 encoded_prompts,
                 grid_posenc,
@@ -606,42 +627,45 @@ class SAMV3TrackingModel(nn.Module):
                 blank_promptless_output=False,
             )
 
-            # Select mask to use for initial encodings (auto-select if not given an index)
-            if mask_index_select is None:
-                mask_index_select = iou_preds[0].argmax()
-            best_mask_pred = mask_preds[:, [mask_index_select], :, :]
-            best_obj_ptr = obj_ptrs[:, [mask_index_select]]
+            # Auto-select mask if not given an index
+            if mask_index is None:
+                mask_index = ious_bn.argmax(-1)
+            elif isinstance(mask_index, int):
+                mask_index = torch.tensor([mask_index], dtype=torch.int64, device=masks_bnhw.device)
 
-            # Encode initial memory
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, obj_score, is_prompt_encoding=True)
+            # Encode memory
+            best_mask_pred = masks_bnhw[:, mask_index, :, :]
+            best_obj_ptr = ptrs_bnc[:, mask_index]
+            memory_encoding, obj_ptr = self.encode_frame_memory(
+                encoded_image, best_mask_pred, best_obj_ptr, obj_score_b, is_prompt_encoding=True
+            )
 
         return best_mask_pred, memory_encoding, best_obj_ptr
 
     # .................................................................................................................
 
-    def initialize_from_mask(
+    def encode_prompt_memory_from_mask(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: tuple[list[Tensor], list[Tensor]],
         mask_image: ndarray | Tensor,
     ) -> tuple[Tensor, Tensor]:
         """
-        Alternate video tracking initialization option. In this case, using a provided mask image as a 'prompt'
-        to begin tracking an object.
+        Alternate option for creating a prompt memory encoding, in the case
+        where a segmentation mask is directly available. This is in contrast
+        to providing a point/box prompt (see 'encode_prompt_memory(...)')
 
         The provided mask can either be a numpy array (e.g. image loaded using opencv) or
         a pytorch tensor (e.g. output from another model). In the simplest cases, a boolean
-        mask should be provided with shape: HxW. If a non-boolean input is given, it will
-        be converted to a boolean mask used a simple 'greater than 0' check
-        (e.g. bool_mask = mask_image > 0).
+        mask should be provided with shape: HxW. A non-boolean mask, for example a mask
+        prediction from SAM itself, can also be given.
 
         - If a mask is given with 3 dimensions, but the last dimension has size <= 3, it's assumed
           to be shaped as: HxWxC (e.g. a BGR image from opencv). In this case, the 0-th entry
           of the 3rd dimension will be taken as the (HxW) mask
         - If a mask is given with 3 dimensions, but the last dimension has size > 3, it's assumed
           to be shaped as: BxHxW, which is acceptable though batch sizes > 1 may not
-          be directly supported when performing video segmentation steps!
-        - If a mask is given with 4 dimensions, it will be interpretted as: Bx1xHxW, where it
-          must have size '1' in the second-most dimension.
+          be well supported when performing video segmentation steps!
+        - If a mask is given with 4 dimensions, it should have shape: Bx1xHxW
 
         Returns:
             memory_encoding, object_pointer
@@ -650,10 +674,9 @@ class SAMV3TrackingModel(nn.Module):
         with _inference_mode(self._infmode):
 
             # For convenience
-            v12_encimgs = encoded_image_features_list[0]
+            v12_encimgs = encoded_image[0]
             lowres_imgenc, *hires_imgenc = v12_encimgs
             device, dtype = lowres_imgenc.device, lowres_imgenc.dtype
-            token_hw = lowres_imgenc.shape[2:]
 
             # Force input into a boolean mask & convert to torch tensor
             if isinstance(mask_image, ndarray):
@@ -678,53 +701,124 @@ class SAMV3TrackingModel(nn.Module):
                 mask_b, mask_n, mask_h, mask_w = mask_tensor.shape
             assert mask_tensor.shape[1] == 1, "Mask shape error! Expecting '1' in shape index 1, eg. Bx1xHxW"
 
-            # Make special-case pointer from mask, since we don't normally get one without prompting
+        # Generate memory encoding directly from mask
+        obj_ptr, obj_score, mask_index = None, None, 0
+        memenc_bchw, objptrs_b1c = self.encode_frame_memory(
+            encoded_image, mask_tensor, obj_ptr, obj_score, mask_index, is_prompt_encoding=True
+        )
+
+        return memenc_bchw, objptrs_b1c
+
+    # .................................................................................................................
+
+    def encode_frame_memory(
+        self,
+        encoded_image: tuple[list[Tensor], list[Tensor]],
+        mask_predictions: Tensor,
+        object_pointers: Tensor | None,
+        object_score: Tensor | None,
+        mask_index: Tensor | int | None = None,
+        is_prompt_encoding: bool = False,
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Function which computes 'frame memory' encodings. These act like a
+        prompt encoding (from interactive model usage), but without requiring
+        input from the user. This memory encoding is used in conjunction with
+        'prompt memory' to 'tell the model' what the object looks like.
+
+        Since the prompt memory is made from direct user prompts, it's a
+        strong (direct) signal of what the object looks like for tracking.
+        By comparison, frame memory is computed from the model's own output
+        and helps the model (automatically) keep track of objects as they
+        change appearance over time.
+
+        The inputs to this function are expected to come from the output
+        of the 'step_video_masking' function. If multiple non-batched masks
+        are given (e.g. masks with shape BxNxHxW with N > 1), then the
+        'mask_index' input must be provided to indicate which masks to encode!
+
+        This function roughly corresponds to `_encode_new_memory` in the original SAMv3 implementation:
+        https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L797
+        -> The original implementation uses the term 'non_cond_frame_outputs' instead of 'frame memory'
+
+        Returns:
+            memory_encoding, object_pointer
+        """
+
+        # If we don't get a mask index, then user must provide only 1 mask prediction
+        if mask_index is None:
+            assert (
+                mask_predictions.shape[1] == 1
+            ), f"Cannot determine which mask to encode! Mask must be shape: Bx1xHxW if no index is provided. Got: {tuple(mask_predictions.shape)}"
+            mask_index = 0
+
+        # Make sure we have a slice/tensor-style index
+        if isinstance(mask_index, int):
+            mask_index = torch.tensor([mask_index], dtype=torch.int64, device=mask_predictions.device)
+
+        # Compute memory encoding (and optionally object pointers, if not provided)
+        with _inference_mode(self._infmode):
+
+            # Index out best entries, while accounting for batch dimension
+            b_idx = torch.arange(mask_predictions.shape[0], device=mask_predictions.device)
+            best_mask_b1hw = mask_predictions[b_idx, mask_index].unsqueeze(1)
+            best_objptr_b1c = object_pointers[b_idx, mask_index].unsqueeze(1) if object_pointers is not None else None
+
+            # Encode new memory features
+            # Called '_encode_new_memory' in original code
+            # https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L1030
+            v12_encimgs = encoded_image[0]
+            lowres_imgenc, *hires_imgenc = v12_encimgs
+            memenc_bchw = self.memory_encoder(lowres_imgenc, best_mask_b1hw, object_score, is_prompt_encoding)
+
+            # Special case. If we're not given a pointer, make it from the mask
+            # -> Mostly required for encoding from initial mask provided direct from user (without a prompt)
             # https://github.com/facebookresearch/sam3/blob/86ed77094094e5cabb16b0414ec60c5ba9ce0a0f/sam3/model/sam3_tracker_base.py#L412
-            pad_prompt_enc = self.prompt_encoder.create_padding_point_encoding()
-            grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
-            ptrs_b1c = self.mask_decoder.make_pointer_from_mask(v12_encimgs, pad_prompt_enc, grid_posenc, mask_tensor)
+            if best_objptr_b1c is None:
+                token_hw = lowres_imgenc.shape[2:]
+                pad_prompt_enc = self.prompt_encoder.create_padding_point_encoding()
+                grid_posenc = self.coordinate_encoder.get_grid_position_encoding(token_hw)
+                best_objptr_b1c = self.mask_decoder.make_pointer_from_mask(
+                    v12_encimgs, pad_prompt_enc, grid_posenc, best_mask_b1hw
+                )
 
-            # Generate memory encoding from mask
-            memory_encoding = self.memory_encoder(lowres_imgenc, mask_tensor, None, is_prompt_encoding=True)
-
-        return memory_encoding, ptrs_b1c
+        return memenc_bchw, best_objptr_b1c
 
     # .................................................................................................................
 
     def step_video_masking(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: list[Tensor],
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
-        num_multiplex_objects: int = 1,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        return_best_only: bool = True,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Function which makes segmentation predictions for consecutive frames of
         an input video. It takes in the encoded video frame data along with prior
-        prompt/previous frame memory data in order to automatically continue
-        segmenting some existing object (i.e. without requiring user prompts).
+        prompt/frame memory encodings in order to continue segmenting an existing
+        object (i.e. without requiring user prompts).
 
-        Note:
-        The 'num_multiplex_objects' is a dummy input included for compatibility
-        with the v3.1 update. It doesn't do anything!
+        If 'return_best_only' is True, only a single result will be returned,
+        corresponding to the prediction with the highest IoU.
 
         This function corresponds to 'track_step' in the SAMv3 implementation:
         https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L930
 
-        Returns:
-            object_score, best_mask_index, mask_predictions, memory_encoding, best_object_pointer
-            -> object_score score is an indicator of whether an object is present
-               values below 0 indicate lost tracking. Has shape: Bx1
-            -> best_mask_index is the index of the highest iou score. Has shape: B (one index for each batch)
-            -> mask_predictions are the same as with image segmentation, has shape: Bx4xHxW
-            -> memory_encoding should be passed back in on future frames, has shape: BxFxH'xW'
-            -> best_object_pointer should be passed back in on future frames, has shape: Bx1xF'
+        The mask (and object pointer) returned from this function are meant to be
+        provided to the 'encode_frame_memory' function to produce future memory
+        encodings used to continue video masking into the future.
 
-            The HxW of masks will be 1/4 of the input height and width (256x256 for default 1024 sizing).
-            The memory encoding H'xW' is 4 times smaller than the mask sizing (64x64 by default).
-            The memory & pointer features F & F' are model configs (64, 256 respectively, by default)
+        Returns:
+            mask_predictions, iou_predictions, object_pointers, object_score
+            -> mask_predictions have shape: BxNxHxW
+            -> iou_predictions have shape: BxN
+            -> object_pointers are meant to be passed in as future input and have shape BxNxC
+            -> object_score is an indicator of whether an object is present,
+               values below 0 indicate lost tracking. Each batch entry will have 1 value
+            -> The HxW of masks will be 1/4 of the input height and width (288x288 for default 1008 sizing)
         """
 
         with _inference_mode(self._infmode):
@@ -732,7 +826,7 @@ class SAMV3TrackingModel(nn.Module):
             # Encode image features with previous memory encodings & object pointer data
             # Called '_prepare_memory_conditioned_features' in original code
             # See: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L971
-            v12_encimgs = encoded_image_features_list[0]
+            v12_encimgs = encoded_image[0]
             lowres_imgenc, *hires_imgenc = v12_encimgs
             memfused_encimg = self.memory_image_fusion(
                 lowres_imgenc,
@@ -747,7 +841,7 @@ class SAMV3TrackingModel(nn.Module):
             # See: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L992
             patch_grid_hw = memfused_encimg.shape[2:]
             grid_posenc = self.coordinate_encoder.get_grid_position_encoding(patch_grid_hw)
-            mask_preds, iou_preds, obj_ptrs, obj_score = self.mask_decoder(
+            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = self.mask_decoder(
                 [memfused_encimg, *hires_imgenc],
                 self.prompt_encoder.create_video_no_prompt_encoding(),
                 grid_posenc,
@@ -758,19 +852,15 @@ class SAMV3TrackingModel(nn.Module):
             # Keep only the 'best' results
             # Part of the '_forward_sam_heads' function in original code
             # See: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L363
-            best_mask_idx, best_mask_pred, _, best_obj_ptr = self.mask_decoder.get_best_decoder_results(
-                mask_preds,
-                iou_preds,
-                obj_ptrs,
-                exclude_0th_index=True,
-            )
+            if return_best_only:
+                _, masks_bnhw, ious_bn, ptrs_bnc = self.mask_decoder.get_best_decoder_results(
+                    masks_bnhw,
+                    ious_bn,
+                    ptrs_bnc,
+                    exclude_0th_index=True,
+                )
 
-            # Encode new memory features
-            # Called '_encode_new_memory' in original code
-            # https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L1030
-            memory_encoding = self.memory_encoder(lowres_imgenc, best_mask_pred, obj_score)
-
-        return obj_score, best_mask_idx, mask_preds, memory_encoding, best_obj_ptr
+        return masks_bnhw, ious_bn, ptrs_bnc, obj_score_b
 
     # .................................................................................................................
 
@@ -789,7 +879,7 @@ class SAMV3TrackingModel(nn.Module):
         # Run model to fill in cache
         if example_image_bgr is not None:
             encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
-            _, init_mem, init_ptr = self.initialize_video_masking(encoded_imgs, [], [(0.5, 0.5)], [])
+            _, init_mem, init_ptr = self.encode_prompt_memory(encoded_imgs, [], [(0.5, 0.5)], [])
             self.step_video_masking(encoded_imgs, [init_mem], [init_ptr], [], [])
 
         return _enable_compilation(
@@ -893,7 +983,7 @@ class SAMV3DetectorModel(nn.Module):
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
         of the image before encoding.
         Returns:
-            encoded_images_list, patch_grid_hw, preencoded_image_hw
+            encoded_image, patch_grid_hw, preencoded_image_hw
         """
 
         return SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
@@ -902,7 +992,7 @@ class SAMV3DetectorModel(nn.Module):
 
     def encode_exemplars(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: tuple[list[Tensor], list[Tensor]],
         text: str | None = None,
         box_xy1xy2_norm_list: list[tuple[tuple[float, float], tuple[float, float]]] | None = None,
         point_xy_norm_list: list[tuple[float, float]] | None = None,
@@ -938,7 +1028,7 @@ class SAMV3DetectorModel(nn.Module):
         """
 
         # For clarity
-        v3_encimgs = encoded_image_features_list[1]
+        v3_encimgs = encoded_image[1]
         lowres_imgenc_bchw = v3_encimgs[0]
         img_b, img_c, _, _ = lowres_imgenc_bchw.shape
 
@@ -975,7 +1065,7 @@ class SAMV3DetectorModel(nn.Module):
 
     def generate_detections(
         self,
-        encoded_image_features_list: tuple[list[Tensor], list[Tensor]],
+        encoded_image: tuple[list[Tensor], list[Tensor]],
         encoded_exemplars_bnc: Tensor,
         detection_filter_threshold: float = 0.0,
         exemplar_padding_mask_bn: Tensor | None = None,
@@ -1016,7 +1106,7 @@ class SAMV3DetectorModel(nn.Module):
         """
 
         # For clarity
-        v3_encimgs = encoded_image_features_list[1]
+        v3_encimgs = encoded_image[1]
         lowres_imgenc_bchw, hiresx2_imgenc_bchw, hiresx4_imgenc_bchw = v3_encimgs
 
         with _inference_mode(self._infmode):
@@ -1059,7 +1149,7 @@ class SAMV3DetectorModel(nn.Module):
                 det_scores_bn = det_scores_bn[:, ok_filter]
 
             # Generate masks
-            mask_preds_bnhw, _ = self.exemplar_segmentation(
+            masks_bnhw, _ = self.exemplar_segmentation(
                 enc_det_tokens_bnc,
                 fused_imgexm_tokens_bchw,
                 hiresx2_imgenc_bchw,
@@ -1068,7 +1158,7 @@ class SAMV3DetectorModel(nn.Module):
                 exemplar_padding_mask_bn,
             )
 
-        return mask_preds_bnhw, boxes_xy1xy2_bn22, det_scores_bn, pres_scores
+        return masks_bnhw, boxes_xy1xy2_bn22, det_scores_bn, pres_scores
 
     # .................................................................................................................
 

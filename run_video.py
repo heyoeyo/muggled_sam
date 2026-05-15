@@ -138,6 +138,12 @@ parser.add_argument(
     help=f"Threshold below which objects are considered to be 'lost' (default: {default_object_score_threshold})",
 )
 parser.add_argument(
+    "-q",
+    "--hide_iou",
+    action="store_true",
+    help="Hide mask quality estimates",
+)
+parser.add_argument(
     "--hide_info",
     default=False,
     action="store_true",
@@ -195,6 +201,7 @@ max_pointer_history = args.max_pointers
 discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
 object_score_threshold = args.objscore_threshold
+show_iou_preds = not args.hide_iou
 show_info = not args.hide_info
 use_webcam = args.use_webcam
 enable_crop_ui = args.crop
@@ -242,7 +249,7 @@ print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
 model_config_dict, sam_core = make_sam_from_state_dict(model_path)
 sam_core.to(**device_config_dict)
 interact_model = sam_core.get_interactive_context()
-tracking_model = sam_core.get_tracking_context()
+track_model = sam_core.get_tracking_context()
 
 # Set up access to video
 vreader = ReversibleLoopingVideoReader(video_path).release()
@@ -268,7 +275,7 @@ print(f"  -> Took {time_taken_ms} ms", flush=True)
 # Run model without prompts as sanity check. Also gives initial result values
 prompts = ([], [], [])
 encoded_prompts = interact_model.encode_prompts(*prompts)
-init_mask_preds, _ = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
+init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 prediction_hw = init_mask_preds.shape[2:]
 
 # Provide some feedback about how the model is running
@@ -621,10 +628,9 @@ try:
 
             # If a prompt exists when tracking begins, assume we should use it
             if check_have_prompts(*prompts):
-                _, init_mem, init_ptr = tracking_model.initialize_video_masking(
-                    encoded_img,
-                    *prompts,
-                    mask_index_select=maskresults_list[buffer_select_idx].idx,
+                user_idx_select = maskresults_list[buffer_select_idx].idx
+                _, init_mem, init_ptr = track_model.encode_prompt_memory(
+                    encoded_img, *prompts, mask_index=user_idx_select
                 )
                 memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
                 if clear_history_on_new_prompts:
@@ -652,7 +658,7 @@ try:
             have_track_prompts = any(mem.check_has_prompts() for mem in memory_list)
             if need_prompt_encode and (have_user_prompts or not have_track_prompts):
                 encoded_prompts = interact_model.encode_prompts(*prompts)
-                paused_mask_preds, _ = interact_model.generate_masks(
+                paused_mask_preds, iou_preds = interact_model.generate_masks(
                     encoded_img,
                     encoded_prompts,
                     mask_hint=None,
@@ -663,18 +669,18 @@ try:
             # If there are no user prompts but there are tracking prompts, run the tracker to get a segmentation
             if have_track_prompts and not have_user_prompts and is_changed_track_idx:
                 selected_memory_dict = memory_list[buffer_select_idx].to_dict()
-                paused_obj_score, _, paused_mask_preds, _, _ = tracking_model.step_video_masking(
-                    encoded_img, **selected_memory_dict
+                paused_mask_preds, iou_preds, _, paused_obj_score = track_model.step_video_masking(
+                    encoded_img, **selected_memory_dict, return_best_only=False
                 )
                 paused_obj_score = float(paused_obj_score.squeeze().float().cpu().numpy())
                 track_idx_keeper.record(frame_idx)
 
             # Store encoded prompts as needed
             if store_prompt_btn.read():
-                _, init_mem, init_ptr = tracking_model.initialize_video_masking(
+                _, init_mem, init_ptr = track_model.encode_prompt_memory(
                     encoded_img,
                     *prompts,
-                    mask_index_select=paused_mask_idx,
+                    mask_index=paused_mask_idx,
                 )
                 memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
                 ui_elems.clear_prompts()
@@ -695,20 +701,24 @@ try:
                         continue
 
                     # Only run model if we have stored prompts
-                    obj_score, best_mask_idx, mask_preds, mem_enc, obj_ptr = tracking_model.step_video_masking(
-                        encoded_img, **memory_list[objidx].to_dict()
+                    mask_preds, iou_preds, obj_ptr, obj_score = track_model.step_video_masking(
+                        encoded_img, **memory_list[objidx].to_dict(), return_best_only=False
                     )
-                    obj_score = float(obj_score.squeeze().float().cpu().numpy())
-                    tracked_mask_idx = int(best_mask_idx.squeeze().cpu())
+                    best_mask_idx = iou_preds.argmax(dim=-1)
+                    obj_score_float = float(obj_score)
+                    tracked_mask_idx = int(best_mask_idx)
 
                     # Only store history for high-scoring predictions
-                    if obj_score < object_score_threshold and discard_on_bad_objscore:
+                    if obj_score_float < object_score_threshold and discard_on_bad_objscore:
                         mask_preds = mask_preds * 0.0
                     elif is_trackhistory_enabled:
+                        mem_enc, obj_ptr = track_model.encode_frame_memory(
+                            encoded_img, mask_preds, obj_ptr, obj_score, mask_index=best_mask_idx
+                        )
                         memory_list[objidx].store_frame_result(frame_idx, mem_enc, obj_ptr)
 
                     # UGLY! Store results for each tracked object
-                    maskresults_list[objidx].update(mask_preds, tracked_mask_idx, obj_score)
+                    maskresults_list[objidx].update(mask_preds, tracked_mask_idx, obj_score_float)
 
         # Update the mask indicators
         selected_mask_preds = maskresults_list[buffer_select_idx].preds
@@ -716,6 +726,8 @@ try:
         selected_obj_score = maskresults_list[buffer_select_idx].objscore
         ui_elems.masks_constraint.change_to(selected_mask_idx)
         uictrl.update_mask_previews(selected_mask_preds, invert_mask=is_inverted_mask)
+        if show_iou_preds:
+            uictrl.draw_iou_predictions(iou_preds)
 
         # Update the (selected) object score
         objscore_text.set_value(round(selected_obj_score, 1))

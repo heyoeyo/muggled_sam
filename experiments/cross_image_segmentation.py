@@ -170,7 +170,7 @@ model_config_dict, sam_core = make_sam_from_state_dict(model_path)
 assert sam_core.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for cross-segmentation!"
 sam_core.to(**device_config_dict)
 interact_model = sam_core.get_interactive_context()
-tracking_model = sam_core.get_tracking_context()
+track_model = sam_core.get_tracking_context()
 
 # Load image and get shaping info for providing display
 full_image_a = cv2.imread(image_path_a)
@@ -415,14 +415,18 @@ try:
             # Use prompted mask to initialize 'tracking' to segment the cross-image
             mem_mask_idx = mask_a_idx if side_select == "a" else mask_b_idx
             mask_for_mem = ref_preds[:, [mem_mask_idx], :, :]
-            ref_mem, ref_ptr = tracking_model.initialize_from_mask(encoded_img, mask_for_mem)
+            ref_mem, ref_ptr = track_model.encode_prompt_memory_from_mask(encoded_img, mask_for_mem)
 
             # Run 'video' segmentation to prompt other image
+            repeat_idx = mask_b_idx if side_select == "a" else mask_a_idx
             prompt_mem, prompt_ptr = tuple([ref_mem]), tuple([ref_ptr])
             prev_mems, prev_ptrs = deque([]), deque([])
             for _ in range(1 + num_video_iter):
-                obj_score, best_mask_idx, cross_preds, new_mem, new_ptr = tracking_model.step_video_masking(
-                    cross_encoded_img, prompt_mem, prompt_ptr, prev_mems, prev_ptrs
+                cross_preds, cross_iou, obj_ptrs, obj_score = track_model.step_video_masking(
+                    cross_encoded_img, prompt_mem, prompt_ptr, prev_mems, prev_ptrs, return_best_only=False
+                )
+                new_mem, new_ptr = track_model.encode_frame_memory(
+                    cross_encoded_img, cross_preds, obj_ptrs, obj_score, mask_index=cross_iou.argmax(-1)
                 )
                 prev_mems.appendleft(new_mem)
                 prev_ptrs.appendleft(new_ptr)
