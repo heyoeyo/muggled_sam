@@ -74,9 +74,9 @@ class SAMV3MemoryImageFusion(nn.Module):
         lowres_image_tokens_bchw: Tensor,
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
-        previous_memory_encodings: list[Tensor],
-        previous_object_pointers: list[Tensor],
-        previous_is_recent_first=True,
+        frame_memory_encodings: list[Tensor],
+        frame_object_pointers: list[Tensor],
+        is_recent_first=True,
         is_prompt_frame=False,
     ) -> Tensor:
         """
@@ -88,8 +88,8 @@ class SAMV3MemoryImageFusion(nn.Module):
         frames are handled separately from non-prompted encodings/pointers
         (which are assumed to be coming from running on previous frames with no prompts).
 
-        If 'previous_is_recent_first' is True, then the first-most (i.e. 0th-index)
-        entry of the 'previous' lists are assumed to be the most recent entry
+        If 'is_recent_first' is True, then the first-most (i.e. 0th-index)
+        entry of the frame memory lists are assumed to be the most recent entry
         (this comes from using '.appendleft' on deque data types), otherwise
         assumes the last-most entry is most recent (i.e. using .append on a list).
 
@@ -105,9 +105,9 @@ class SAMV3MemoryImageFusion(nn.Module):
         memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
             prompt_memory_encodings,
             prompt_object_pointers,
-            previous_memory_encodings,
-            previous_object_pointers,
-            previous_is_recent_first,
+            frame_memory_encodings,
+            frame_object_pointers,
+            is_recent_first,
         )
 
         # Fuse memory results into image tokens
@@ -164,9 +164,9 @@ class MemoryConcatenator(nn.Module):
         self,
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
-        previous_frame_memory_encodings: list[Tensor],
-        previous_frame_object_pointers: list[Tensor],
-        previous_is_recent_first=True,
+        frame_memory_encodings: list[Tensor],
+        frame_object_pointers: list[Tensor],
+        is_recent_first=True,
     ) -> tuple[Tensor, Tensor, int]:
         """
         Helps to combine all prompt & previous frame memory data into
@@ -178,13 +178,13 @@ class MemoryConcatenator(nn.Module):
         These are used to 'find' the same object in future frames.
 
         Inputs should be provided as lists of prior memory/pointers. If
-        'previous_is_recent_first' is True, then this is meant to imply that
-        index-0 of each 'previous_frame' list represents the most recent data.
+        'is_recent_first' is True, then this is meant to imply that
+        index-0 of the frame memory represents the most recent data.
         If False, then the index-0 entry is interpreted as the oldest data.
 
-        The difference between 'prompt' and 'previous_frame' inputs is that
+        The difference between 'prompt' and 'frame' memory inputs is that
         the prompt inputs are those used to initialize tracking. They come
-        from a user directly prompting the model. The previous_frame inputs
+        from a user directly prompting the model. The frame memory inputs
         are meant to come from the model running on it's own (without prompting).
 
         Returns:
@@ -211,14 +211,14 @@ class MemoryConcatenator(nn.Module):
         # Get index representing how 'far away' each previous frame item is from current frame
         # -> Assumes buffer is built with 'appendleft' (i.e. 0th index entry is most recent in time)
         # -> E.g. indexing is: [0, 1, 2, 3, 4, 5]
-        buffer_idx_list = list(range(len(previous_frame_memory_encodings)))
-        if not previous_is_recent_first:
+        buffer_idx_list = list(range(len(frame_memory_encodings)))
+        if not is_recent_first:
             # indexing is least-recent first: [5, 4, 3, 2, 1, 0]
             buffer_idx_list = list(reversed(buffer_idx_list))
         buffer_idx_list = [min(idx, self._max_mempos_idx) for idx in buffer_idx_list]
 
         # Combine memory encodings from past frames
-        for mem_idx, memenc in zip(buffer_idx_list, previous_frame_memory_encodings):
+        for mem_idx, memenc in zip(buffer_idx_list, frame_memory_encodings):
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
@@ -229,7 +229,7 @@ class MemoryConcatenator(nn.Module):
         # Build object pointer input if needed
         num_ptr_tokens = 0
         num_prompt_pointers = len(prompt_object_pointers)
-        num_prev_pointers = len(previous_frame_object_pointers)
+        num_prev_pointers = len(frame_object_pointers)
         have_pointers = (num_prompt_pointers + num_prev_pointers) > 0
         if have_pointers:
 
@@ -243,13 +243,13 @@ class MemoryConcatenator(nn.Module):
             #    with shape: 12x256, but we want to match memory token shape, which is Nx64 (N tokens).
             #    So we break each of the 256-feature pointers into 4 (=256/64) tokens for a total of
             #    48 'pointer tokens' each with 64 features and stack them altogether, giving shape: 48x64
-            ptrs = torch.concat(list(prompt_object_pointers) + list(previous_frame_object_pointers), dim=1)
+            ptrs = torch.concat(list(prompt_object_pointers) + list(frame_object_pointers), dim=1)
             ptr_batch_size, num_ptrs = ptrs.shape[0:2]
             num_ptr_tokens = num_ptrs * self._num_tokens_per_pointer
             ptr_tokens = ptrs.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
 
             # Compute position encodings for pointer tokens
-            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, previous_is_recent_first)
+            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, is_recent_first)
             ptrs_posenc = ptrs_posenc.expand(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
 
             # Add pointer encodings to total memory/position-encoding tokens
@@ -312,7 +312,7 @@ class ObjectPointerPosEnc(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, num_prompt_pointers, num_previous_frame_pointers, previous_is_recent_first=True) -> Tensor:
+    def forward(self, num_prompt_pointers, num_frame_pointers, is_recent_first=True) -> Tensor:
         """
         Creates a position encoding tensor of shape: NxF
         -> N is total number of tokens (equal to 4 times the total number of pointers, by default)
@@ -324,7 +324,7 @@ class ObjectPointerPosEnc(nn.Module):
         # -> Instead the index is based on how many frames have past since the prompt (i.e. steadily increases)
         # -> Here using fixed (0) value because it's much simpler and mirrors memory encoding approach
         # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L162
-        total_ptrs = num_prompt_pointers + num_previous_frame_pointers
+        total_ptrs = num_prompt_pointers + num_frame_pointers
         pos_norm_tensor = torch.zeros(total_ptrs, dtype=self.device_info.dtype, device=self.device_info.device)
 
         # Set position index of all 'previous frame pointers' based on their list indexing
@@ -338,8 +338,8 @@ class ObjectPointerPosEnc(nn.Module):
         #    reaches a set maximum (until then, this approach over-estimates pointer spacing in time)
         # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_base.py#L167-L170
         first_prev_idx = 1.0 / max(total_ptrs - 1, 1)
-        start_idx, end_idx = (first_prev_idx, 1.0) if previous_is_recent_first else (1.0, first_prev_idx)
-        pos_norm_tensor[num_prompt_pointers:] = torch.linspace(start_idx, end_idx, num_previous_frame_pointers)
+        start_idx, end_idx = (first_prev_idx, 1.0) if is_recent_first else (1.0, first_prev_idx)
+        pos_norm_tensor[num_prompt_pointers:] = torch.linspace(start_idx, end_idx, num_frame_pointers)
 
         # Compute 1D sinusoidal position embeddings from pointer indices
         # See original here: https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam3_tracker_utils.py#L327

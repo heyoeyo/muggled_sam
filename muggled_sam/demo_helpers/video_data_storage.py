@@ -94,8 +94,8 @@ class SAMVideoObjectResults:
         return {
             "prompt_memory_encodings": self.prompts_buffer.memory_history,
             "prompt_object_pointers": self.prompts_buffer.pointer_history,
-            "previous_memory_encodings": self.prevframe_buffer.memory_history,
-            "previous_object_pointers": self.prevframe_buffer.pointer_history,
+            "frame_memory_encodings": self.prevframe_buffer.memory_history,
+            "frame_object_pointers": self.prevframe_buffer.pointer_history,
         }
 
     def get_num_memories(self) -> tuple[int, int]:

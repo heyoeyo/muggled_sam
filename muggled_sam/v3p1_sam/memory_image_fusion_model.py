@@ -73,9 +73,9 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         lowres_image_tokens_bchw: Tensor,
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
-        previous_memory_encodings: list[Tensor],
-        previous_object_pointers: list[Tensor],
-        previous_is_recent_first: bool = True,
+        frame_memory_encodings: list[Tensor],
+        frame_object_pointers: list[Tensor],
+        is_recent_first: bool = True,
         is_prompt_frame: bool = False,
     ) -> Tensor:
         """
@@ -87,8 +87,8 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         frames are handled separately from non-prompted encodings/pointers
         (which are assumed to be coming from running on previous frames with no prompts).
 
-        If 'previous_is_recent_first' is True, then the first-most (i.e. 0th-index)
-        entry of the 'previous' lists are assumed to be the most recent entry
+        If 'is_recent_first' is True, then the first-most (i.e. 0th-index)
+        entry of the frame memory lists are assumed to be the most recent entry
         (this comes from using '.appendleft' on deque data types), otherwise
         assumes the last-most entry is most recent (i.e. using .append on a list).
 
@@ -105,9 +105,9 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         prev_img_tokens, memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
             prompt_memory_encodings,
             prompt_object_pointers,
-            previous_memory_encodings,
-            previous_object_pointers,
-            previous_is_recent_first,
+            frame_memory_encodings,
+            frame_object_pointers,
+            is_recent_first,
         )
 
         # Fuse memory results into image tokens
@@ -163,9 +163,9 @@ class MemoryConcatenator(nn.Module):
         self,
         prompt_memory_encodings: list[tuple[Tensor, Tensor]],
         prompt_object_pointers: list[Tensor],
-        previous_frame_memory_encodings: list[tuple[Tensor, Tensor]],
-        previous_frame_object_pointers: list[Tensor],
-        previous_is_recent_first=True,
+        frame_memory_encodings: list[tuple[Tensor, Tensor]],
+        frame_object_pointers: list[Tensor],
+        is_recent_first=True,
     ) -> tuple[Tensor, Tensor, int]:
         """
         Helps to combine all prompt & previous frame memory data into
@@ -177,13 +177,13 @@ class MemoryConcatenator(nn.Module):
         These are used to 'find' the same object in future frames.
 
         Inputs should be provided as lists of prior memory/pointers. If
-        'previous_is_recent_first' is True, then this is meant to imply that
-        index-0 of each 'previous_frame' list represents the most recent data.
+        'is_recent_first' is True, then this is meant to imply that
+        index-0 of the frame memory represents the most recent data.
         If False, then the index-0 entry is interpreted as the oldest data.
 
-        The difference between 'prompt' and 'previous_frame' inputs is that
+        The difference between 'prompt' and 'frame' memory inputs is that
         the prompt inputs are those used to initialize tracking. They come
-        from a user directly prompting the model. The previous_frame inputs
+        from a user directly prompting the model. The frame memory inputs
         are meant to come from the model running on it's own (without prompting).
 
         Returns:
@@ -211,12 +211,12 @@ class MemoryConcatenator(nn.Module):
 
         # Get index representing how 'far away' each previous frame item is from current frame
         # -> This indexing is reversed so that the closest encoding is stored in index 5, oldest is index 0
-        buffer_idx_list = [max(0, self._max_mempos_idx - idx) for idx in range(len(previous_frame_memory_encodings))]
-        if not previous_is_recent_first:
+        buffer_idx_list = [max(0, self._max_mempos_idx - idx) for idx in range(len(frame_memory_encodings))]
+        if not is_recent_first:
             buffer_idx_list = list(reversed(buffer_idx_list))  # Gives: [0,1,2,3,4,5] for newest-to-oldest ordering
 
         # Combine memory encodings from past frames
-        for mem_idx, (imgenc, memenc) in zip(buffer_idx_list, previous_frame_memory_encodings):
+        for mem_idx, (imgenc, memenc) in zip(buffer_idx_list, frame_memory_encodings):
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
@@ -230,16 +230,16 @@ class MemoryConcatenator(nn.Module):
         num_ptr_tokens = 0
         if len(prompt_object_pointers) > 0:
             prompt_ptr_tokens_bnc, prompt_ptr_posenc_bnc = self.ptrposenc(
-                tuple(prompt_object_pointers), previous_is_recent_first, is_prompt_encoding=True
+                tuple(prompt_object_pointers), is_recent_first, is_prompt_encoding=True
             )
             memory_list.append(prompt_ptr_tokens_bnc)
             posenc_list.append(prompt_ptr_posenc_bnc)
             num_ptr_tokens += prompt_ptr_tokens_bnc.shape[1]
 
         # Record previous frame pointers if present
-        if len(previous_frame_object_pointers) > 0:
+        if len(frame_object_pointers) > 0:
             prev_ptr_tokens_bnc, prev_posenc_bnc = self.ptrposenc(
-                tuple(previous_frame_object_pointers), previous_is_recent_first, is_prompt_encoding=False
+                tuple(frame_object_pointers), is_recent_first, is_prompt_encoding=False
             )
             num_ptr_tokens += prev_ptr_tokens_bnc.shape[1]
             memory_list.append(prev_ptr_tokens_bnc)

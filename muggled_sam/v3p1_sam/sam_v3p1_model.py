@@ -185,8 +185,8 @@ class SAMV3p1Core(nn.Module):
             encoded_image_features_list,
             prompt_memory_encodings,
             prompt_object_pointers,
-            previous_memory_encodings,
-            previous_object_pointers,
+            frame_memory_encodings=previous_memory_encodings,
+            frame_object_pointers=previous_object_pointers,
             return_best_only=False,
             num_multiplex_objects=num_multiplex_objects,
         )
@@ -811,8 +811,8 @@ class SAMV3p1TrackingModel(nn.Module):
         encoded_image: tuple[list[Tensor], list[Tensor], list[Tensor]],
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
-        previous_memory_encodings: list[Tensor],
-        previous_object_pointers: list[Tensor],
+        frame_memory_encodings: list[Tensor],
+        frame_object_pointers: list[Tensor],
         return_best_only: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
@@ -829,8 +829,8 @@ class SAMV3p1TrackingModel(nn.Module):
             encoded_image,
             prompt_memory_encodings,
             prompt_object_pointers,
-            previous_memory_encodings,
-            previous_object_pointers,
+            frame_memory_encodings,
+            frame_object_pointers,
             return_best_only,
             num_multiplex_objects=1,
         )
@@ -840,8 +840,8 @@ class SAMV3p1TrackingModel(nn.Module):
         encoded_image: tuple[list[Tensor], list[Tensor], list[Tensor]],
         prompt_memory_encodings: list[Tensor],
         prompt_object_pointers: list[Tensor],
-        previous_memory_encodings: list[Tensor],
-        previous_object_pointers: list[Tensor],
+        frame_memory_encodings: list[Tensor],
+        frame_object_pointers: list[Tensor],
         return_best_only: bool = True,
         num_multiplex_objects: int = 1,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -885,8 +885,8 @@ class SAMV3p1TrackingModel(nn.Module):
                 lowres_imgenc,
                 prompt_memory_encodings,
                 prompt_object_pointers,
-                previous_memory_encodings,
-                previous_object_pointers,
+                frame_memory_encodings,
+                frame_object_pointers,
             )
 
             # Run (video) mask decoder on memory-fused features
