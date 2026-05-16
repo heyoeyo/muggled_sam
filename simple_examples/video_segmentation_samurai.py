@@ -90,8 +90,8 @@ try:
             mem_enc, obj_ptr = track_model.encode_frame_memory(
                 encoded_img, mask_preds_bnhw, obj_ptrs_bnc, obj_score_b, mask_index=best_mask_idx
             )
-            prev_mems.appendleft(mem_enc)
-            prev_ptrs.appendleft(obj_ptr)
+            prev_mems.append(mem_enc)
+            prev_ptrs.append(obj_ptr)
         else:
             print("SAMURAI rejected memory!")
 

@@ -76,8 +76,8 @@ class SAMV3MemoryImageFusion(nn.Module):
         prompt_object_pointers: list[Tensor],
         frame_memory_encodings: list[Tensor],
         frame_object_pointers: list[Tensor],
-        is_recent_first=True,
-        is_prompt_frame=False,
+        is_recent_first: bool = False,
+        is_prompt_frame: bool = False,
     ) -> Tensor:
         """
         Fuses prior memory encodings & object pointers into (low-res) image tokens
@@ -89,9 +89,9 @@ class SAMV3MemoryImageFusion(nn.Module):
         (which are assumed to be coming from running on previous frames with no prompts).
 
         If 'is_recent_first' is True, then the first-most (i.e. 0th-index)
-        entry of the frame memory lists are assumed to be the most recent entry
-        (this comes from using '.appendleft' on deque data types), otherwise
-        assumes the last-most entry is most recent (i.e. using .append on a list).
+        entry of the frame memory lists is assumed to be the most recent entry,
+        otherwise assumes the last entry is most recent. The order of prompt
+        memory doesn't matter.
 
         Returns:
             memory_fused_image_tokens (same shape as input image tokens)
@@ -166,7 +166,7 @@ class MemoryConcatenator(nn.Module):
         prompt_object_pointers: list[Tensor],
         frame_memory_encodings: list[Tensor],
         frame_object_pointers: list[Tensor],
-        is_recent_first=True,
+        is_recent_first: bool,
     ) -> tuple[Tensor, Tensor, int]:
         """
         Helps to combine all prompt & previous frame memory data into
@@ -208,13 +208,13 @@ class MemoryConcatenator(nn.Module):
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
 
-        # Get index representing how 'far away' each previous frame item is from current frame
-        # -> Assumes buffer is built with 'appendleft' (i.e. 0th index entry is most recent in time)
-        # -> E.g. indexing is: [0, 1, 2, 3, 4, 5]
-        buffer_idx_list = list(range(len(frame_memory_encodings)))
-        if not is_recent_first:
-            # indexing is least-recent first: [5, 4, 3, 2, 1, 0]
-            buffer_idx_list = list(reversed(buffer_idx_list))
+        # Get index representing how 'far away' each previous frame item is from current frame (0 is closest)
+        # -> Assumes buffer is built by repeatedly appending new memory entries to a list
+        # -> If entries are appended to the start (is_recent_first=True), indexing is like: [0,1,2,3,...]
+        # -> If entries are appended to end (is_recent_first=False), then indexing is like: [...,3,2,1,0]
+        # -> Also need to force index to be below a max value, based on learned position encoding size
+        num_frame_mem = len(frame_memory_encodings)
+        buffer_idx_list = range(num_frame_mem) if is_recent_first else range(num_frame_mem - 1, -1, -1)
         buffer_idx_list = [min(idx, self._max_mempos_idx) for idx in buffer_idx_list]
 
         # Combine memory encodings from past frames
@@ -222,7 +222,7 @@ class MemoryConcatenator(nn.Module):
 
             # Convert from BxCxHxW to BxNxC
             maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(init_memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
 

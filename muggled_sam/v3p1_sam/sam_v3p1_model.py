@@ -177,6 +177,7 @@ class SAMV3p1Core(nn.Module):
         previous_memory_encodings: list[Tensor],
         previous_object_pointers: list[Tensor],
         num_multiplex_objects: int = 1,
+        is_recent_first: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
         # Run mask prediction
@@ -188,6 +189,7 @@ class SAMV3p1Core(nn.Module):
             frame_memory_encodings=previous_memory_encodings,
             frame_object_pointers=previous_object_pointers,
             return_best_only=False,
+            is_recent_first=is_recent_first,
             num_multiplex_objects=num_multiplex_objects,
         )
 
@@ -814,6 +816,7 @@ class SAMV3p1TrackingModel(nn.Module):
         frame_memory_encodings: list[Tensor],
         frame_object_pointers: list[Tensor],
         return_best_only: bool = True,
+        is_recent_first: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Special case wrapper around the 'step_video_masking_multiplex' function,
@@ -832,6 +835,7 @@ class SAMV3p1TrackingModel(nn.Module):
             frame_memory_encodings,
             frame_object_pointers,
             return_best_only,
+            is_recent_first,
             num_multiplex_objects=1,
         )
 
@@ -843,6 +847,7 @@ class SAMV3p1TrackingModel(nn.Module):
         frame_memory_encodings: list[Tensor],
         frame_object_pointers: list[Tensor],
         return_best_only: bool = True,
+        is_recent_first: bool = False,
         num_multiplex_objects: int = 1,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """
@@ -887,6 +892,7 @@ class SAMV3p1TrackingModel(nn.Module):
                 prompt_object_pointers,
                 frame_memory_encodings,
                 frame_object_pointers,
+                is_recent_first,
             )
 
             # Run (video) mask decoder on memory-fused features

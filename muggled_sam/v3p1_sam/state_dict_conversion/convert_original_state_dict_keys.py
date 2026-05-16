@@ -9,6 +9,7 @@ from collections import defaultdict
 
 from .key_regex import get_nth_integer, get_suffix_terms, replace_prefix, find_match_by_lut
 
+import torch
 from torch import Tensor
 
 
@@ -219,6 +220,17 @@ def convert_state_dict_keys(
             # Switch from rows-of-tokens (BNC) to image-like shape (BCHW)
             if "no_mem_embed_bchw" in new_key:
                 new_data = new_data.reshape(1, -1, 1, 1)
+
+            # Re-order frame memory offsets. This is to make things more consistent with prior SAM models
+            # -> The original model stores 7 'embeddings' in this parameter. The last-most is a position
+            #    encoding for prompt memory encodings. The remaining 6 are for frame memory, with each
+            #    meant to encode how 'far away' the frame is in time. However, the ordering is such that
+            #    the 0th index is 'far' away while index 5 (the max) is 'close'. This is backwards compared
+            #    to other SAM models, and complicates the implementation. So here we're reversing the order!
+            if new_key.endswith("base_memposenc_offsets"):
+                prompt_posenc = new_data[[-1]]
+                frame_posenc = torch.flip(new_data[:-1], dims=[0])
+                new_data = torch.concat((frame_posenc, prompt_posenc), dim=0)
 
             _update_sd(sam_module_type, orig_key, new_key, new_data)
 

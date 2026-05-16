@@ -428,8 +428,8 @@ try:
                 new_mem, new_ptr = track_model.encode_frame_memory(
                     cross_encoded_img, cross_preds, obj_ptrs, obj_score, mask_index=cross_iou.argmax(-1)
                 )
-                prev_mems.appendleft(new_mem)
-                prev_ptrs.appendleft(new_ptr)
+                prev_mems.append(new_mem)
+                prev_ptrs.append(new_ptr)
 
             # Update score, which indicates 'goodness of match' between prompted & cross image
             objscore_text.set_value(round(obj_score.item(), 1))

@@ -75,7 +75,7 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         prompt_object_pointers: list[Tensor],
         frame_memory_encodings: list[Tensor],
         frame_object_pointers: list[Tensor],
-        is_recent_first: bool = True,
+        is_recent_first: bool = False,
         is_prompt_frame: bool = False,
     ) -> Tensor:
         """
@@ -88,9 +88,9 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         (which are assumed to be coming from running on previous frames with no prompts).
 
         If 'is_recent_first' is True, then the first-most (i.e. 0th-index)
-        entry of the frame memory lists are assumed to be the most recent entry
-        (this comes from using '.appendleft' on deque data types), otherwise
-        assumes the last-most entry is most recent (i.e. using .append on a list).
+        entry of the frame memory lists is assumed to be the most recent entry,
+        otherwise assumes the last entry is most recent. The order of prompt
+        memory doesn't matter.
 
         Returns:
             memory_fused_image_tokens (same shape as input image tokens)
@@ -165,7 +165,7 @@ class MemoryConcatenator(nn.Module):
         prompt_object_pointers: list[Tensor],
         frame_memory_encodings: list[tuple[Tensor, Tensor]],
         frame_object_pointers: list[Tensor],
-        is_recent_first=True,
+        is_recent_first: bool,
     ) -> tuple[Tensor, Tensor, int]:
         """
         Helps to combine all prompt & previous frame memory data into
@@ -209,11 +209,18 @@ class MemoryConcatenator(nn.Module):
             posenc_list.append(maskmem_pos)
             imgenc_list.append(previmg_enc)
 
-        # Get index representing how 'far away' each previous frame item is from current frame
-        # -> This indexing is reversed so that the closest encoding is stored in index 5, oldest is index 0
-        buffer_idx_list = [max(0, self._max_mempos_idx - idx) for idx in range(len(frame_memory_encodings))]
-        if not is_recent_first:
-            buffer_idx_list = list(reversed(buffer_idx_list))  # Gives: [0,1,2,3,4,5] for newest-to-oldest ordering
+        # Get index representing how 'far away' each previous frame item is from current frame (0 is closest)
+        # -> Assumes buffer is built by repeatedly appending new memory entries to a list
+        # -> If entries are appended to the start (is_recent_first=True), indexing is like: [...,3,2,1,0]
+        # -> If entries are appended to end (is_recent_first=False), then indexing is like: [0,1,2,3,...]
+        # -> Also need to force index to be below a max value, based on learned position encoding size
+        num_frame_mem = len(frame_memory_encodings)
+        buffer_idx_list = range(num_frame_mem) if is_recent_first else range(num_frame_mem - 1, -1, -1)
+        buffer_idx_list = [min(idx, self._max_mempos_idx) for idx in buffer_idx_list]
+        # Note: This depends on re-indexing the original model position encodings, which used '5' as closest index!
+        #       Re-ordering is handled when MuggledSAM loads the weights (see the state_dict_conversion scripts)
+        # For original behavior, see:
+        # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1432-L1437
 
         # Combine memory encodings from past frames
         for mem_idx, (imgenc, memenc) in zip(buffer_idx_list, frame_memory_encodings):

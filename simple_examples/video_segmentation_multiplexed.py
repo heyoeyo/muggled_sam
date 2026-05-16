@@ -129,8 +129,8 @@ try:
         total_tracked_objs = ok_obj_track.sum().int().item()
         if total_tracked_objs > 0:
             mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_m1hw, ptrs_m1c, obj_scores_m)
-            prev_mems.appendleft(mem_enc)
-            prev_ptrs.appendleft(obj_ptr)
+            prev_mems.append(mem_enc)
+            prev_ptrs.append(obj_ptr)
         else:
             print("Bad object scores! No objects are being tracked!")
         txt_obj_count = f"{total_tracked_objs}/{num_objects} objects"

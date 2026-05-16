@@ -89,8 +89,8 @@ try:
         # Encode/store memory for tracking on future frames
         if obj_score > 0:
             mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, mask_preds, obj_ptr, obj_score)
-            prev_mems.appendleft(mem_enc)
-            prev_ptrs.appendleft(obj_ptr)
+            prev_mems.append(mem_enc)
+            prev_ptrs.append(obj_ptr)
         else:
             print("Bad object score! Implies broken tracking!")
 

@@ -32,10 +32,10 @@ class SAMVideoBuffer:
         return cls(idx_deck, mask_deck, pointer_deck)
 
     def store(self, frame_index: int, memory_encoding: Tensor, object_pointer: Tensor | None = None):
-        self.idx.appendleft(frame_index)
-        self.memory_history.appendleft(memory_encoding)
+        self.idx.append(frame_index)
+        self.memory_history.append(memory_encoding)
         if object_pointer is not None:
-            self.pointer_history.appendleft(object_pointer)
+            self.pointer_history.append(object_pointer)
         return self
 
     def set_memory_history(self, memory_history_length: int):
