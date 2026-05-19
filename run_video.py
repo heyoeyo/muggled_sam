@@ -39,7 +39,7 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.prompts import check_have_prompts
 from muggled_sam.demo_helpers.contours import get_contours_from_mask
-from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
+from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 from muggled_sam.demo_helpers.saving import save_video_frames, get_save_name
 from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_ffmpeg_path, save_video_stream
 
@@ -55,7 +55,6 @@ default_prompts_path = None
 default_display_size = 900
 default_base_size = None
 default_max_memory_history = 6
-default_max_pointer_history = 15
 default_num_object_buffers = 4
 default_object_score_threshold = 0.0
 default_bg_color_hex = "ff00ff00"
@@ -112,12 +111,6 @@ parser.add_argument(
     default=default_max_memory_history,
     type=int,
     help=f"Maximum number of previous-frame memory encodings to store (default: {default_max_memory_history})",
-)
-parser.add_argument(
-    "--max_pointers",
-    default=default_max_pointer_history,
-    type=int,
-    help=f"Maximum number of previous-frame object pointers to store (default: {default_max_pointer_history})",
 )
 parser.add_argument(
     "--keep_bad_objscores",
@@ -197,7 +190,6 @@ use_square_sizing = not args.use_aspect_ratio
 imgenc_base_size = args.base_size_px
 num_obj_buffers = args.num_buffers if enable_saving else 1
 max_memory_history = args.max_memories
-max_pointer_history = args.max_pointers
 discard_on_bad_objscore = not args.keep_bad_objscores
 clear_history_on_new_prompts = not args.keep_history_on_new_prompts
 object_score_threshold = args.objscore_threshold
@@ -504,9 +496,7 @@ STATES = Enum(
 objiter = list(range(num_obj_buffers))
 maskresults_list = [MaskResults.create(init_mask_preds) for _ in objiter]
 savebuffers_list = [SaveBufferData.create() for _ in objiter]
-memory_list = [
-    SAMVideoObjectResults.create(max_memory_history, max_pointer_history, prompt_history_length=32) for _ in objiter
-]
+memory_list = [SAMVideoMemoryBank(max_memory_history, max_prompt_memory=32) for _ in objiter]
 
 vreader.pause()
 curr_state = STATES.PAUSED
@@ -544,19 +534,19 @@ try:
 
         # Wipe out buffered data
         if clear_prompts_btn.read():
-            memory_list[buffer_select_idx].prompts_buffer.clear()
+            memory_list[buffer_select_idx].clear(clear_frame_memory=False)
             maskresults_list[buffer_select_idx].clear()
             track_idx_keeper.clear()
         if clear_history_btn.read():
-            memory_list[buffer_select_idx].prevframe_buffer.clear()
+            memory_list[buffer_select_idx].clear(clear_prompt_memory=False)
             track_idx_keeper.clear()
 
         # Update text feedback
         vram_usage_mb = vram_report.get_vram_usage()
         vram_text.set_value(vram_usage_mb)
-        num_prompt_mems, num_prev_mems = memory_list[buffer_select_idx].get_num_memories()
+        num_prompt_mems, num_frame_mems = memory_list[buffer_select_idx].get_num_memories()
         num_prompts_text.set_value(num_prompt_mems)
-        num_history_text.set_value(num_prev_mems)
+        num_history_text.set_value(num_frame_mems)
 
         # Ugly: Figure out current states
         is_playback_adjusting = playback_slider.is_adjusting()
@@ -629,12 +619,12 @@ try:
             # If a prompt exists when tracking begins, assume we should use it
             if check_have_prompts(*prompts):
                 user_idx_select = maskresults_list[buffer_select_idx].idx
-                _, init_mem, init_ptr = track_model.encode_prompt_memory(
+                _, init_mem = track_model.encode_prompt_memory(
                     encoded_img, *prompts, mask_index=user_idx_select
                 )
-                memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
+                memory_list[buffer_select_idx].store_prompt_result(init_mem)
                 if clear_history_on_new_prompts:
-                    memory_list[buffer_select_idx].prevframe_buffer.clear()
+                    memory_list[buffer_select_idx].clear(clear_prompt_memory=False)
 
             # If there is no tracking data, clear any on-screen masking (i.e. from user interactions)
             no_prompt_data = all(mem.check_has_prompts() == 0 for mem in memory_list)
@@ -677,12 +667,12 @@ try:
 
             # Store encoded prompts as needed
             if store_prompt_btn.read():
-                _, init_mem, init_ptr = track_model.encode_prompt_memory(
+                _, init_mem = track_model.encode_prompt_memory(
                     encoded_img,
                     *prompts,
                     mask_index=paused_mask_idx,
                 )
-                memory_list[buffer_select_idx].store_prompt_result(frame_idx, init_mem, init_ptr)
+                memory_list[buffer_select_idx].store_prompt_result(init_mem)
                 ui_elems.clear_prompts()
 
             # Store user-interaction results for selected object while paused
@@ -712,10 +702,10 @@ try:
                     if obj_score_float < object_score_threshold and discard_on_bad_objscore:
                         mask_preds = mask_preds * 0.0
                     elif is_trackhistory_enabled:
-                        mem_enc, obj_ptr = track_model.encode_frame_memory(
+                        mem_enc = track_model.encode_frame_memory(
                             encoded_img, mask_preds, obj_ptr, obj_score, mask_index=best_mask_idx
                         )
-                        memory_list[objidx].store_frame_result(frame_idx, mem_enc, obj_ptr)
+                        memory_list[objidx].store_frame_result(mem_enc)
 
                     # UGLY! Store results for each tracked object
                     maskresults_list[objidx].update(mask_preds, tracked_mask_idx, obj_score_float)

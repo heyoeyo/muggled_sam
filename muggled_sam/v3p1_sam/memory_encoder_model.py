@@ -74,7 +74,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         object_pointers_m1c: Tensor | None,
         object_score_m: Tensor | None,
         is_prompt_encoding: Tensor | bool,
-    ) -> tuple[tuple[Tensor, Tensor], Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """
         Takes the lowest-resolution image encoding and combines it
         with a mask prediction to form a 'fused' encoding, which can act
@@ -102,7 +102,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         memory encodings may have a batch size > 1!
 
         Returns:
-            (lowres_img_encoding_bchw, fused_image_and_mask_encodings), object_pointers_bmc
+            lowres_img_encoding_bchw, fused_image_and_mask_encodings_bchw, object_pointers_bmc
             -> Both image-like outputs have shape: BxCxHxW
             -> B is multiplexing batch size, H & W are height and width
             -> The 'lowres' output is the same as the input image encodings, and is bundled as for use with v3.1
@@ -131,7 +131,7 @@ class SAMV3p1MemoryEncoder(nn.Module):
         if mask_b > 1 and img_b == 1:
             lowres_image_encoding_bchw = lowres_image_encoding_bchw.expand(mask_b, img_c, img_h, img_w)
 
-        return (lowres_image_encoding_bchw, memory_encoding), ptrs_bmc
+        return lowres_image_encoding_bchw, memory_encoding, ptrs_bmc
 
     # .................................................................................................................
 

@@ -84,11 +84,9 @@ if max_side_length_detect != max_side_length_track:
     init_encimgs, _, _ = track_model.encode_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
-init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(init_encimgs, init_masks)
+init_mem = track_model.encode_prompt_memory_from_mask(init_encimgs, init_masks)
 prompt_mems = deque([init_mem])
-prompt_ptrs = deque([init_ptr])
-prev_mems = deque([], maxlen=6)
-prev_ptrs = deque([], maxlen=15)
+frame_mems = deque([], maxlen=6)
 
 # Handle compilation if needed (doing this here to avoid including setup in compilation)
 if enable_compilation:
@@ -117,7 +115,7 @@ try:
         t1 = perf_counter()
         encoded_img, _, _ = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
         masks_m1hw, ious_m1, ptrs_m1c, obj_scores_m = track_model.step_video_masking_multiplex(
-            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, num_multiplex_objects=num_objects
+            encoded_img, prompt_mems, frame_mems, num_multiplex_objects=num_objects
         )
         if is_using_cuda:
             torch.cuda.synchronize()
@@ -128,9 +126,8 @@ try:
         ok_obj_track = obj_scores_m > 0
         total_tracked_objs = ok_obj_track.sum().int().item()
         if total_tracked_objs > 0:
-            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_m1hw, ptrs_m1c, obj_scores_m)
-            prev_mems.append(mem_enc)
-            prev_ptrs.append(obj_ptr)
+            encoded_mem = track_model.encode_frame_memory(encoded_img, masks_m1hw, ptrs_m1c, obj_scores_m)
+            frame_mems.append(encoded_mem)
         else:
             print("Bad object scores! No objects are being tracked!")
         txt_obj_count = f"{total_tracked_objs}/{num_objects} objects"

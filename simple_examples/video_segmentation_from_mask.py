@@ -53,13 +53,11 @@ track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(init_mask_image, **imgenc_config_dict)
-init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(init_encoded_img, init_mask)
+init_mem = track_model.encode_prompt_memory_from_mask(init_encoded_img, init_mask)
 
 # Set up data storage for prompted object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
-prompt_ptrs = deque([init_ptr])
-prev_mems = deque([], maxlen=6)
-prev_ptrs = deque([], maxlen=15)
+frame_mems = deque([], maxlen=6)
 
 # Process video frames
 is_using_cuda = "cuda" in device
@@ -74,13 +72,12 @@ try:
         ok_frame, frame = vcap.read()
         if not ok_frame:
             break
+        scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
 
         # Process video frames with model
         t1 = perf_counter()
         encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
-        mask_preds, iou_preds, obj_ptr, obj_score = track_model.step_video_masking(
-            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs
-        )
+        masks_b1hw, ious_b1, ptrs_b1c, obj_score = track_model.step_video_masking(encoded_img, prompt_mems, frame_mems)
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()
@@ -88,16 +85,15 @@ try:
 
         # Encode/store memory for tracking on future frames
         if obj_score > 0:
-            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, mask_preds, obj_ptr, obj_score)
-            prev_mems.append(mem_enc)
-            prev_ptrs.append(obj_ptr)
+            encoded_mem = track_model.encode_frame_memory(encoded_img, masks_b1hw, ptrs_b1c, obj_score)
+            frame_mems.append(encoded_mem)
         else:
             print("Bad object score! Implies broken tracking!")
 
         # Create mask for display
         dispres_mask = torch.nn.functional.interpolate(
-            mask_preds,
-            size=frame.shape[0:2],
+            masks_b1hw,
+            size=scaled_frame.shape[0:2],
             mode="bilinear",
             align_corners=False,
         )
@@ -105,8 +101,8 @@ try:
         disp_mask = cv2.cvtColor(disp_mask, cv2.COLOR_GRAY2BGR)
 
         # Show frame and mask
-        sidebyside = stack_func((frame, disp_mask))
-        cv2.imshow("Mask Segmentation Result - q to quit", cv2.resize(sidebyside, dsize=None, fx=0.5, fy=0.5))
+        sidebyside = stack_func((scaled_frame, disp_mask))
+        cv2.imshow("Mask Segmentation Result - q to quit", sidebyside)
         keypress = cv2.waitKey(1) & 0xFF
         if keypress in close_keycodes:
             break

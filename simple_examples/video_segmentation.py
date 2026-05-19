@@ -57,15 +57,13 @@ if enable_compilation:
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
-_, init_mem, init_ptr = track_model.encode_prompt_memory(
+_, init_mem = track_model.encode_prompt_memory(
     init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index=None
 )
 
 # Set up 'memory bank' for tracked object (repeat this for each unique object)
 prompt_mems = deque([init_mem])
-prompt_ptrs = deque([init_ptr])
-prev_mems = deque([], maxlen=6)
-prev_ptrs = deque([], maxlen=15)
+frame_mems = deque([], maxlen=6)
 
 # Process video frames
 is_using_cuda = "cuda" in device
@@ -88,7 +86,7 @@ try:
             torch.cuda.synchronize()
         t2 = perf_counter()
         masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
-            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, return_best_only=False
+            encoded_img, prompt_mems, frame_mems, return_best_only=False
         )
         if is_using_cuda:
             torch.cuda.synchronize()
@@ -105,9 +103,8 @@ try:
 
         # Encode and store memory for future frame tracking
         if score_float > 0:
-            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b, best_idx)
-            prev_mems.append(mem_enc)
-            prev_ptrs.append(obj_ptr)
+            encoded_mem = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b, best_idx)
+            frame_mems.append(encoded_mem)
         else:
             print("Bad object score! Implies broken tracking!")
 

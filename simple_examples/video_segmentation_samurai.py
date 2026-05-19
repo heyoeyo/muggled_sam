@@ -55,16 +55,14 @@ track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
 init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
-init_mask, init_mem, init_ptr = track_model.encode_prompt_memory(
+init_mask, init_mem = track_model.encode_prompt_memory(
     init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index=None
 )
 
 # Set up data storage for prompted object (repeat this for each unique object)
 samurai = MuggledSAMURAI(init_mask, smoothness=samurai_smoothness)
 prompt_mems = deque([init_mem])
-prompt_ptrs = deque([init_ptr])
-prev_mems = deque([], maxlen=6)
-prev_ptrs = deque([], maxlen=15)
+frame_mems = deque([], maxlen=6)
 
 # Process video frames
 stack_func = np.hstack if first_frame.shape[0] > first_frame.shape[1] else np.vstack
@@ -81,17 +79,16 @@ try:
         # Process video frames with model
         encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
         mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, obj_score_b = track_model.step_video_masking(
-            encoded_img, prompt_mems, prompt_ptrs, prev_mems, prev_ptrs, return_best_only=False
+            encoded_img, prompt_mems, frame_mems, return_best_only=False
         )
 
-        # SAMURAI post-processing, determines which mask to use
+        # SAMURAI post-processing, determines which of the 'N' masks to use
         is_mem_ok, best_mask_idx, samurai_xy1xy2_pred = samurai.update(mask_preds_bnhw, iou_preds_bn, obj_score_b)
         if is_mem_ok:
-            mem_enc, obj_ptr = track_model.encode_frame_memory(
+            encoded_mem = track_model.encode_frame_memory(
                 encoded_img, mask_preds_bnhw, obj_ptrs_bnc, obj_score_b, mask_index=best_mask_idx
             )
-            prev_mems.append(mem_enc)
-            prev_ptrs.append(obj_ptr)
+            frame_mems.append(encoded_mem)
         else:
             print("SAMURAI rejected memory!")
 

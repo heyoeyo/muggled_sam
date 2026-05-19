@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
-from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
+from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 
 
 # Define pathing & device usage
@@ -64,8 +64,8 @@ enable_prompt_visualization = True
 
 # Set up memory storage for tracked objects
 # -> Assumes each object is represented by a unique dictionary key (e.g. 'obj1')
-# -> This holds both the 'prompt' & 'recent' memory data needed for tracking!
-memory_per_obj_dict = defaultdict(SAMVideoObjectResults.create)
+# -> This holds both the 'prompt' & 'frame' memory data needed for tracking!
+memory_per_obj_dict = defaultdict(SAMVideoMemoryBank)
 
 # Read first frame to check that we can read from the video, then reset playback
 vcap = cv2.VideoCapture(video_path)
@@ -105,8 +105,8 @@ try:
             # Loop over all sets of prompts for the current frame
             for obj_key_name, obj_prompts in prompts_dict.items():
                 print(f"Generating prompt for object: {obj_key_name} (frame {frame_idx})")
-                init_mask, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, **obj_prompts)
-                memory_per_obj_dict[obj_key_name].store_prompt_result(frame_idx, init_mem, init_ptr)
+                init_mask, init_mem = track_model.encode_prompt_memory(encoded_img, **obj_prompts)
+                memory_per_obj_dict[obj_key_name].store_prompt_result(init_mem)
 
                 # Draw prompts for debugging
                 if enable_prompt_visualization:
@@ -135,7 +135,7 @@ try:
         combined_mask_result = np.zeros(scaled_frame.shape[0:2], dtype=bool)
         for obj_key_name, obj_memory in memory_per_obj_dict.items():
             masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
-                encoded_img, **obj_memory.to_dict(),
+                encoded_img, **obj_memory.to_dict()
             )
 
             # Skip storage for bad results (often due to occlusion)
@@ -146,8 +146,8 @@ try:
 
             # Store 'recent' memory encodings from current frame (helps track objects with changing appearance)
             # -> This can be commented out and tracking may still work, if object doesn't change much
-            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b)
-            obj_memory.store_frame_result(frame_idx, mem_enc, obj_ptr)
+            encoded_mem = track_model.encode_frame_memory(encoded_img, masks_bnhw, ptrs_bnc, obj_score_b)
+            obj_memory.store_frame_result(encoded_mem)
 
             # Add object mask prediction to 'combine' mask for display
             # -> This is just for visualization, not needed for tracking

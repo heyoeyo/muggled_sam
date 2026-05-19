@@ -125,7 +125,7 @@ class SAMV2Core(nn.Module):
         mask_index_select: int | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
-        return self.get_tracking_context().encode_prompt_memory(
+        mask_b1hw, encoded_mem = self.get_tracking_context().encode_prompt_memory(
             encoded_image_features_list,
             box_xy1xy2_norm_list,
             fg_xy_norm_list,
@@ -133,6 +133,10 @@ class SAMV2Core(nn.Module):
             mask_hint,
             mask_index_select,
         )
+
+        # Unpack results to match old API
+        mem_b1hw, ptr_b1c = encoded_mem
+        return mask_b1hw, mem_b1hw, ptr_b1c
 
     def initialize_from_mask(
         self,
@@ -152,14 +156,23 @@ class SAMV2Core(nn.Module):
         is_recent_first: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+
+        # Bundle memory tokens & pointers for new API, which expects list of (memory, pointers) tuples
+        pmt_mem, pmt_ptrs = list(prompt_memory_encodings), list(prompt_object_pointers)
+        prv_mem, prv_ptrs = list(previous_memory_encodings), list(previous_object_pointers)
+        min_pmt_len = min(len(pmt_mem), len(pmt_ptrs))
+        min_prv_len = min(len(prv_mem), len(prv_ptrs))
+        pmt_slice = slice(0, min_pmt_len) if is_recent_first else slice(-min_pmt_len, None)
+        prv_slice = slice(0, min_prv_len) if is_recent_first else slice(-min_prv_len, None)
+        new_prompt_mem_list = list(zip(pmt_mem[pmt_slice], pmt_ptrs[pmt_slice]))
+        new_frame_mem_list = list(zip(prv_mem[prv_slice], prv_ptrs[prv_slice]))
+
         # Run mask prediction
         track_model = self.get_tracking_context()
         masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
             encoded_image_features_list,
-            prompt_memory_encodings,
-            prompt_object_pointers,
-            frame_memory_encodings=previous_memory_encodings,
-            frame_object_pointers=previous_object_pointers,
+            new_prompt_mem_list,
+            new_frame_mem_list,
             return_best_only=False,
             is_recent_first=is_recent_first,
         )
@@ -173,12 +186,13 @@ class SAMV2Core(nn.Module):
         )
 
         # Run memory encoding
-        memory_encoding, best_obj_ptr = track_model.encode_frame_memory(
+        encoded_memory = track_model.encode_frame_memory(
             encoded_image_features_list, best_mask_pred, best_obj_ptr, obj_score_b
         )
 
         # Old API returned a combination of predictions & memory encoding!
-        return obj_score_b, best_mask_idx, masks_bnhw, memory_encoding, best_obj_ptr
+        memenc_b1hw, ptr_b1c = encoded_memory
+        return obj_score_b, best_mask_idx, masks_bnhw, memenc_b1hw, ptr_b1c
 
     def prepare_image_batch(
         self,
@@ -523,7 +537,7 @@ class SAMV2TrackingModel(nn.Module):
         bg_xy_norm_list: list,
         mask_hint: Tensor | None = None,
         mask_index: int | None = None,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
         """
         This function acts similarly to encoding prompts on the interactive
         usage of the model. However, this instead creates a 'memory encoding',
@@ -541,7 +555,8 @@ class SAMV2TrackingModel(nn.Module):
         -> The original implementation uses the term 'cond_frame_outputs' instead of 'prompt memory'
 
         Returns:
-            mask_prediction, memory_encoding, object_pointer
+            mask_prediction, encoded_memory
+            -> The memory is stored as a tuple of tensors, but is meant to be used as a single result!
         """
 
         # Encode initial prompts (re-use interactive implementation as it's the same process)
@@ -571,15 +586,15 @@ class SAMV2TrackingModel(nn.Module):
                 mask_index = ious_bn.argmax(-1)
             elif isinstance(mask_index, int):
                 mask_index = torch.tensor([mask_index], dtype=torch.int64, device=masks_bnhw.device)
+            best_mask_b1hw = masks_bnhw[:, mask_index, :, :]
+            best_ptr_b1c = ptrs_bnc[:, mask_index]
 
-            # Encode memory
-            best_mask_pred = masks_bnhw[:, mask_index, :, :]
-            best_obj_ptr = ptrs_bnc[:, mask_index]
-            memory_encoding, obj_ptr = self.encode_frame_memory(
-                encoded_image, best_mask_pred, best_obj_ptr, obj_score_b, is_prompt_encoding=True
-            )
+        # Encode 'best' mask for memory
+        encoded_memory = self.encode_frame_memory(
+            encoded_image, best_mask_b1hw, best_ptr_b1c, obj_score_b, is_prompt_encoding=True
+        )
 
-        return best_mask_pred, memory_encoding, best_obj_ptr
+        return best_mask_b1hw, encoded_memory
 
     # .................................................................................................................
 
@@ -607,7 +622,8 @@ class SAMV2TrackingModel(nn.Module):
         - If a mask is given with 4 dimensions, it should have shape: Bx1xHxW
 
         Returns:
-            memory_encoding, object_pointer
+            encoded_memory
+            -> This is a tuple of tensors, but is meant to be used as a single result (e.g. don't unpack)
         """
 
         with _inference_mode(self._infmode):
@@ -641,11 +657,11 @@ class SAMV2TrackingModel(nn.Module):
 
         # Generate memory encoding directly from mask
         obj_ptr, obj_score, mask_index = None, None, 0
-        memenc_bchw, objptrs_b1c = self.encode_frame_memory(
+        encoded_memory = self.encode_frame_memory(
             encoded_image, mask_tensor, obj_ptr, obj_score, mask_index, is_prompt_encoding=True
         )
 
-        return memenc_bchw, objptrs_b1c
+        return encoded_memory
 
     # .................................................................................................................
 
@@ -680,7 +696,8 @@ class SAMV2TrackingModel(nn.Module):
         -> The original implementation uses the term 'non_cond_frame_outputs' instead of 'frame memory'
 
         Returns:
-            memory_encoding, object_pointer
+            encoded_memory
+            -> This is a tuple of tensors, but is meant to be used as a single result (e.g. don't unpack)
         """
 
         # If we don't get a mask index, then user must provide only 1 mask prediction
@@ -719,17 +736,18 @@ class SAMV2TrackingModel(nn.Module):
                     encoded_image, pad_prompt_enc, grid_posenc, best_mask_b1hw
                 )
 
-        return memenc_bchw, best_objptr_b1c
+            # Bundle tensors as a single output
+            encoded_memory = (memenc_bchw, best_objptr_b1c)
+
+        return encoded_memory
 
     # .................................................................................................................
 
     def step_video_masking(
         self,
         encoded_image: list[Tensor],
-        prompt_memory_encodings: list[Tensor],
-        prompt_object_pointers: list[Tensor],
-        frame_memory_encodings: list[Tensor],
-        frame_object_pointers: list[Tensor],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
+        frame_memory_encodings: list[tuple[Tensor, Tensor]],
         return_best_only: bool = True,
         is_recent_first: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -768,9 +786,7 @@ class SAMV2TrackingModel(nn.Module):
             memfused_encimg = self.memory_image_fusion(
                 lowres_imgenc,
                 prompt_memory_encodings,
-                prompt_object_pointers,
                 frame_memory_encodings,
-                frame_object_pointers,
                 is_recent_first,
             )
 
@@ -817,8 +833,8 @@ class SAMV2TrackingModel(nn.Module):
         # Run model to fill in cache
         if example_image_bgr is not None:
             encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
-            _, init_mem, init_ptr = self.encode_prompt_memory(encoded_imgs, [], [(0.5, 0.5)], [])
-            self.step_video_masking(encoded_imgs, [init_mem], [init_ptr], [], [])
+            _, init_mem = self.encode_prompt_memory(encoded_imgs, [], [(0.5, 0.5)], [])
+            self.step_video_masking(encoded_imgs, [init_mem], [])
 
         return _enable_compilation(
             self,

@@ -21,7 +21,6 @@ except ModuleNotFoundError:
 import os.path as osp
 import argparse
 from time import perf_counter
-from collections import deque
 
 import torch
 import cv2
@@ -415,21 +414,20 @@ try:
             # Use prompted mask to initialize 'tracking' to segment the cross-image
             mem_mask_idx = mask_a_idx if side_select == "a" else mask_b_idx
             mask_for_mem = ref_preds[:, [mem_mask_idx], :, :]
-            ref_mem, ref_ptr = track_model.encode_prompt_memory_from_mask(encoded_img, mask_for_mem)
+            ref_encoded_mem = track_model.encode_prompt_memory_from_mask(encoded_img, mask_for_mem)
 
             # Run 'video' segmentation to prompt other image
             repeat_idx = mask_b_idx if side_select == "a" else mask_a_idx
-            prompt_mem, prompt_ptr = tuple([ref_mem]), tuple([ref_ptr])
-            prev_mems, prev_ptrs = deque([]), deque([])
+            prompt_mems = [ref_encoded_mem]
+            frame_mems = []
             for _ in range(1 + num_video_iter):
                 cross_preds, cross_iou, obj_ptrs, obj_score = track_model.step_video_masking(
-                    cross_encoded_img, prompt_mem, prompt_ptr, prev_mems, prev_ptrs, return_best_only=False
+                    cross_encoded_img, prompt_mems, frame_mems, return_best_only=False
                 )
-                new_mem, new_ptr = track_model.encode_frame_memory(
+                cross_encoded_mem = track_model.encode_frame_memory(
                     cross_encoded_img, cross_preds, obj_ptrs, obj_score, mask_index=cross_iou.argmax(-1)
                 )
-                prev_mems.append(new_mem)
-                prev_ptrs.append(new_ptr)
+                frame_mems.append(cross_encoded_mem)
 
             # Update score, which indicates 'goodness of match' between prompted & cross image
             objscore_text.set_value(round(obj_score.item(), 1))

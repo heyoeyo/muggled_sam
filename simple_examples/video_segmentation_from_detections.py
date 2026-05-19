@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
-from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
+from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 from muggled_sam.demo_helpers.bounding_boxes import get_2box_iou
 
 # Define pathing & device usage
@@ -87,7 +87,7 @@ track_model = sam_core_track.get_tracking_context().to(device=device, dtype=dtyp
 needs_detect_reencode = is_using_separate_tracking_model or imgenc_config_dict_track != imgenc_config_dict_detect
 
 # Set up storage for tracking memory and keeping track of lost objects
-memory_per_obj_dict = defaultdict(SAMVideoObjectResults.create)
+memory_per_obj_dict = defaultdict(SAMVideoMemoryBank)
 missed_frames_per_obj_dict = defaultdict(int)
 
 # Process video frames
@@ -129,8 +129,8 @@ try:
             missed_frames_per_obj_dict[idx_obj] = 0
 
             # Store memory encodings for continued tracking and 'best' mask for display
-            mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, mask_pred, obj_ptr, obj_score)
-            obj_memory.store_frame_result(idx_frame, mem_enc, obj_ptr)
+            encoded_mem = track_model.encode_frame_memory(encoded_img, mask_pred, obj_ptr, obj_score)
+            obj_memory.store_frame_result(encoded_mem)
             masks_on_frame_list.append(mask_pred)
 
         # Run detections to pick up new objects
@@ -197,9 +197,9 @@ try:
                     print(f"  -> Adding {num_new_objs} new objects")
                 for idx_offset, det_idx in enumerate(new_det_idxs_list):
                     raw_det_mask = det_masks[:, [det_idx]]
-                    init_mem, init_ptr = track_model.encode_prompt_memory_from_mask(encoded_img, raw_det_mask)
+                    init_mem = track_model.encode_prompt_memory_from_mask(encoded_img, raw_det_mask)
                     new_idx = next_new_idx + idx_offset
-                    memory_per_obj_dict[new_idx].store_prompt_result(idx_frame, init_mem, init_ptr)
+                    memory_per_obj_dict[new_idx].store_prompt_result(init_mem)
                     masks_on_frame_list.append(raw_det_mask)
                 pass
 

@@ -71,10 +71,8 @@ class SAMV3p1MemoryImageFusion(nn.Module):
     def forward(
         self,
         lowres_image_tokens_bchw: Tensor,
-        prompt_memory_encodings: list[Tensor],
-        prompt_object_pointers: list[Tensor],
-        frame_memory_encodings: list[Tensor],
-        frame_object_pointers: list[Tensor],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
+        frame_memory_encodings: list[tuple[Tensor, Tensor]],
         is_recent_first: bool = False,
         is_prompt_frame: bool = False,
     ) -> Tensor:
@@ -104,9 +102,7 @@ class SAMV3p1MemoryImageFusion(nn.Module):
         # Merge all prior memory data into a single set of tokens
         prev_img_tokens, memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
             prompt_memory_encodings,
-            prompt_object_pointers,
             frame_memory_encodings,
-            frame_object_pointers,
             is_recent_first,
         )
 
@@ -161,10 +157,8 @@ class MemoryConcatenator(nn.Module):
 
     def forward(
         self,
-        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
-        prompt_object_pointers: list[Tensor],
-        frame_memory_encodings: list[tuple[Tensor, Tensor]],
-        frame_object_pointers: list[Tensor],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor, Tensor]],
+        frame_memory_encodings: list[tuple[Tensor, Tensor, Tensor]],
         is_recent_first: bool,
     ) -> tuple[Tensor, Tensor, int]:
         """
@@ -197,17 +191,19 @@ class MemoryConcatenator(nn.Module):
         # Allocate storage for all 'previous image', memory and positional encodings
         # -> Note that v3.1 stores previous images inside the memory encoding entries!
         imgenc_list, memory_list, posenc_list = [], [], []
+        prompt_ptr_list, frame_ptr_list = [], []
 
         # Build memory encoding input
-        for init_imgenc, init_memenc in prompt_memory_encodings:
+        for prompt_imgenc, prompt_memenc, prompt_ptr in prompt_memory_encodings:
 
             # Convert from BxCxHxW to BxNxC
-            maskmem_enc = init_memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(init_memenc.shape, -1).flatten(2).permute(0, 2, 1)
-            previmg_enc = init_imgenc.flatten(2).permute(0, 2, 1)
+            maskmem_enc = prompt_memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(prompt_memenc.shape, -1).flatten(2).permute(0, 2, 1)
+            previmg_enc = prompt_imgenc.flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
             imgenc_list.append(previmg_enc)
+            prompt_ptr_list.append(prompt_ptr)
 
         # Get index representing how 'far away' each previous frame item is from current frame (0 is closest)
         # -> Assumes buffer is built by repeatedly appending new memory entries to a list
@@ -223,30 +219,31 @@ class MemoryConcatenator(nn.Module):
         # https://github.com/facebookresearch/sam3/blob/bfbed072a07a6a52c8d5fdc75a7a186251a835b1/sam3/model/video_tracking_multiplex.py#L1432-L1437
 
         # Combine memory encodings from past frames
-        for mem_idx, (imgenc, memenc) in zip(buffer_idx_list, frame_memory_encodings):
+        for mem_idx, (frame_imgenc, frame_memenc, frame_ptr) in zip(buffer_idx_list, frame_memory_encodings):
 
             # Convert from BxCxHxW to BxNxC
-            maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
-            previmg_enc = imgenc.flatten(2).permute(0, 2, 1)
+            maskmem_enc = frame_memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(frame_memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
+            previmg_enc = frame_imgenc.flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
             imgenc_list.append(previmg_enc)
+            frame_ptr_list.append(frame_ptr)
 
         # Record prompt pointers if present
         num_ptr_tokens = 0
-        if len(prompt_object_pointers) > 0:
+        if len(prompt_ptr_list) > 0:
             prompt_ptr_tokens_bnc, prompt_ptr_posenc_bnc = self.ptrposenc(
-                tuple(prompt_object_pointers), is_recent_first, is_prompt_encoding=True
+                prompt_ptr_list, is_recent_first, is_prompt_encoding=True
             )
             memory_list.append(prompt_ptr_tokens_bnc)
             posenc_list.append(prompt_ptr_posenc_bnc)
             num_ptr_tokens += prompt_ptr_tokens_bnc.shape[1]
 
         # Record previous frame pointers if present
-        if len(frame_object_pointers) > 0:
+        if len(frame_ptr_list) > 0:
             prev_ptr_tokens_bnc, prev_posenc_bnc = self.ptrposenc(
-                tuple(frame_object_pointers), is_recent_first, is_prompt_encoding=False
+                frame_ptr_list, is_recent_first, is_prompt_encoding=False
             )
             num_ptr_tokens += prev_ptr_tokens_bnc.shape[1]
             memory_list.append(prev_ptr_tokens_bnc)

@@ -37,7 +37,7 @@ from muggled_sam.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI,
 
 from muggled_sam.demo_helpers.video_frame_select_ui import run_video_frame_select_ui
 from muggled_sam.demo_helpers.contours import get_contours_from_mask
-from muggled_sam.demo_helpers.video_data_storage import SAMVideoObjectResults
+from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
@@ -298,12 +298,8 @@ print(
     flush=True,
 )
 
-# Allocate storage for SAM2 video masking
-objbuffer = SAMVideoObjectResults.create(
-    memory_history_length=max_memory_history,
-    pointer_history_length=max_pointer_history,
-    prompt_history_length=32,
-)
+# Allocate storage for video masking
+memory_bank = SAMVideoMemoryBank(max_memory_history, max_prompt_memory=32)
 
 # *** Image segmentation loop ***
 try:
@@ -317,11 +313,11 @@ try:
         if record_prompt_btn.read():
 
             # Produce prompt to be recorded for video segmentation
-            _, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
-            objbuffer.store_prompt_result(0, init_mem, init_ptr)
+            _, init_mem = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
+            memory_bank.store_prompt_result(init_mem)
 
             # Report the number of store prompt memories
-            num_prompt_memories, _ = objbuffer.get_num_memories()
+            num_prompt_memories, _ = memory_bank.get_num_memories()
             num_prompts_textblock.set_text(num_prompt_memories)
 
             # Wipe out prompts, to indicate storage
@@ -384,8 +380,8 @@ finally:
 
 # Sanity check. If the user didn't record
 has_prompts = any(len(prompt_type) > 0 for prompt_type in prompts)
-no_buffer = objbuffer.get_num_memories()[0] == 0
-if no_buffer and has_prompts:
+no_memory_data = memory_bank.get_num_memories()[0] == 0
+if no_memory_data and has_prompts:
     print(
         "",
         "No prompt recorded, but found an active prompt. Will automatically store...",
@@ -396,8 +392,8 @@ if no_buffer and has_prompts:
     )
 
     # Store encoding associated with last active prompt data
-    _, init_mem, init_ptr = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
-    objbuffer.store_prompt_result(0, init_mem, init_ptr)
+    _, init_mem = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=mselect_idx)
+    memory_bank.store_prompt_result(init_mem)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -463,15 +459,15 @@ try:
 
         # Wipe out per-frame history on button press
         if reset_memory_btn.read():
-            objbuffer.prevframe_buffer.clear()
+            memory_bank.clear(clear_prompt_memory=False)
             idx_keeper.clear()
 
         # Update text feedback
         vram_usage_mb = vram_report.get_vram_usage()
         vram_text.set_value(vram_usage_mb)
-        num_prompt_mems, num_prev_mems = objbuffer.get_num_memories()
+        num_prompt_mems, num_frame_mems = memory_bank.get_num_memories()
         num_prompts_text.set_value(num_prompt_mems)
-        num_history_text.set_value(num_prev_mems)
+        num_history_text.set_value(num_frame_mems)
 
         # Disable segmentation while paused or when adjusting playback (avoid crippling cpu/gpu)
         is_new_frame = idx_keeper.is_changed(frame_idx)
@@ -482,7 +478,7 @@ try:
         if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
             encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
             video_masks, video_ious, ptrs, obj_score = track_model.step_video_masking(
-                encoded_img, **objbuffer.to_dict(), return_best_only=False
+                encoded_img, **memory_bank.to_dict(), return_best_only=False
             )
 
             # Only store memory for high-scoring predictions
@@ -491,8 +487,8 @@ try:
             if obj_score_float < 0 and discard_on_bad_objscore:
                 video_masks = video_masks * 0.0
             elif enable_prevframe_storage:
-                mem_enc, obj_ptr = track_model.encode_frame_memory(encoded_img, video_masks, ptrs, obj_score, best_idx)
-                objbuffer.store_frame_result(frame_idx, mem_enc, obj_ptr)
+                encoded_mem = track_model.encode_frame_memory(encoded_img, video_masks, ptrs, obj_score, best_idx)
+                memory_bank.store_frame_result(encoded_mem)
             objscore_text.set_value(round(obj_score_float, 1))
 
             # Update the mask indicator to show which mask the model has chosen each frame

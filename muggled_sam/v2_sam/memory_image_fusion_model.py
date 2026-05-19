@@ -81,10 +81,8 @@ class SAMV2MemoryImageFusion(nn.Module):
     def forward(
         self,
         lowres_image_tokens_bchw: Tensor,
-        prompt_memory_encodings: list[Tensor],
-        prompt_object_pointers: list[Tensor],
-        frame_memory_encodings: list[Tensor],
-        frame_object_pointers: list[Tensor],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
+        frame_memory_encodings: list[tuple[Tensor, Tensor]],
         is_recent_first: bool = False,
         is_prompt_frame: bool = False,
     ) -> Tensor:
@@ -113,9 +111,7 @@ class SAMV2MemoryImageFusion(nn.Module):
         # Merge all prior memory data into a single set of tokens
         memory_tokens, memory_posenc, num_ptr_tokens = self.memconcat(
             prompt_memory_encodings,
-            prompt_object_pointers,
             frame_memory_encodings,
-            frame_object_pointers,
             is_recent_first,
         )
 
@@ -173,10 +169,8 @@ class MemoryConcatenator(nn.Module):
 
     def forward(
         self,
-        prompt_memory_encodings: list[Tensor],
-        prompt_object_pointers: list[Tensor],
-        frame_memory_encodings: list[Tensor],
-        frame_object_pointers: list[Tensor],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
+        frame_memory_encodings: list[tuple[Tensor, Tensor]],
         is_recent_first: bool,
     ) -> tuple[Tensor, Tensor, int]:
         """
@@ -209,15 +203,19 @@ class MemoryConcatenator(nn.Module):
         # Allocate storage for all memory encodings and positional encodings
         memory_list = []
         posenc_list = []
+        ptr_list = []
+        num_prompt_pointers, num_frame_pointers = 0, 0
 
-        # Build memory encoding input
-        for init_memenc in prompt_memory_encodings:
+        # Build memory encoding from prompts
+        for prompt_memenc, prompt_ptr in prompt_memory_encodings:
 
             # Convert from BxCxHxW to BxNxC
-            maskmem_enc = init_memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(init_memenc.shape, -1).flatten(2).permute(0, 2, 1)
+            maskmem_enc = prompt_memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(prompt_memenc.shape, -1).flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
+            ptr_list.append(prompt_ptr)
+            num_prompt_pointers += 1
 
         # Get index representing how 'far away' each previous frame item is from current frame (0 is closest)
         # -> Assumes buffer is built by repeatedly appending new memory entries to a list
@@ -229,19 +227,19 @@ class MemoryConcatenator(nn.Module):
         buffer_idx_list = [min(idx, self._max_mempos_idx) for idx in buffer_idx_list]
 
         # Combine memory encodings from past frames
-        for mem_idx, memenc in zip(buffer_idx_list, frame_memory_encodings):
+        for mem_idx, (frame_memenc, frame_ptr) in zip(buffer_idx_list, frame_memory_encodings):
 
             # Convert from BxCxHxW to BxNxC
-            maskmem_enc = memenc.flatten(2).permute(0, 2, 1)
-            maskmem_pos = self.memposenc(memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
+            maskmem_enc = frame_memenc.flatten(2).permute(0, 2, 1)
+            maskmem_pos = self.memposenc(frame_memenc.shape, mem_idx).flatten(2).permute(0, 2, 1)
             memory_list.append(maskmem_enc)
             posenc_list.append(maskmem_pos)
+            ptr_list.append(frame_ptr)
+            num_frame_pointers += 1
 
         # Build object pointer input if needed
         num_ptr_tokens = 0
-        num_prompt_pointers = len(prompt_object_pointers)
-        num_prev_pointers = len(frame_object_pointers)
-        have_pointers = (num_prompt_pointers + num_prev_pointers) > 0
+        have_pointers = (num_prompt_pointers > 0) or (num_frame_pointers > 0)
         if have_pointers:
 
             # Combine all pointers and figure out token shaping
@@ -254,13 +252,13 @@ class MemoryConcatenator(nn.Module):
             #    with shape: 12x256, but we want to match memory token shape, which is Nx64 (N tokens).
             #    So we break each of the 256-feature pointers into 4 (=256/64) tokens for a total of
             #    48 'pointer tokens' each with 64 features and stack them altogether, giving shape: 48x64
-            ptrs = torch.concat(list(prompt_object_pointers) + list(frame_object_pointers), dim=1)
-            ptr_batch_size, num_ptrs = ptrs.shape[0:2]
-            num_ptr_tokens = num_ptrs * self._num_tokens_per_pointer
-            ptr_tokens = ptrs.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
+            ptr_tokens = torch.concat(ptr_list, dim=1)
+            ptr_batch_size, num_source_ptrs = ptr_tokens.shape[0:2]
+            num_ptr_tokens = num_source_ptrs * self._num_tokens_per_pointer
+            ptr_tokens = ptr_tokens.reshape(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
 
             # Compute position encodings for pointer tokens
-            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_prev_pointers, is_recent_first)
+            ptrs_posenc = self.ptrposenc(num_prompt_pointers, num_frame_pointers, is_recent_first)
             ptrs_posenc = ptrs_posenc.expand(ptr_batch_size, num_ptr_tokens, self.features_per_memory_token)
 
             # Add pointer encodings to total memory/position-encoding tokens
