@@ -38,14 +38,14 @@ if img_bgr is None:
 
 # Load and set up detector model
 print("Loading model...", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 detect_model = sam_core.get_detector_context()
 detect_model.to(device=device, dtype=dtype)
 
 # Run detection
 print("Running detections...", flush=True)
 t_start = perf_counter()
-encoded_img, _, _ = detect_model.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
+encoded_img = detect_model.encode_image(img_bgr, max_side_length, use_square_sizing)
 exemplars_list = [detect_model.encode_exemplars(encoded_img, txt) for txt in text_prompts_list]
 exemplar_batch, exemplar_padding_mask = detect_model.make_exemplar_batch(*exemplars_list)
 mask_preds_bnhw, box_preds_bn22, detection_scores_bn, presence_scores_b = detect_model.generate_detections(

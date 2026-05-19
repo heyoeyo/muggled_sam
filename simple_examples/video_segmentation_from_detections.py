@@ -72,7 +72,7 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
 print("Loading model...", end=" ", flush=True)
-model_config_dict, sam_core_detect = make_sam_from_state_dict(detection_model_path)
+sam_core_detect = make_sam_from_state_dict(detection_model_path)
 detect_model = sam_core_detect.get_detector_context().to(device=device, dtype=dtype)
 print("Done!")
 
@@ -81,7 +81,7 @@ sam_core_track = sam_core_detect
 is_using_separate_tracking_model = tracking_model_path is not None
 if is_using_separate_tracking_model:
     print("Loading separate tracking model...", end=" ", flush=True)
-    _, sam_core_track = make_sam_from_state_dict(tracking_model_path)
+    sam_core_track = make_sam_from_state_dict(tracking_model_path)
     print("Done!")
 track_model = sam_core_track.get_tracking_context().to(device=device, dtype=dtype)
 needs_detect_reencode = is_using_separate_tracking_model or imgenc_config_dict_track != imgenc_config_dict_detect
@@ -110,7 +110,7 @@ try:
         t1 = perf_counter()
 
         # Encode image data for tracking (this is the heaviest part of video inference)
-        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict_track)
+        encoded_img = track_model.encode_image(frame, **imgenc_config_dict_track)
 
         # Advance video tracking for all known objects
         objs_to_remove_list = []
@@ -140,7 +140,7 @@ try:
             print(f"Performing detection update! (frame {idx_frame})")
             det_encimg = encoded_img
             if needs_detect_reencode:
-                det_encimg, _, _ = detect_model.encode_detection_image(frame, **imgenc_config_dict_detect)
+                det_encimg = detect_model.encode_image(frame, **imgenc_config_dict_detect)
             det_exemplars = detect_model.encode_exemplars(det_encimg, **detection_prompts_dict)
             det_masks, det_boxes, _, _ = detect_model.generate_detections(
                 det_encimg, det_exemplars, detection_filter_threshold=detection_score_threshold

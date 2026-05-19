@@ -31,11 +31,8 @@ from muggled_sam.demo_helpers.mask_postprocessing import MaskPostProcessor
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from muggled_sam.demo_helpers.saving import save_image_segmentation, get_save_name, make_prompt_save_data
-from muggled_sam.demo_helpers.misc import (
-    get_default_device_string,
-    make_device_config,
-    get_total_cuda_vram_usage_mb,
-)
+from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, get_total_cuda_vram_usage_mb
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -176,7 +173,7 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(**device_config_dict)
 
@@ -213,9 +210,7 @@ use_mask_hint = mask_hint_img is not None
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(
-    input_image_bgr, imgenc_base_size, use_square_sizing
-)
+encoded_img = interact_model.encode_image(input_image_bgr, imgenc_base_size, use_square_sizing)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -240,10 +235,14 @@ if use_mask_hint:
     mask_hint = mask_hint.to(mask_preds)
     mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, mask_hint)
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, input_image_bgr, imgenc_base_size, use_square_sizing)
+token_hw = get_token_hw(encoded_img)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -420,7 +419,7 @@ try:
         # Update mask previews & selected mask for outlines
         need_mask_update = any((need_prompt_encode, is_mthresh_changed, is_invert_changed, is_mask_changed))
         if need_mask_update:
-            selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_img_hw, mthresh)
+            selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_hw, mthresh)
             uictrl.update_mask_previews(mask_preds, mthresh, use_inverted_mask)
             if show_iou_preds:
                 uictrl.draw_iou_predictions(iou_preds)

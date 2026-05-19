@@ -43,7 +43,7 @@ print(f"Got {len(imgs_list)} images for batching", "", sep="\n")
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(device=device, dtype=dtype)
 
@@ -54,7 +54,7 @@ img_batch_size = img_batch_tensor.shape[0]
 # Run model on batched input (equivalent to running each input separately in a for loop)
 print("Processing image batch...")
 t_start = perf_counter()
-encoded_img, tokens_hw, _ = interact_model.encode_image(img_batch_tensor)
+encoded_img = interact_model.encode_image(img_batch_tensor)
 encoded_prompts = interact_model.encode_prompts(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts)
 t_end = perf_counter()
@@ -66,7 +66,6 @@ if torch.cuda.is_available():
     free_vram_bytes, total_vram_bytes = torch.cuda.mem_get_info()
     print("VRAM Usage:", (total_vram_bytes - free_vram_bytes) // 1_000_000)
 print("Pre-encoded batch shape:", tuple(img_batch_tensor.shape))
-print("Tokens HW:", tokens_hw)
 print("Mask results shape:", tuple(mask_preds.shape))
 print("IoU results shape:", tuple(iou_preds.shape))
 print("Time per image:", round(1000 * (t_end - t_start) / img_batch_size), "ms")

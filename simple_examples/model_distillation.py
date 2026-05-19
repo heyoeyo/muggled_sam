@@ -42,7 +42,7 @@ assert len(train_image_paths_list) > 0, "No training data found!"
 
 # Set up student
 print("Loading student model...")
-_, core_student = make_sam_from_state_dict(student_model_path)
+core_student = make_sam_from_state_dict(student_model_path)
 model_student = core_student.get_interactive_context()
 model_student.to(device=device, dtype=dtype)
 model_student.toggle_inference_mode(False)
@@ -50,7 +50,7 @@ model_student.train()
 
 # Set up teacher
 print("Loading teacher model...")
-_, core_teacher = make_sam_from_state_dict(teacher_model_path)
+core_teacher = make_sam_from_state_dict(teacher_model_path)
 model_teacher = core_teacher.get_interactive_context()
 model_teacher.to(device=device, dtype=dtype)
 model_teacher.toggle_inference_mode(False)
@@ -85,8 +85,8 @@ for epoch_idx in range(num_epochs):
 
         # Run teacher to produce ground-truth and run student for corresponding prediction
         with torch.no_grad():
-            ground_truth, _, _ = model_teacher.encode_image(img_uint8, **imgenc_config_dict)
-        prediction, _, _ = model_student.encode_image(img_uint8, **imgenc_config_dict)
+            ground_truth = model_teacher.encode_image(img_uint8, **imgenc_config_dict)
+        prediction = model_student.encode_image(img_uint8, **imgenc_config_dict)
 
         # Flatten outputs if needed to get list of tensors (v3 models output list-of-lists-of-tensors)
         if not isinstance(prediction[0], torch.Tensor):

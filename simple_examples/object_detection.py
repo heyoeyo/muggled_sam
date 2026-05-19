@@ -41,12 +41,12 @@ if img_bgr is None:
     raise FileNotFoundError(f"Error loading image from: {image_path}")
 
 # Load and set up detector model
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 detect_model = sam_core.get_detector_context()
 detect_model.to(device=device, dtype=dtype)
 
 # Run detection
-enc_img, token_hw, preencode_hw = detect_model.encode_detection_image(img_bgr, max_side_length, use_square_sizing)
+enc_img = detect_model.encode_image(img_bgr, max_side_length, use_square_sizing)
 enc_exemplars = detect_model.encode_exemplars(
     enc_img,
     text_prompt,
@@ -66,8 +66,6 @@ filtered_masks, filtered_boxes, filtered_scores, presence_score = detect_model.f
 print("")
 print("***** Results *****")
 print("Input image shape:", img_bgr.shape)
-print("Pre-encoded image height & width:", tuple(preencode_hw))
-print("Image tokens height & width:", tuple(token_hw))
 print("Raw masks shape:", tuple(mask_preds.shape))
 print("Raw boxes shape:", tuple(box_preds.shape))
 print("Raw scores shape:", tuple(detection_scores.shape))

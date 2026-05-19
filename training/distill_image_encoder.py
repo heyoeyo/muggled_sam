@@ -286,16 +286,18 @@ history.store(
 # Load student model
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
-config_student, core_student = make_sam_from_state_dict(path_student_model)
+core_student = make_sam_from_state_dict(path_student_model)
 assert core_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_student = core_student.get_interactive_context()
+config_student = core_student.get_config()
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, core_teacher = make_sam_from_state_dict(path_teacher_model)
+core_teacher = make_sam_from_state_dict(path_teacher_model)
 assert core_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_teacher = core_teacher.get_interactive_context()
+config_teacher = core_teacher.get_config()
 
 # Sanity check. Make sure were using matching models
 assert isinstance(
@@ -626,7 +628,7 @@ if have_init_prompts:
 
 def run_full(model: nn.Module, image_tensor_bchw: torch.Tensor):
     """Helper used to run full image encoding for training"""
-    encoded_imgs_list, _, _ = model.encode_image(image_tensor_bchw)
+    encoded_imgs_list = model.encode_image(image_tensor_bchw)
     flat_list = []
     for item in encoded_imgs_list:
         flat_list.extend(item)
@@ -787,7 +789,7 @@ try:
                 teacher_cache.clear()
 
             # Re-predict teacher results
-            true_encimg, _, _ = model_teacher.encode_image(loaded_image_bgr, **imgenc_config_dict)
+            true_encimg = model_teacher.encode_image(loaded_image_bgr, **imgenc_config_dict)
             true_encpmt = model_teacher.encode_prompts(**prompts_dict)
             true_mask_preds, true_iou_scores = model_teacher.generate_masks(true_encimg, true_encpmt)
             plot_scores_elem.set_true_data(true_iou_scores.squeeze(0).float().cpu().numpy())
@@ -929,7 +931,7 @@ try:
                     # internal data (e.g. position encodings) as user changes inference settings, but
                     # we get an error if the cache is re-generated inside of inference_mode, hence no_grad!
                     # (mainly a problem due to image size/aspect ratio changes)
-                    test_encimg, _, _ = model_student.encode_image(loaded_image_bgr, **imgenc_config_dict)
+                    test_encimg = model_student.encode_image(loaded_image_bgr, **imgenc_config_dict)
                     test_encpmt = model_student.encode_prompts(**prompts_dict)
                     test_mask_preds, test_iou_preds = model_student.generate_masks(test_encimg, test_encpmt)
 

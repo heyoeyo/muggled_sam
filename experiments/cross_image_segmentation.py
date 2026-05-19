@@ -51,6 +51,7 @@ from muggled_sam.demo_helpers.mask_postprocessing import calculate_mask_stabilit
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, get_total_cuda_vram_usage_mb
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 from muggled_sam.demo_helpers.saving import save_image_segmentation, get_save_name, make_prompt_save_data
 
 
@@ -165,7 +166,7 @@ history.store(image_path=image_path_a, cross_image_path=image_path_b, model_path
 # Try loading model weights
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 assert sam_core.name in ("samv2", "samv3"), "Only SAMv2/v3 models are supported for cross-segmentation!"
 sam_core.to(**device_config_dict)
 interact_model = sam_core.get_interactive_context()
@@ -210,8 +211,8 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 # Run Model
 print("", "Encoding images...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img_a, token_hw, preencode_img_hw = interact_model.encode_image(full_image_a, **imgenc_config_dict)
-encoded_img_b, _, _ = interact_model.encode_image(full_image_b, **imgenc_config_dict)
+encoded_img_a = interact_model.encode_image(full_image_a, **imgenc_config_dict)
+encoded_img_b = interact_model.encode_image(full_image_b, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -223,10 +224,14 @@ encoded_prompts = interact_model.encode_prompts([], [], [])
 mask_a_preds, iou_a_preds = interact_model.generate_masks(encoded_img_a, encoded_prompts)
 mask_b_preds, iou_b_preds = interact_model.generate_masks(encoded_img_b, encoded_prompts)
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, full_image_a, **imgenc_config_dict)
+token_hw = get_token_hw(encoded_img_a)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -450,8 +455,8 @@ try:
             mask_a, mask_b = mask_a_preds[0, mask_a_idx], mask_b_preds[0, mask_b_idx]
 
             # Get contours from masks & draw them
-            hires_a = make_hires_mask_uint8(mask_a, preencode_img_hw, mask_threshold)
-            hires_b = make_hires_mask_uint8(mask_b, preencode_img_hw, mask_threshold)
+            hires_a = make_hires_mask_uint8(mask_a, preencode_hw, mask_threshold)
+            hires_b = make_hires_mask_uint8(mask_b, preencode_hw, mask_threshold)
             _, cont_a = get_contours_from_mask(hires_a, normalize=True)
             _, cont_b = get_contours_from_mask(hires_b, normalize=True)
             overlays_a.polygon.set_polygons(cont_a)

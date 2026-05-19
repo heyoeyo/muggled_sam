@@ -27,7 +27,7 @@ from .state_dict_conversion.convert_original_state_dict_keys import SAM1ModuleTy
 
 def make_samv1_from_original_state_dict(
     original_state_dict: dict | str, strict_load=True, weights_only=True
-) -> [dict, SAMV1Core]:
+) -> SAMV1Core:
     """
     Function used to initialize a SAM (v1) model from a state dictionary (i.e. model weights) file.
     This function will automatically figure out the model sizing parameters from the state dict,
@@ -37,7 +37,7 @@ def make_samv1_from_original_state_dict(
     a string can be given, in which case it will be assumed to be a path to load the state dict
 
     Returns:
-        model_config_dict, sam_model
+        sam_core
     """
 
     # If we're given a string, assume it's a path to the state dict
@@ -72,7 +72,7 @@ def make_samv1_from_original_state_dict(
     sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM1ModuleType.prompt_encoder], strict_load)
     sam_model.mask_decoder.load_state_dict(new_state_dict[SAM1ModuleType.mask_decoder], strict_load)
 
-    return model_config_dict, sam_model
+    return sam_model
 
 
 # .....................................................................................................................
@@ -82,7 +82,7 @@ def make_samv1_from_muggled_state_dict(
     muggled_state_dict: dict | str,
     strict_load: bool = True,
     weights_only: bool = True,
-) -> [dict, SAMV1Core]:
+) -> SAMV1Core:
     """
     Similar to the '...from_original_state_dict' function, this function instantiates a
     SAMV1 model from a state dictionary file (e.g. model weights) and automatically
@@ -95,7 +95,7 @@ def make_samv1_from_muggled_state_dict(
     a string can be given, in which case it will be assumed to be a path to load the state dict
 
     Returns:
-        model_config_dict, sam_v1_model
+        sam_v1_core
     """
 
     # If we're given a string, assume it's a path to the state dict
@@ -123,7 +123,7 @@ def make_samv1_from_muggled_state_dict(
     sam_model = make_sam_v1(**config_dict)
     sam_model.load_state_dict(muggled_state_dict, strict_load)
 
-    return config_dict, sam_model
+    return sam_model
 
 
 # .....................................................................................................................

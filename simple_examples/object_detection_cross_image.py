@@ -44,12 +44,12 @@ if target_img_bgr is None:
     raise FileNotFoundError(f"Error loading target image: {target_image_path}")
 
 # Load and set up detector model
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 detect_model = sam_core.get_detector_context()
 detect_model.to(device=device, dtype=dtype)
 
 # Encode exemplars from *reference* image
-enc_ref_img, _, _ = detect_model.encode_detection_image(ref_img_bgr, **imgenc_config_dict)
+enc_ref_img = detect_model.encode_image(ref_img_bgr, **imgenc_config_dict)
 enc_ref_exemplars = detect_model.encode_exemplars(
     enc_ref_img,
     text_prompt,
@@ -60,7 +60,7 @@ enc_ref_exemplars = detect_model.encode_exemplars(
 )
 
 # Detect exemplars on *target* image
-enc_targ_img, token_hw, preencode_hw = detect_model.encode_detection_image(target_img_bgr, **imgenc_config_dict)
+enc_targ_img = detect_model.encode_image(target_img_bgr, **imgenc_config_dict)
 mask_preds, box_preds, detection_scores, pres_score = detect_model.generate_detections(enc_targ_img, enc_ref_exemplars)
 filtered_masks, filtered_boxes, filtered_scores, pres_score = detect_model.filter_detections(
     mask_preds, box_preds, detection_scores, pres_score, detection_score_threshold

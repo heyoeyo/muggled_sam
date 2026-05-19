@@ -16,6 +16,7 @@ except ModuleNotFoundError:
 import cv2
 import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 # Define pathing
 image_path = "/path/to/image.jpg"
@@ -39,22 +40,27 @@ if img_bgr is None:
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(device=device, dtype=dtype)
 
 # Process data
 print("Generating masks...")
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(img_bgr, max_side_length, use_square_sizing)
+encoded_img = interact_model.encode_image(img_bgr, max_side_length, use_square_sizing)
 encoded_prompts = interact_model.encode_prompts(box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, mask_hint)
+
+# Get some info for reporting
+token_hw = get_token_hw(encoded_img)
+preencode_hw = get_preencoding_hw(interact_model, img_bgr, max_side_length, use_square_sizing)
+model_config_dict = sam_core.get_config()
 
 # Feedback
 print("")
 print("Results:")
 print("Input image shape:", img_bgr.shape)
-print("Pre-encoded image height & width:", tuple(preencode_img_hw))
-print("Image tokens height & width:", tuple(token_hw))
+print("Pre-encoded image height & width:", preencode_hw)
+print("Image tokens height & width:", token_hw)
 print("Mask results shape:", tuple(mask_preds.shape))
 print("IoU scores:", iou_preds[0].tolist())
 print("")

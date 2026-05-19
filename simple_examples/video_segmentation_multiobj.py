@@ -76,7 +76,7 @@ vcap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 track_model = sam_core.get_tracking_context()
 track_model.to(device=device, dtype=dtype)
 
@@ -96,7 +96,7 @@ try:
         scaled_frame = cv2.resize(frame, dsize=None, fx=0.5, fy=0.5)
 
         # Encode frame data (shared for all objects)
-        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
 
         # Generate & store prompt memory encodings for each object as needed
         prompts_dict = prompts_per_frame_index.get(frame_idx, None)

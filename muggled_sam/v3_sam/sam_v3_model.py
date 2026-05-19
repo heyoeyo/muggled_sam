@@ -6,6 +6,7 @@
 # %% Imports
 
 import os.path as osp
+from json import loads as load_json_str
 from contextlib import contextmanager
 
 import torch
@@ -125,7 +126,13 @@ class SAMV3Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+        encoded_img = SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+
+        # Figure out additional outputs as needed by old API
+        img_tensor = self.prepare_image_batch([image_bgr], max_side_length, use_square_sizing)
+        preencode_hw = tuple(img_tensor.shape[-2:])
+        token_hw = tuple(encoded_img[0][0].shape[-2:])
+        return encoded_img, token_hw, preencode_hw
 
     def generate_masks(
         self,
@@ -233,6 +240,15 @@ class SAMV3Core(nn.Module):
 
     # .................................................................................................................
 
+    def get_config(self) -> dict:
+        """Returns model config dictionary"""
+        # Convert config from tensor->bytes->string/json->dictionary
+        config_as_bytes = bytearray(self.config_muggled_samv3.cpu().tolist())
+        config_as_str = config_as_bytes.decode()
+        return load_json_str(config_as_str)
+
+    # .................................................................................................................
+
     def get_interactive_context(self) -> nn.Module:
         """Creates an interactive model, used for user-prompted image segmentation"""
         return SAMV3InteractiveModel(
@@ -335,7 +351,7 @@ class SAMV3InteractiveModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The max_side_length setting is used to set the size at which the image is processed, if
@@ -344,7 +360,7 @@ class SAMV3InteractiveModel(nn.Module):
         or scaled (to the max_side_length) based on it's original aspect ratio.
 
         Returns:
-            encoded_image, patch_grid_hw, preencoded_image_hw
+            encoded_image
             -> Encoded image is a list containing 2 sets of multi-resolution
                feature maps, which correspond to SAMv2 or SAMv3 tasks.
                Each entry itself contains 3 tensors where are
@@ -352,11 +368,6 @@ class SAMV3InteractiveModel(nn.Module):
                the lowest resolution map with the 1st and 2nd index
                entries being 2x and 4x larger.
                Note, the v2 & v3 entries have different channel counts!
-            -> The patch_grid_hw contains the height & width of the low-res
-               feature map (72x72 with default 1008x1008 input sizing)
-            -> The preencoded_image_hw contains the height & width of the
-               input image after pre-processing just before being encoded,
-               by default it would be 1008x1008
         """
 
         with _inference_mode(self._infmode):
@@ -364,11 +375,7 @@ class SAMV3InteractiveModel(nn.Module):
             encoded_img = self.image_encoder(image_rgb_normalized_bchw)
             encoded_image_features_list = self.image_projection(encoded_img)
 
-        # Get patch sizing of lowest-res tokens (as needed by other components) & size of processed image
-        patch_grid_hw = encoded_image_features_list[0][0].shape[2:]
-        image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
-
-        return encoded_image_features_list, patch_grid_hw, image_preenc_hw
+        return encoded_image_features_list
 
     # .................................................................................................................
 
@@ -496,7 +503,7 @@ class SAMV3InteractiveModel(nn.Module):
 
         # Run model to fill in cache
         if example_image_bgr is not None:
-            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_imgs = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
             encoded_prompts = self.encode_prompts([], [(0.5, 0.5)], [])
             self.generate_masks(encoded_imgs, encoded_prompts)
 
@@ -577,15 +584,14 @@ class SAMV3TrackingModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
         of the image before encoding.
         Returns:
-            encoded_image, patch_grid_hw, preencoded_image_hw
+            encoded_image
         """
-
         return SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
     # .................................................................................................................
@@ -897,7 +903,7 @@ class SAMV3TrackingModel(nn.Module):
 
         # Run model to fill in cache
         if example_image_bgr is not None:
-            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_imgs = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
             _, init_mem = self.encode_prompt_memory(encoded_imgs, [], [(0.5, 0.5)], [])
             self.step_video_masking(encoded_imgs, [init_mem], [])
 
@@ -996,15 +1002,14 @@ class SAMV3DetectorModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
         of the image before encoding.
         Returns:
-            encoded_image, patch_grid_hw, preencoded_image_hw
+            encoded_image
         """
-
         return SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
     # .................................................................................................................
@@ -1303,7 +1308,7 @@ class SAMV3DetectorModel(nn.Module):
 
         # Run model to fill in cache
         if example_image_bgr is not None:
-            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_imgs = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
             encoded_exemplars = self.encode_exemplars(
                 encoded_imgs,
                 text="visual",

@@ -47,12 +47,12 @@ assert (init_mask is not None) and (init_mask_image is not None), "Error reading
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 track_model = sam_core.get_tracking_context()
 track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = track_model.encode_image(init_mask_image, **imgenc_config_dict)
+init_encoded_img = track_model.encode_image(init_mask_image, **imgenc_config_dict)
 init_mem = track_model.encode_prompt_memory_from_mask(init_encoded_img, init_mask)
 
 # Set up data storage for prompted object (repeat this for each unique object)
@@ -76,7 +76,7 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
         masks_b1hw, ious_b1, ptrs_b1c, obj_score = track_model.step_video_masking(encoded_img, prompt_mems, frame_mems)
         if is_using_cuda:
             torch.cuda.synchronize()

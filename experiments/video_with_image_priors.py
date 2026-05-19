@@ -42,6 +42,7 @@ from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, get_default_device_string, make_device_config
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -178,7 +179,7 @@ history.store(image_path=image_path, video_path=video_path, model_path=model_pat
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 sam_core.to(**device_config_dict)
 interact_model = sam_core.get_interactive_context()
 track_model = sam_core.get_tracking_context()
@@ -201,7 +202,7 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
+encoded_img = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -213,10 +214,14 @@ encoded_prompts = interact_model.encode_prompts([], [], [])
 mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, full_image_bgr, **imgenc_config_dict)
+token_hw = get_token_hw(encoded_img)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -338,7 +343,7 @@ try:
         # Update mask previews & selected mask for outlines
         need_mask_update = any((need_prompt_encode, is_mask_changed))
         if need_mask_update:
-            selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_img_hw)
+            selected_mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mselect_idx, preencode_hw)
             uictrl.update_mask_previews(mask_preds)
 
         # Process contour data
@@ -405,10 +410,11 @@ playback_slider = LoopingVideoPlaybackSlider(vreader, stay_paused_on_change=Fals
 sample_frame = vreader.get_sample_frame()
 
 # Setup initial model results
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(sample_frame, **imgenc_config_dict)
+encoded_img = interact_model.encode_image(sample_frame, **imgenc_config_dict)
 encoded_prompts = interact_model.encode_prompts([], [], [])
 mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts)
 prediction_hw = mask_preds.shape[2:]
+preencode_hw = get_preencoding_hw(interact_model, sample_frame, **imgenc_config_dict)
 
 # Set up simpler UI for video playback
 ui_elems.enable_tools(False)
@@ -476,7 +482,7 @@ try:
 
         # Only run segmentation on unseen frames
         if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
-            encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+            encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
             video_masks, video_ious, ptrs, obj_score = track_model.step_video_masking(
                 encoded_img, **memory_bank.to_dict(), return_best_only=False
             )
@@ -498,7 +504,7 @@ try:
                 uictrl.draw_iou_predictions(video_ious)
 
             # Process contour data
-            selected_mask_uint8 = uictrl.create_hires_mask_uint8(video_masks, best_idx, preencode_img_hw)
+            selected_mask_uint8 = uictrl.create_hires_mask_uint8(video_masks, best_idx, preencode_hw)
             ok_contours, mask_contours_norm = get_contours_from_mask(selected_mask_uint8, normalize=True)
 
             # Record the fact we worked on this frame

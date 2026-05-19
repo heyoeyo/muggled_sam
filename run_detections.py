@@ -32,6 +32,7 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.saving import get_save_name, save_json_data, save_image_data
 from muggled_sam.demo_helpers.mask_postprocessing import sample_points_from_mask
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 from muggled_sam.demo_helpers.misc import (
     get_default_device_string,
     make_device_config,
@@ -189,7 +190,7 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 detect_model = sam_core.get_detector_context(arg_bpe_path)
 detect_model.to(**device_config_dict)
 
@@ -239,7 +240,7 @@ if enable_compilation:
 # Run image encoding (only need to do this once)
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_imgs, token_hw, preencode_img_hw = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
+encoded_img = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -247,16 +248,20 @@ time_taken_ms = round(1000 * (t2 - t1))
 print(f"  -> Took {time_taken_ms} ms", flush=True)
 
 # Optionally encode a separate reference image
-ref_encoded_imgs = encoded_imgs
+ref_encoded_img = encoded_img
 if have_different_ref_image:
     print("", "Using separate reference image", "Encoding reference image data...", sep="\n", flush=True)
-    ref_encoded_imgs, _, _ = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
+    ref_encoded_img = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
     print("  Done", flush=True)
+
+# Get sizing information for reporting
+token_hw = get_token_hw(encoded_img)
+preencode_hw = get_preencoding_hw(detect_model, input_image_bgr, **imgenc_config_dict)
 
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -320,7 +325,7 @@ time_txtblock = ValueBlock("", "-", "ms")
 score_range_txtblock = ValueBlock("Scores: ", "-")
 
 # Set up slider for adjusting image encoding size after-the-fact (and swapping if using separate ref. image)
-init_encsize = max(preencode_img_hw)
+init_encsize = max(preencode_hw)
 imgsize_slider = HSlider("Encoding Size", init_encsize, 28, 2 * init_encsize, 14, marker_steps=18)
 imgswap_button = ImmediateButton("Swap", (185, 120, 75), text_scale=0.5)
 
@@ -502,7 +507,7 @@ try:
         # Handle image swapping
         if have_different_ref_image and imgswap_button.read():
             input_image_bgr, input_ref_image_bgr = input_ref_image_bgr, input_image_bgr
-            encoded_imgs, ref_encoded_imgs = ref_encoded_imgs, encoded_imgs
+            encoded_img, ref_encoded_img = ref_encoded_img, encoded_img
             out_src_img, ref_src_img = ref_src_img, out_src_img
             txt_mode_out_img, txt_mode_ref_img = txt_mode_ref_img, txt_mode_out_img
             out_hw, ref_hw = ref_hw, out_hw
@@ -516,10 +521,10 @@ try:
         # Handle re-encoding of image data if sizing changes
         if is_size_changed:
             imgenc_config_dict["max_side_length"] = img_enc_size
-            encoded_imgs, _, _ = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
-            ref_encoded_imgs = encoded_imgs
+            encoded_img = detect_model.encode_image(input_image_bgr, **imgenc_config_dict)
+            ref_encoded_img = encoded_img
             if have_different_ref_image:
-                ref_encoded_imgs, _, _ = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
+                ref_encoded_img = detect_model.encode_image(input_ref_image_bgr, **imgenc_config_dict)
             need_detection_update = True
 
         # Wipe out prompts on clear
@@ -678,8 +683,8 @@ try:
 
             # Run model with timing
             t1 = perf_counter()
-            exemplars = detect_model.encode_exemplars(ref_encoded_imgs, **prompts_dict)
-            mask_preds, box_preds, det_scores, _ = detect_model.generate_detections(encoded_imgs, exemplars)
+            exemplars = detect_model.encode_exemplars(ref_encoded_img, **prompts_dict)
+            mask_preds, box_preds, det_scores, _ = detect_model.generate_detections(encoded_img, exemplars)
             t2 = perf_counter()
             time_txtblock.set_value(round(1000 * (t2 - t1)))
 

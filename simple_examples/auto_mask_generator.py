@@ -59,10 +59,10 @@ assert any(filter_by_idx), "Must use at least one mask prediction from model!"
 
 # Set up model
 print("Loading model & encoding image data...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(device=device, dtype=dtype)
-encoded_img, _, _ = interact_model.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
+encoded_img = interact_model.encode_image(img_bgr, max_side_length=None, use_square_sizing=True)
 
 # Generate grid of point prompts & generate mask for each
 print(f"Generating masks ({num_total_prompts} total prompts)...")

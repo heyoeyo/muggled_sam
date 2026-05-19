@@ -34,7 +34,6 @@ from muggled_sam.demo_helpers.ui.helpers.images import FrameCompositing
 from muggled_sam.demo_helpers.shared_ui_layout import PromptUIControl, PromptUI
 from muggled_sam.demo_helpers.crop_ui import run_crop_ui
 
-from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.prompts import check_have_prompts
@@ -42,6 +41,8 @@ from muggled_sam.demo_helpers.contours import get_contours_from_mask
 from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 from muggled_sam.demo_helpers.saving import save_video_frames, get_save_name
 from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_ffmpeg_path, save_video_stream
+from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -238,7 +239,7 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 sam_core.to(**device_config_dict)
 interact_model = sam_core.get_interactive_context()
 track_model = sam_core.get_tracking_context()
@@ -257,7 +258,7 @@ if enable_crop_ui:
 # Initial model run to make sure everything succeeds
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(sample_frame, **imgenc_config_dict)
+encoded_img = interact_model.encode_image(sample_frame, **imgenc_config_dict)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -270,10 +271,14 @@ encoded_prompts = interact_model.encode_prompts(*prompts)
 init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 prediction_hw = init_mask_preds.shape[2:]
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, sample_frame, imgenc_base_size, imgenc_base_size)
+token_hw = get_token_hw(encoded_img)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -570,7 +575,7 @@ try:
         # Encode any 'new' frames as needed (but not on playback slider changes, would cripple the machine)
         need_image_encode = imgenc_idx_keeper.is_changed(frame_idx)
         if need_image_encode and not is_playback_adjusting:
-            encoded_img, _, _ = interact_model.encode_image(frame, **imgenc_config_dict)
+            encoded_img = interact_model.encode_image(frame, **imgenc_config_dict)
             imgenc_idx_keeper.record(frame_idx)
 
         # Wipe out masking/contours when jumping around playback (otherwise stays over top of changing video!)
@@ -619,9 +624,7 @@ try:
             # If a prompt exists when tracking begins, assume we should use it
             if check_have_prompts(*prompts):
                 user_idx_select = maskresults_list[buffer_select_idx].idx
-                _, init_mem = track_model.encode_prompt_memory(
-                    encoded_img, *prompts, mask_index=user_idx_select
-                )
+                _, init_mem = track_model.encode_prompt_memory(encoded_img, *prompts, mask_index=user_idx_select)
                 memory_list[buffer_select_idx].store_prompt_result(init_mem)
                 if clear_history_on_new_prompts:
                     memory_list[buffer_select_idx].clear(clear_prompt_memory=False)
@@ -727,7 +730,7 @@ try:
         unselected_contours = []
         for objidx, maskresult in enumerate(maskresults_list):
             mask_preds, mask_idx = maskresult.preds, maskresult.idx
-            mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mask_idx, preencode_img_hw)
+            mask_uint8 = uictrl.create_hires_mask_uint8(mask_preds, mask_idx, preencode_hw)
             _, mask_contours_norm = get_contours_from_mask(mask_uint8, normalize=True)
             mask_contours_norm = tuple(mask_contours_norm)
             is_selected_idx = objidx == buffer_select_idx

@@ -58,6 +58,7 @@ from muggled_sam.demo_helpers.model_capture import ModelOutputCapture
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -154,7 +155,8 @@ imgenc_config_dict = {"max_side_length": imgenc_base_size, "use_square_sizing": 
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
+model_config_dict = sam_core.get_config()
 interact_model = sam_core.get_interactive_context()
 interact_model.to(**device_config_dict)
 
@@ -187,7 +189,7 @@ else:
 
 # Capture target module output
 captures = ModelOutputCapture(interact_model, target_modules=target_modules)
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
+encoded_img = interact_model.encode_image(full_image_bgr, **imgenc_config_dict)
 assert len(captures) > 0, "Error! No block data was captured... likely targeting the wrong blocks?"
 
 # For SAMv1, every windowed block includes a global block that operates on windows. We need to remove these!
@@ -196,10 +198,14 @@ assert len(captures) > 0, "Error! No block data was captured... likely targeting
 if is_v1_model:
     captures = [cap for cap in captures if cap.shape[0] == 1]
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, full_image_bgr, **imgenc_config_dict)
+token_hw = get_token_hw(encoded_img)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",

@@ -18,6 +18,7 @@ import torch
 import numpy as np
 from time import perf_counter
 from muggled_sam.make_sam import make_sam_from_state_dict
+from muggled_sam.demo_helpers.model_info import get_preencoding_hw
 
 # Define pathing
 model_path = "/path/to/model.pth"
@@ -41,7 +42,7 @@ if device == "cpu":
 # Set up model
 print(f"Loading model ({os.path.basename(model_path)})")
 t1 = perf_counter()
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(device=device, dtype=dtype)
 t2 = perf_counter()
@@ -50,15 +51,15 @@ print("-> Loading took", round(1000 * (t2 - t1)), "ms")
 # Fill in missing processing size, if needed
 if max_side_length is None:
     prep_img = np.zeros((10, 10, 3), dtype=np.uint8)
-    prep_tensor = interact_model.image_encoder.prepare_image(prep_img, None, use_square_sizing)
-    max_side_length = int(max(prep_tensor.shape[-2:]))
+    preencode_hw = get_preencoding_hw(interact_model, prep_img, None, use_square_sizing)
+    max_side_length = int(max(preencode_hw))
 print("", f"Using max side length: {max_side_length}px", f"Square sizing: {use_square_sizing}", sep="\n", flush=True)
 
 # Model warm-up (excludes one-time VRAM/cache allocation from timing)
 print("", f"Running warm-up ({device} / {dtype})", sep="\n", flush=True)
 test_img = np.random.randint(0, 255, (max_side_length, max_side_length, 3), dtype=np.uint8)
 for _ in range(num_warmup_iterations):
-    encoded_img, _, _ = interact_model.encode_image(test_img, max_side_length, use_square_sizing)
+    encoded_img = interact_model.encode_image(test_img, max_side_length, use_square_sizing)
     encoded_prompts = interact_model.encode_prompts([[(0.25, 0.25), (0.5, 0.5)]], [(0.5, 0.5)], [(0.75, 0.75)])
     _, _ = interact_model.generate_masks(encoded_img, encoded_prompts)
 if torch.cuda.is_available():
@@ -68,7 +69,7 @@ if torch.cuda.is_available():
 print("", f"Running image encoder ({num_image_encoder_iterations} iterations)", sep="\n", flush=True)
 t1 = perf_counter()
 for _ in range(num_image_encoder_iterations):
-    encoded_img, _, _ = interact_model.encode_image(test_img, max_side_length, use_square_sizing)
+    encoded_img = interact_model.encode_image(test_img, max_side_length, use_square_sizing)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()

@@ -41,6 +41,7 @@ from muggled_sam.demo_helpers.contours import get_contours_from_mask
 from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
+from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -151,7 +152,7 @@ history.store(image_path=image_path, model_path=model_path)
 model_name = osp.basename(model_path)
 
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(**device_config_dict)
 
@@ -170,9 +171,7 @@ if full_image_bgr is None:
 # Run Model
 print("", "Encoding image data...", sep="\n", flush=True)
 t1 = perf_counter()
-encoded_img, token_hw, preencode_img_hw = interact_model.encode_image(
-    full_image_bgr, imgenc_base_size, use_square_sizing
-)
+encoded_img = interact_model.encode_image(full_image_bgr, imgenc_base_size, use_square_sizing)
 if torch.cuda.is_available():
     torch.cuda.synchronize()
 t2 = perf_counter()
@@ -184,10 +183,14 @@ encoded_prompts = interact_model.encode_prompts([], [], [])
 init_mask_preds, iou_preds = interact_model.generate_masks(encoded_img, encoded_prompts, blank_promptless_output=False)
 mask_uint8 = normalize_to_npuint8(init_mask_preds[0, 0, :, :])
 
+# Get sizing information for reporting
+preencode_hw = get_preencoding_hw(interact_model, full_image_bgr, imgenc_base_size, use_square_sizing)
+token_hw = get_token_hw(encoded_img)
+
 # Provide some feedback about how the model is running
 model_device = device_config_dict["device"]
 model_dtype = str(device_config_dict["dtype"]).split(".")[-1]
-image_hw_str = f"{preencode_img_hw[0]} x {preencode_img_hw[1]}"
+image_hw_str = f"{preencode_hw[0]} x {preencode_hw[1]}"
 token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
 print(
     "",
@@ -208,7 +211,7 @@ ui_elems = PromptUI(full_image_bgr, init_mask_preds)
 uictrl = PromptUIControl(ui_elems)
 
 # Set up slider controls
-init_img_size = max(preencode_img_hw)
+init_img_size = max(preencode_hw)
 rescale_slider = HSlider("Input rescale", 1, 0, 2, step_size=0.01, marker_steps=10, bar_bg_color=(35, 55, 60))
 sidelength_slider = HSlider(
     "Encoding Side Length",
@@ -315,7 +318,7 @@ try:
         if is_rescale_changed:
 
             # Compute new input sizing
-            new_h, new_w = [max(3, round(rescale_factor * side)) for side in preencode_img_hw]
+            new_h, new_w = [max(3, round(rescale_factor * side)) for side in preencode_hw]
 
             # Downscale then upscale back to original size, so we get scaling artifacts
             orig_h, orig_w = full_image_bgr.shape[0:2]
@@ -329,12 +332,13 @@ try:
 
             # Update window sizing & re-run image segmentation to get new (raw) mask outputs for display
             t1 = perf_counter()
-            encoded_img, token_hw, _ = interact_model.encode_image(rescaled_img_bgr, max_side_length, use_square_sizing)
+            encoded_img = interact_model.encode_image(rescaled_img_bgr, max_side_length, use_square_sizing)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             t2 = perf_counter()
 
             # Update token sizing
+            token_hw = get_token_hw(encoded_img)
             token_hw_str = f"{token_hw[0]} x {token_hw[1]}"
             header_msgbar.update_message(f"{token_hw_str} tokens", target_index=1)
 

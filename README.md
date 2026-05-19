@@ -114,11 +114,11 @@ bg_xys = []
 
 # Load image & model
 image_bgr = cv2.imread("/path/to/image.jpg")
-_, sam_core = make_sam_from_state_dict("/path/to/model.pth")
+sam_core = make_sam_from_state_dict("/path/to/model.pth")
 interact_model = sam_core.get_interactive_context()
 
 # Process data
-enc_img, _, _ = interact_model.encode_image(image_bgr)
+enc_img = interact_model.encode_image(image_bgr)
 enc_prompts = interact_model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
 mask_preds, iou_preds = interact_model.generate_masks(enc_img, enc_prompts)
 ```

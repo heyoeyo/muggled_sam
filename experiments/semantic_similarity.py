@@ -61,8 +61,8 @@ def encode_image_samv3(
 
         # Generate normal image encodings (i.e. with feature projection)
         hflip_image_bgr = np.fliplr(image_bgr)
-        multiversion_reg_encimgs, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
-        multiversion_flip_encimgs, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+        multiversion_reg_encimgs = model.encode_image(image_bgr, max_side_length, use_square_sizing)
+        multiversion_flip_encimgs = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
 
         # Combine regular encodings with horizontal flip in batch dimension for output
         multver_reg_and_flipped_encimg_list = []
@@ -112,8 +112,8 @@ def encode_image_samv2(model, image_bgr, max_side_length=1024, use_square_sizing
 
         # Generate normal image encodings (i.e. with feature projection)
         hflip_image_bgr = np.fliplr(image_bgr)
-        reg_encimg_list, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
-        flip_encimg_list, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+        reg_encimg_list = model.encode_image(image_bgr, max_side_length, use_square_sizing)
+        flip_encimg_list = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
 
         # Combine regular encodings with horizontal flip in batch dimension for output
         proj_encimg_list = []
@@ -168,8 +168,8 @@ def encode_image_samv1(model, image_bgr, max_side_length=1024, use_square_sizing
 
         # Generate normal image encodings (i.e. with feature projection)
         hflip_image_bgr = np.fliplr(image_bgr)
-        reg_encimg, _, _ = model.encode_image(image_bgr, max_side_length, use_square_sizing)
-        flip_encimg, _, _ = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
+        reg_encimg = model.encode_image(image_bgr, max_side_length, use_square_sizing)
+        flip_encimg = model.encode_image(hflip_image_bgr, max_side_length, use_square_sizing)
 
         # Unpack compatibility list wrapper
         reg_encimg = reg_encimg[0]
@@ -373,7 +373,7 @@ else:
 # Get the model name, for reporting
 model_name = osp.basename(model_path)
 print("", "Loading model weights...", f"  @ {model_path}", sep="\n", flush=True)
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 interact_model = sam_core.get_interactive_context()
 interact_model.to(**device_config_dict)
 

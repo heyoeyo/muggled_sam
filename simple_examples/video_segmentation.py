@@ -46,7 +46,7 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 track_model = sam_core.get_tracking_context()
 track_model.to(device=device, dtype=dtype)
 
@@ -56,7 +56,7 @@ if enable_compilation:
     track_model.enable_compilation(first_frame, **imgenc_config_dict)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
+init_encoded_img = track_model.encode_image(first_frame, **imgenc_config_dict)
 _, init_mem = track_model.encode_prompt_memory(
     init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index=None
 )
@@ -81,7 +81,7 @@ try:
 
         # Process video frames (with timing)
         t1 = perf_counter()
-        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
         if is_using_cuda:
             torch.cuda.synchronize()
         t2 = perf_counter()

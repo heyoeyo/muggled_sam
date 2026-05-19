@@ -23,7 +23,7 @@ def make_sam_from_state_dict(
     path_to_state_dict: str | dict[str, Tensor],
     strict_load: bool = True,
     weights_only: bool = True,
-) -> tuple[dict, torch.nn.Module]:
+) -> torch.nn.Module:
     """
     Function used to load a SAM v1, v2 or v3 model from a state dict (e.g. model weights).
     The model version and sizing is automatically inferred from the weights.
@@ -32,7 +32,7 @@ def make_sam_from_state_dict(
     or otherwise the state dict can be provided directly
 
     Returns:
-        model_config_dict, sam_model
+        sam_model
     """
 
     # Load weights if needed (otherwise assume we were given weights directly)
@@ -52,8 +52,8 @@ def make_sam_from_state_dict(
         raise NotImplementedError("Cannot load model! Unrecognized weights...")
 
     # Build the model & supporting data
-    config_dict, sam_model = make_sam_func(state_dict, strict_load, weights_only)
-    return config_dict, sam_model
+    sam_model = make_sam_func(state_dict, strict_load, weights_only)
+    return sam_model
 
 
 # .....................................................................................................................

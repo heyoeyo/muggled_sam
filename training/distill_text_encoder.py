@@ -258,16 +258,18 @@ history.store(
 # Load student model
 name_student = Path(path_student_model).name
 print("", "Loading student model...", f"@ {path_student_model}", sep="\n")
-config_student, core_student = make_sam_from_state_dict(path_student_model)
+core_student = make_sam_from_state_dict(path_student_model)
 assert core_student.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_student = core_student.get_detector_context()
+config_student = core_student.get_config()
 
 # Load up teacher model
 name_teacher = Path(path_teacher_model).name
 print("", "Loading teacher model...", f"@ {path_teacher_model}", sep="\n")
-config_teacher, core_teacher = make_sam_from_state_dict(path_teacher_model)
+core_teacher = make_sam_from_state_dict(path_teacher_model)
 assert core_teacher.name == "samv3", "Only SAMv3/v3.1 is supported for fine tuning"
 model_teacher = core_teacher.get_detector_context()
+config_teacher = core_teacher.get_config()
 
 # Sanity check. Make sure were using matching models
 assert (
@@ -298,7 +300,7 @@ loaded_image_bgr = cv2.imread(image_path)
 
 # Run 'true' image encoding & mask generation for reporting
 exemplar_prompt = {"text": text_prompt}
-true_encimg, _, _ = model_teacher.encode_detection_image(loaded_image_bgr)
+true_encimg = model_teacher.encode_image(loaded_image_bgr)
 true_encexm = model_teacher.encode_exemplars(true_encimg, **exemplar_prompt)
 true_mask_preds, _, true_score_preds, _ = model_teacher.generate_detections(true_encimg, true_encexm)
 _, true_filt_masks, _, _ = get_filtered_detections(true_mask_preds, None, true_score_preds, detection_threshold)

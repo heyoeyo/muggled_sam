@@ -49,12 +49,12 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Set up model
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 track_model = sam_core.get_tracking_context()
 track_model.to(device=device, dtype=dtype)
 
 # Use initial prompt to begin segmenting an object
-init_encoded_img, _, _ = track_model.encode_image(first_frame, **imgenc_config_dict)
+init_encoded_img = track_model.encode_image(first_frame, **imgenc_config_dict)
 init_mask, init_mem = track_model.encode_prompt_memory(
     init_encoded_img, boxes_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list, mask_index=None
 )
@@ -77,7 +77,7 @@ try:
         scaled_frame = cv2.resize(frame, dsize=None, fx=display_scale, fy=display_scale)
 
         # Process video frames with model
-        encoded_img, _, _ = track_model.encode_image(frame, **imgenc_config_dict)
+        encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
         mask_preds_bnhw, iou_preds_bn, obj_ptrs_bnc, obj_score_b = track_model.step_video_masking(
             encoded_img, prompt_mems, frame_mems, return_best_only=False
         )

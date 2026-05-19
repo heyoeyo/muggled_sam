@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
+from json import loads as load_json_str
 from contextlib import contextmanager
 
 import torch
@@ -86,7 +87,13 @@ class SAMV1Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
         """Temporary placeholder for backwards compatibility"""
-        return SAMV1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+        encoded_img = SAMV1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+
+        # Figure out additional outputs as needed by old API
+        img_tensor = self.prepare_image_batch([image_bgr], max_side_length, use_square_sizing)
+        preencode_hw = tuple(img_tensor.shape[-2:])
+        token_hw = tuple(encoded_img[0].shape[-2:])
+        return encoded_img, token_hw, preencode_hw
 
     def generate_masks(
         self,
@@ -108,6 +115,15 @@ class SAMV1Core(nn.Module):
     ) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
         return SAMV1InteractiveModel.prepare_image_batch(self, images_bgr_list, max_side_length, use_square_sizing)
+
+    # .................................................................................................................
+
+    def get_config(self) -> dict:
+        """Returns model config dictionary"""
+        # Convert config from tensor->bytes->string/json->dictionary
+        config_as_bytes = bytearray(self.config_muggled_samv1.cpu().tolist())
+        config_as_str = config_as_bytes.decode()
+        return load_json_str(config_as_str)
 
     # .................................................................................................................
 
@@ -193,34 +209,24 @@ class SAMV1InteractiveModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int = 1024,
         use_square_sizing: bool = True,
-    ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
+    ) -> list[Tensor]:
         """
         Encode image data, this is one of the inputs needed to generate masks
 
         Returns:
-            encoded_image, patch_grid_hw, preencoded_image_hw
+            encoded_image
             -> The encoded image is a list containing a single feature map with
                shape: Bx256x64x64 (using default settings). This is
                wrapped in a list for compatibility with SAMv2/v3
-            -> The patch_grid_hw contains the height & width of the low-res
-               feature map (64x64 with default 1024x1024 input sizing)
-            -> The preencoded_image_hw contains the height & width of the
-               input image after pre-processing, just before being encoded
-               by default it would be 1024x1024
         """
 
         with _inference_mode(self._infmode):
             image_rgb_normalized_bchw = self.image_encoder.prepare_image(image_bgr, max_side_length, use_square_sizing)
-            image_preenc_hw = image_rgb_normalized_bchw.shape[2:]
             encoded_image_tensor = self.image_encoder(image_rgb_normalized_bchw)
-
-        # Get patch sizing of the encoded image tokens (as needed by other components)
-        patch_grid_hw = encoded_image_tensor.shape[2:]
 
         # Create list version of image encoding, purely for compatibility with SAMv2/v3
         encoded_image = [encoded_image_tensor]
-
-        return encoded_image, patch_grid_hw, image_preenc_hw
+        return encoded_image
 
     # .................................................................................................................
 
@@ -336,7 +342,7 @@ class SAMV1InteractiveModel(nn.Module):
 
         # Run model to fill in cache
         if example_image_bgr is not None:
-            encoded_imgs, _, _ = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
+            encoded_imgs = self.encode_image(example_image_bgr, max_side_length, use_square_sizing)
             encoded_prompts = self.encode_prompts([], [(0.5, 0.5)], [])
             self.generate_masks(encoded_imgs, encoded_prompts)
 

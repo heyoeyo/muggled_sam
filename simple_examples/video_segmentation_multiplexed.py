@@ -53,7 +53,7 @@ assert ok_frame, f"Could not read frames from video: {video_path}"
 
 # Load and set up model components
 print("Loading model...")
-model_config_dict, sam_core = make_sam_from_state_dict(model_path)
+sam_core = make_sam_from_state_dict(model_path)
 sam_core.to(device=device, dtype=dtype)
 
 # Set up contexts and warn about missing support if needed
@@ -63,7 +63,7 @@ if not hasattr(track_model, "step_video_masking_multiplex"):
 detect_model = sam_core.get_detector_context()
 
 # Run initial detection to get objects to track
-init_encimgs, _, _ = detect_model.encode_detection_image(first_frame, max_side_length_detect, use_square_sizing)
+init_encimgs = detect_model.encode_image(first_frame, max_side_length_detect, use_square_sizing)
 init_exemplars = detect_model.encode_exemplars(
     init_encimgs,
     text_prompt,
@@ -81,7 +81,7 @@ print(f"Detected {num_objects} initial objects!")
 
 # Re-encode image at 'tracking' resolution to set up initial memory encoding
 if max_side_length_detect != max_side_length_track:
-    init_encimgs, _, _ = track_model.encode_image(first_frame, max_side_length_track, use_square_sizing)
+    init_encimgs = track_model.encode_image(first_frame, max_side_length_track, use_square_sizing)
 
 # Set up 'memory bank'
 init_mem = track_model.encode_prompt_memory_from_mask(init_encimgs, init_masks)
@@ -113,7 +113,7 @@ try:
 
         # Process video frames with model
         t1 = perf_counter()
-        encoded_img, _, _ = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
+        encoded_img = track_model.encode_image(frame, max_side_length_track, use_square_sizing)
         masks_m1hw, ious_m1, ptrs_m1c, obj_scores_m = track_model.step_video_masking_multiplex(
             encoded_img, prompt_mems, frame_mems, num_multiplex_objects=num_objects
         )
