@@ -8,6 +8,11 @@
 from json import loads as load_json_str
 from contextlib import contextmanager
 
+# For legacy warnings
+from inspect import currentframe
+from time import sleep
+import sys
+
 import torch
 import torch.nn as nn
 
@@ -78,6 +83,7 @@ class SAMV1Core(nn.Module):
 
     def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV1InteractiveModel.encode_prompts(self, box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     def encode_image(
@@ -87,6 +93,7 @@ class SAMV1Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> tuple[list[Tensor], tuple[int, int], tuple[int, int]]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         encoded_img = SAMV1InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
         # Figure out additional outputs as needed by old API
@@ -103,6 +110,7 @@ class SAMV1Core(nn.Module):
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV1InteractiveModel.generate_masks(
             self, encoded_image_features_list, encoded_prompts, mask_hint, blank_promptless_output
         )
@@ -114,6 +122,7 @@ class SAMV1Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV1InteractiveModel.prepare_image_batch(self, images_bgr_list, max_side_length, use_square_sizing)
 
     # .................................................................................................................
@@ -367,6 +376,28 @@ class SAMV1InteractiveModel(nn.Module):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Helpers
+
+# Global used to store names of legacy function calls (so we don't repeat warning/delay)
+_LEGACY_WARN_SET = set()
+
+
+def _legacy_warning(inspect_stack_frame, sleep_delay_sec: float = 1.0):
+    """Helper used to warn about removal of old functions"""
+    caller_func_name = inspect_stack_frame.f_code.co_name
+    if caller_func_name not in _LEGACY_WARN_SET:
+        _LEGACY_WARN_SET.add(caller_func_name)
+        print(
+            f"{'*' * 12} WARNING {'*' * 12}",
+            f"Function ({caller_func_name}) will be removed by June 2026",
+            "Please update to use new API. See CHANGELOG:",
+            "https://github.com/heyoeyo/muggled_sam/blob/main/CHANGELOG.md",
+            "",
+            sep="\n",
+            flush=True,
+            file=sys.stderr,
+        )
+        sleep(sleep_delay_sec)
+    return
 
 
 @contextmanager

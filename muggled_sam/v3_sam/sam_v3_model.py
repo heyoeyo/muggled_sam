@@ -9,6 +9,11 @@ import os.path as osp
 from json import loads as load_json_str
 from contextlib import contextmanager
 
+# For legacy warnings
+from inspect import currentframe
+from time import sleep
+import sys
+
 import torch
 import torch.nn as nn
 
@@ -117,6 +122,7 @@ class SAMV3Core(nn.Module):
 
     def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV3InteractiveModel.encode_prompts(self, box_xy1xy2_norm_list, fg_xy_norm_list, bg_xy_norm_list)
 
     def encode_image(
@@ -126,6 +132,7 @@ class SAMV3Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         encoded_img = SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
 
         # Figure out additional outputs as needed by old API
@@ -142,6 +149,7 @@ class SAMV3Core(nn.Module):
         blank_promptless_output: bool = True,
     ) -> tuple[Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV3InteractiveModel.generate_masks(
             self, encoded_image_features_list, encoded_prompts, mask_hint, blank_promptless_output
         )
@@ -156,6 +164,7 @@ class SAMV3Core(nn.Module):
         mask_index_select: int | None = None,
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         mask_b1hw, encoded_mem = self.get_tracking_context().encode_prompt_memory(
             encoded_image_features_list,
             box_xy1xy2_norm_list,
@@ -175,6 +184,7 @@ class SAMV3Core(nn.Module):
         mask_image: ndarray | Tensor,
     ) -> tuple[Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return self.get_tracking_context().encode_prompt_memory_from_mask(encoded_image_features_list, mask_image)
 
     def step_video_masking(
@@ -188,6 +198,7 @@ class SAMV3Core(nn.Module):
         is_recent_first: bool = True,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         # Bundle memory tokens & pointers for new API, which expects list of (memory, pointers) tuples
         pmt_mem, pmt_ptrs = list(prompt_memory_encodings), list(prompt_object_pointers)
         prv_mem, prv_ptrs = list(previous_memory_encodings), list(previous_object_pointers)
@@ -232,10 +243,12 @@ class SAMV3Core(nn.Module):
         use_square_sizing: bool = True,
     ) -> Tensor:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return SAMV3InteractiveModel.prepare_image_batch(self, images_bgr_list, max_side_length, use_square_sizing)
 
     def make_detector_model(self, bpe_vocab_path: str | None = None) -> nn.Module:
         """Temporary placeholder for backwards compatibility"""
+        _legacy_warning(currentframe())
         return self.get_detector_context(bpe_vocab_path)
 
     # .................................................................................................................
@@ -1352,13 +1365,40 @@ class SAMV3DetectorModel(nn.Module):
         use_square_sizing: bool = True,
     ) -> tuple[tuple[list[Tensor], list[Tensor]], tuple[int, int], tuple[int, int]]:
         """Temporary function for backwards compatibility. Will be removed in the future"""
-        return self.encode_image(image_bgr, max_side_length, use_square_sizing)
+        _legacy_warning(currentframe())
+        encoded_img = SAMV3InteractiveModel.encode_image(self, image_bgr, max_side_length, use_square_sizing)
+        img_tensor = SAMV3InteractiveModel.prepare_image_batch(self, [image_bgr], max_side_length, use_square_sizing)
+        preencode_hw = tuple(img_tensor.shape[-2:])
+        token_hw = tuple(encoded_img[0][0].shape[-2:])
+        return encoded_img, token_hw, preencode_hw
 
     # .................................................................................................................
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Helpers
+
+# Global used to store names of legacy function calls (so we don't repeat warning/delay)
+_LEGACY_WARN_SET = set()
+
+
+def _legacy_warning(inspect_stack_frame, sleep_delay_sec: float = 1.0):
+    """Helper used to warn about removal of old functions"""
+    caller_func_name = inspect_stack_frame.f_code.co_name
+    if caller_func_name not in _LEGACY_WARN_SET:
+        _LEGACY_WARN_SET.add(caller_func_name)
+        print(
+            f"{'*' * 12} WARNING {'*' * 12}",
+            f"Function ({caller_func_name}) will be removed by June 2026",
+            "Please update to use new API. See CHANGELOG:",
+            "https://github.com/heyoeyo/muggled_sam/blob/main/CHANGELOG.md",
+            "",
+            sep="\n",
+            flush=True,
+            file=sys.stderr,
+        )
+        sleep(sleep_delay_sec)
+    return
 
 
 @contextmanager
