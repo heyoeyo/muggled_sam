@@ -105,7 +105,7 @@ class DisplayWindow:
         self._enable_keypress_callbacks = not self._enable_keypress_callbacks if enable is None else enable
         return self
 
-    def show(self, image, frame_delay_ms=None) -> [bool, int]:
+    def show(self, image, frame_delay_ms=None) -> tuple[bool, int]:
         """
         Function which combines both opencv functions: 'imshow' and 'waitKey'
         This is meant as a convenience function in cases where only a single window is being displayed.
@@ -128,7 +128,7 @@ class DisplayWindow:
         # Run keypress callbacks
         request_close = False
         if self._enable_keypress_callbacks:
-            request_close = keypress in self.WINDOW_CLOSE_KEYS_SET
+            request_close = keypress in self.WINDOW_CLOSE_KEYS_SET or not self._is_visible()
             for cb_keycode, cb in self._keypress_callbacks_dict.items():
                 if keypress == cb_keycode:
                     cb()
@@ -143,7 +143,7 @@ class DisplayWindow:
         return self
 
     @classmethod
-    def waitKey(cls, frame_delay_ms=1) -> [bool, int]:
+    def waitKey(cls, frame_delay_ms=1) -> tuple[bool, int]:
         """
         Wrapper around opencv waitkey (triggers draw to screen)
         Returns:
@@ -158,8 +158,17 @@ class DisplayWindow:
         return cv2.destroyWindow(self.title)
 
     @staticmethod
-    def close_all(self):
+    def close_all():
         cv2.destroyAllWindows()
+
+    def _is_visible(self) -> bool:
+        """
+        Return whether the OpenCV window is visible.
+        """
+        try:
+            return cv2.getWindowProperty(self.title, cv2.WND_PROP_VISIBLE) >= 1
+        except cv2.error:
+            return False
 
 
 class WindowTrackbar:
