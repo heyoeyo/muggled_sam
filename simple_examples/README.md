@@ -32,6 +32,8 @@ _(Supports SAMv1, SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam
 
 This script shows a basic example of how to do model distillation (e.g. unsupervised training). In this case the script does distillation of the image encoder only, but can be easily modified to train other model components. Distillation uses a teacher model (meant to be an original SAM model) to provide 'ground-truth' data for training a student model (meant to be a smaller version of the teacher). Smaller versions of SAMv3 can be made using the [pruning scripts](https://github.com/heyoeyo/muggled_sam/tree/main/training#pruning) of this repo. Training also requires example images, a good source for these is coco128 which can be downloaded from [ultralytics](https://github.com/ultralytics/yolov5/releases/tag/v1.0) (see assets > coco128.zip).
 
+Note that for distillation the 'ground truth' comes from a teacher model (this is also easy to see in the example code). However if the script is modified so that the ground truth is instead loaded from the file system, then it basically implements supervised training!
+
 
 ## Object Detection
 
@@ -160,11 +162,36 @@ This is a special variation of multi-object segmentation using 'multiplexing' in
 
 For small numbers of objects there isn't a significant speed difference between v3.1 multiplexing and using batching with v3. However batching tends to lead to poor mask quality over time due to the way memory is handled. So even for small numbers of objects, the mask quality of multiplexing is an improvement. For larger numbers of objects, multiplexing provides a significant speed up. The downside of all this is that managing the (multiplexed) tracking data can become far more complex if objects are expected to be added or removed over time (not included in this simple example).
 
+Below is a table showing some example timings using the v3.1 model at full (1008px) and half (504px) resolution and for different object counts. The SAM3 [example dance video](https://github.com/facebookresearch/sam3/tree/main/assets/videos/0001) is used to test 1-16 object timing, while the 17-32 case uses a video of some locust from the [Max Planck Digital Library](https://edmond.mpg.de/dataset.xhtml?persistentId=doi:10.17617/3.7F5MGE). These tests are run on an RTX 3090, using bfloat16. All times are in milliseconds:
+
+| Model | Time per frame | Time (@ half-resolution) |
+| ----- | -------------- | ------------------------ |
+| Up to 16 objects  | 142 | 51 |
+| Up to 32 objects  | 166 | 58 |
+
+## Video Segmentation with batches
+
+_(Supports SAMv2, SAMv3.0)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_batches.py)
+
+This is a variant of the regular video segmentation script, but set up to track multiple objects together as a single batch. It requires the use of a v3 or v3.1 model to perform an initial detection step to set up the initial masks for tracking, but can then use SAMv2 models to continue tracking. 
+
+This script is really only meant for comparison with v3.1 multiplexing, but with support for SAMv2 and v3.0 which only support 'regular' batching. In practice, it's recommended to instead track each object separately (batch size of 1) in a loop with v2/v3.0 models, as these models are not properly trained to handle objects disappearing. See the 'segmentations from detections' script as an example of this.
+
+Below is a table of frame timings using different models on a 3090 using the models at full and half-resolution, with bfloat16. The SAM3 [example dance video](https://github.com/facebookresearch/sam3/tree/main/assets/videos/0001) was used for testing, which results in a batch size of 4. All times are in milliseconds:
+
+| Model | Time per frame | Time (@ half-resolution) |
+| ----- | -------------- | ------------------------ |
+| SAMv2-tiny  | 70  | 12 |
+| SAMv2-large | 110 | 24 |
+| SAMv3.0     | 190 | 54 |
+
+It's worth noting that, unlike multiplexing with v3.1, these timings will scale with the object count. Though due to batching, the scaling is not a simple linear function and will depend somewhat on hardware capability! It's also worth noting that the tracking quality degrades when objects become occluded (again, batching is not recommended with these models).
+
 ## Video Segmentation using SAMURAI
 
 _(Supports SAMv2, SAMv3)_ - [link](https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_samurai.py)
 
-This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be [easy to modify](https://github.com/heyoeyo/muggled_sam/blob/3ed04b646005d1b1242b8d07008573ef00815405/muggled_sam/demo_helpers/samurai.py#L22) if needed.
+This variation of the video segmentation script uses an alternative method of selecting masks during tracking based on the paper: "[SAMURAI: Adapting Segment Anything Model for Zero-Shot Visual Tracking with Motion-Aware Memory](https://arxiv.org/abs/2411.11922)". The idea is to independently track object bounding boxes using a separate tracking method (a [Kalman filter](https://en.wikipedia.org/wiki/Kalman_filter) in this case) and use this to select which masks should be propagated during tracking (as opposed to just using the SAM model IoU predictions). The implementation here is more similar to the description in the paper itself, rather than the [available code](https://github.com/yangchris11/samurai/blob/master/sam2/sam2/utils/kalman_filter.py), but should be [easy to modify](https://github.com/heyoeyo/muggled_sam/blob/d45ebd7e39d00f4fd7de2363bdd2770d60199da5/muggled_sam/demo_helpers/samurai.py#L22) if needed.
 
 This demo is set up to track only one object, but can be changed to handle multiple objects by creating additional prompt/prev. frame memory storage as well as instances of the SAMURAI class for each object.
 
