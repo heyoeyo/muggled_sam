@@ -829,8 +829,8 @@ class SAMV3TrackingModel(nn.Module):
     def step_video_masking(
         self,
         encoded_image: list[Tensor],
-        prompt_memory_encodings: list[tuple[Tensor, Tensor]],
-        frame_memory_encodings: list[tuple[Tensor, Tensor]],
+        prompt_memory_encodings: list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor],
+        frame_memory_encodings: list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor],
         return_best_only: bool = True,
         is_recent_first: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:

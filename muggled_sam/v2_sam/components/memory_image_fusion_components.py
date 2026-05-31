@@ -5,7 +5,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Imports
 
-import torch
 import torch.nn as nn
 
 from .posenc_sine import SinusoidalPE2D
@@ -151,65 +150,6 @@ class MemoryFusionTransformerLayer(nn.Module):
         enc_img_tokens = self.image_mlp(enc_img_tokens)
 
         return enc_img_tokens
-
-    # .................................................................................................................
-
-
-class FusionPositionOffset(nn.Module):
-    """
-    Helper module used to pre-compute & cache image-like positional encodings meant
-    for use with 'memory encoding' tokens, used within the memory fusion steps of the SAMv2 model.
-
-    The positional encodings for 'past memories' include an additive offset/embedding, which
-    is a learned value and is different depending on how 'far away' the memory is, relative to
-    the frame where it is being used. While these offsets are learned, the underlying 'base'
-    positional encoding is fixed for a given image height & width. As a result, it's possible
-    to pre-compute the result of adding each of the learned offsets to the fixed base encoding,
-    which is what the model does (and caches the result for re-use).
-
-    This module does not exist in the original SAMv2 implementation. Instead computing the base
-    positional encoding and adding offsets was handled in separate areas.
-    The base positional encodings are generated inside the memory encoder itself:
-    https://github.com/facebookresearch/segment-anything-2/blob/dce7b5446f260cef9fdf3d3f1bc81519302d386f/sam2/modeling/memory_encoder.py#L179
-    While the offsets are added inside the '_prepare_memory_conditioned_features' function:
-    https://github.com/facebookresearch/segment-anything-2/blob/dce7b5446f260cef9fdf3d3f1bc81519302d386f/sam2/modeling/sam2_base.py#L576-L578
-
-    In this implementation, these are merged together here, since this is the only place they are used!
-    """
-
-    # .................................................................................................................
-
-    def __init__(self, features_per_memory_token=64, max_memory_history=6):
-
-        # Inherit from parent
-        super().__init__()
-
-        num_pos_offsets = 1 + max_memory_history
-        self.base_memposenc_offsets = nn.Parameter(torch.zeros(num_pos_offsets, 1, 1, features_per_memory_token))
-        self.posenc = SinusoidalPE2D(features_per_memory_token)
-
-        # Setup cache for holding pre-computed positional encodings with position offsets already added!
-        blank_cache = torch.empty((num_pos_offsets, features_per_memory_token, 1, 1))
-        self.register_buffer("pos_offset_cache", blank_cache, persistent=False)
-
-    # .................................................................................................................
-
-    def forward(self, imagelike_shape_bchw: Tensor, position_offset: int) -> Tensor:
-
-        # Generate cached positional encodings + offsets if we get a new image shape
-        b, _, h, w = imagelike_shape_bchw
-        num_offsets, _, cache_h, cache_w = self.pos_offset_cache.shape
-        if h != cache_h or w != cache_w:
-
-            # Create image-like position encoding (shape: 1xFxHxW) and duplicate for each offset
-            cached_posencs = self.posenc(h, w).clone().repeat(num_offsets, 1, 1, 1)
-
-            # Add learned position offsets to each of the entries and store so we don't have to re-compute
-            for idx in range(num_offsets):
-                cached_posencs[idx] += self.base_memposenc_offsets[idx].permute(2, 0, 1)
-            self.pos_offset_cache = cached_posencs
-
-        return self.pos_offset_cache[position_offset].repeat(b, 1, 1, 1)
 
     # .................................................................................................................
 

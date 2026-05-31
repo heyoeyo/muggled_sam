@@ -126,50 +126,86 @@ class ObjectPointerPosEnc_v2p1(nn.Module):
 
     # .................................................................................................................
 
-    def forward(self, num_prompt_pointers, num_previous_frame_pointers, previous_is_recent_first=True) -> Tensor:
+    def forward(
+        self,
+        prompt_pointers_shape_brnc: tuple[int, int, int, int],
+        frame_pointers_shape_brnc: tuple[int, int, int, int],
+        is_recent_first: bool,
+    ) -> tuple[Tensor, Tensor]:
         """
-        Creates a position encoding tensor of shape: NxF
-        -> N is total number of tokens (equal to 4 times the total number of pointers, by default)
-        -> F is features per memory token (64 by default)
+        This function computes the 'position encodings' for object pointers introduced in the
+        SAMv2.1 update. There are several deviations from the original implementation here,
+        in order to simplify things. Though this leads to numerical differences, the effect
+        is negligible in practice (pointers don't do very much).
+
+        The basic idea is to use a sinusoidal position encoding which is scaled by how
+        'far away' (in time) each of the memory encodings is, using a normalized value (0 to 1),
+        where 0 is 'closest' and 1 is farthest.
+
+        There are 2 main differences here, compared to the original. First, prompt pointers
+        are always treated as being 'now' in time, this allows us to avoid storing the
+        indexing of prompts. Secondly, the frame pointer timing is normalized based on the
+        number of pointers, whereas the original normalized by either the number of frames in
+        the video or by a fixed config value (15 by default), whichever was less. Normalizing
+        by the count avoids needing to know the video length or having extra configs.
+
+        The 'is_recent_first' input indicates the temporal ordering of the frame pointers.
+
+        Returns:
+            prompt_pointer_position_encoding, frame_pointer_position_encoding
+            -> Both shaped BxRxNxC, matching the given input shapes
+
+        To see how the position encodings were computed in the original, see:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L628-L634
+
+        To see how prompt vs. frame (cond_frame_outputs vs non_cond_frame_outputs) pointers were handled, see:
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L599-L610
+        https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L612-L620
         """
 
-        # Set position index of all 'prompt pointers' to 0
+        # For clarity
+        pmt_ptr_b, pmt_ptr_r, pmt_ptr_n, _ = prompt_pointers_shape_brnc
+        frm_ptr_b, frm_ptr_r, frm_ptr_n, _ = frame_pointers_shape_brnc
+        device, dtype = self.device_info.device, self.device_info.dtype
+
+        # Use a temporal position of '0' for all prompt pointers
         # -> The original implementation does NOT do this!!!
-        # -> Instead the index is based on how many frames have past since the prompt (i.e. steadily increases)
+        # -> Instead, the original position is given by the absolute frame index divided by min(15, frame_count)
         # -> Here using fixed (0) value because it's much simpler and mirrors memory encoding approach
-        # See original here: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L628
-        total_ptrs = num_prompt_pointers + num_previous_frame_pointers
-        pos_norm_tensor = torch.zeros(total_ptrs, dtype=self.device_info.dtype, device=self.device_info.device)
+        pmt_pos_norm_1r11 = torch.zeros((1, pmt_ptr_r, 1, 1), device=device, dtype=dtype)
 
-        # Set position index of all 'previous frame pointers' based on their list indexing
-        # -> This is also different from the original implementation, though not significantly!
-        # -> In original, pointer indexing is based on number of frames since the pointer was created.
-        #    In basic usage, this is the same as the approach used here, but in the original
-        #    it is possible for pointers to be given with indexing not based on consecutive frame sequencing
-        # -> In original, indexes are normalized based on a fixed (configurable) value corresponding
-        #    to the maximum pointer count (default 16). Here they're normalized based on the given
-        #    pointer count. This approach will match the original once the number of given pointers
-        #    reaches a set maximum (until then, this approach over-estimates pointer spacing in time)
-        # See original here: https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_base.py#L632
-        first_prev_idx = 1.0 / max(total_ptrs - 1, 1)
-        start_idx, end_idx = (first_prev_idx, 1.0) if previous_is_recent_first else (1.0, first_prev_idx)
-        pos_norm_tensor[num_prompt_pointers:] = torch.linspace(start_idx, end_idx, num_previous_frame_pointers)
+        # Calculate the temporal position for frame pointers
+        # -> In the original, these are just the relative frame difference divided by 15, for example:
+        #    [0.0667, 0.1333, 0.2, 0.2667, 0.3333, 0.4, 0.4667, 0.5333, 0.6, 0.6667, 0.7333, 0.8, 0.8667, 0.9333, 1]
+        # -> This is the sequence reported at max frames, it's just [1,2,3,...,15] all divided by 15
+        # -> Here we do something similar, but always divide by the pointer count instead (avoids hard-coding 15 value)
+        # -> For example, with 3 entries we'd get: [1/3, 2/3, 3/3], for 6 entries: [1/6, 2/6, 3/6, 4/6, 5/6, 6/6]
+        small_idx = 1 / max(frm_ptr_r, 1)
+        start_idx_norm, end_idx_norm = (small_idx, 1.0) if is_recent_first else (1.0, small_idx)
+        frm_pos_norm = torch.linspace(start_idx_norm, end_idx_norm, frm_ptr_r, device=device, dtype=dtype)
+        frm_pos_norm_1r11 = frm_pos_norm.unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
 
-        # Compute 1D sinusoidal position embeddings from pointer indices
+        # Compute encodings and expand to handle batching and N > 1 if needed
+        pmt_posenc_1r1c = self._encode_normalized_position(pmt_pos_norm_1r11)
+        frm_posenc_1r1c = self._encode_normalized_position(frm_pos_norm_1r11)
+        pmt_posenc_brnc = pmt_posenc_1r1c.expand(pmt_ptr_b, -1, pmt_ptr_n, -1)
+        frm_posenc_brnc = frm_posenc_1r1c.expand(frm_ptr_b, -1, frm_ptr_n, -1)
+
+        return pmt_posenc_brnc, frm_posenc_brnc
+
+    # .................................................................................................................
+
+    def _encode_normalized_position(self, pos_norm_tensor: Tensor) -> Tensor:
+
+        # Compute 1D sinusoidal position embeddings from normalized pointer indices
         # For original code, see:
         # https://github.com/facebookresearch/sam2/blob/c2ec8e14a185632b0a5d8b161928ceb50197eddc/sam2/modeling/sam2_utils.py#L64
-        pos_embed_base = pos_norm_tensor.unsqueeze(-1) * self.posenc_scale_factor
+        pos_embed_base = pos_norm_tensor * self.posenc_scale_factor
         pos_embed = torch.cat([pos_embed_base.sin(), pos_embed_base.cos()], dim=-1)
 
         # Apply projection to reduce image token channel count to memory token channel count
-        # -> Result has shape: NxF, where N is total number of pointers, F is features per memory token (64 by default)
-        ptrs_posenc = self.pointer_pos_proj(pos_embed)
-
-        # Repeat each position encoding multiple times (default 4) to account for unusual 'split and stack'
-        # approach used when constructing object pointer memory, which breaks each 256 dimension pointer
-        # into four 64 dimension tokens. So we repeat position encoding of each pointer 4 times to match
-        # split pointers. For example, instead of returning just: [a,b,c], we return: [a,a,a,a,b,b,b,b,c,c,c,c]
-        return ptrs_posenc.repeat_interleave(self._num_tokens_per_pointer, dim=0)
+        # -> Result has shape: 1xNxC, where N is number of pointers, C features per memory token (64 by default)
+        return self.pointer_pos_proj(pos_embed)
 
     # .................................................................................................................
 
@@ -186,15 +222,20 @@ class ObjectPointerPosEnc_v2p0(nn.Module):
 
     def __init__(self, features_per_image_token, features_per_memory_token):
         super().__init__()
-        self.register_buffer("zeros_base", torch.zeros((1, features_per_memory_token)), persistent=False)
+        self.register_buffer("zeros_base", torch.zeros((1, 1, 1, features_per_memory_token)), persistent=False)
         self._num_tokens_per_pointer = features_per_image_token // features_per_memory_token
 
-    def forward(self, num_prompt_pointers, num_previous_frame_pointers, previous_is_recent_first=True) -> Tensor:
+    def forward(
+        self,
+        prompt_pointers_shape_brnc: tuple[int, int, int, int],
+        frame_pointers_shape_brnc: tuple[int, int, int, int],
+        is_recent_first: bool,
+    ) -> tuple[Tensor, Tensor]:
         """
-        Creates a zeros tensor of shape: NxF
-        -> N is total number of tokens (equal to 4 times the total number of pointers, by default)
-        -> F is features per memory token (64 by default)
+        Creates 2 all-zeros tensors with shapes: BxRxNxC, matching the input pointer shapes
+        Returns:
+            prompt_position_encoding_brnc, frame_position_encoding_brnc
         """
-        total_num_pointers = num_prompt_pointers + num_previous_frame_pointers
-        total_num_tokens = total_num_pointers * self._num_tokens_per_pointer
-        return self.zeros_base.repeat(total_num_tokens, 1)
+        pmt_posenc_brnc = self.zeros_base.expand(*prompt_pointers_shape_brnc)
+        frm_posenc_brnc = self.zeros_base.expand(*frame_pointers_shape_brnc)
+        return pmt_posenc_brnc, frm_posenc_brnc
