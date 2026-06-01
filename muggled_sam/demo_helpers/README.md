@@ -1,10 +1,13 @@
 # Demo Helpers
 
-This folder contains scripts that are not strictly required to make use of the SAM models, but provide some helpful functionality for processing data and/or handling user interactions. This folder also contains all of the code for handling [UI](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/demo_helpers/ui) elements for the interactive scripts. A brief overview of each of the scripts in this folder is explained below:
+This folder contains scripts that are not strictly required to make use of the SAM models, but provide some helpful functionality for processing data and/or handling user interactions. This folder also contains all of the code for handling [UI](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/demo_helpers/ui) elements for the interactive scripts as well as helers for [training/distillation](https://github.com/heyoeyo/muggled_sam/tree/main/muggled_sam/demo_helpers/training).
+
+A brief overview of each of the scripts in this folder is explained below:
 
 #### bounding_boxes.py
 
 Contains functions for finding the bounding box around a SAM mask prediction. Also includes basic functons for switching between box representations.
+
 #### contours.py
 
 Contains functions useful for generating and processing contour data from masks. This is where mask outlines in all the demo scripts are generated.
@@ -12,6 +15,14 @@ Contains functions useful for generating and processing contour data from masks.
 #### crop_ui.py
 
 This contains code for running a special cropping interface that is available when using the `--crop` script flag (e.g. the `python run_image.py --crop`).
+
+#### detections.py
+
+Stores helper functions for handling SAMv3 detection results
+
+#### ffmpeg.py
+
+Contains helper functions for interacting with [FFMEG](https://ffmpeg.org/), specifically in the context of saving video segmentation results.
 
 #### history_keeper.py
 
@@ -34,7 +45,6 @@ Select model file:
 Enter selection: 
 ```
 
-
 #### mask_postprocessing.py
 
 As the name suggests, this contains code for post-processing of mask data. This is mainly used in the [run_image.py](https://github.com/heyoeyo/muggled_sam?tab=readme-ov-file#run-image) script, where options are provided for padding or simplfying the SAM mask results.
@@ -46,6 +56,14 @@ This contains functionality that doesn't neatly fit into the other scripts.
 #### model_capture.py
 
 Contains a helper class that can be used to 'capture' the intermediate results of a model for analysis or debugging. For example, it's used by the [block norm visualization](https://github.com/heyoeyo/muggled_sam/tree/main/experiments#block-norm-visualization) script to record all of the internal image features when running the SAM image encoder.
+
+#### model_info.py
+
+Contains basic helpers used to figure out information about model behavior/outputs (e.g. sizing of feature maps).
+
+#### prompts.py
+
+Used to store helpers functions for handling SAM interactive prompts.
 
 #### samurai.py
 
@@ -59,10 +77,13 @@ Contains a bunch of messy functions for handling the saving of single-image mask
 
 Contains the code used to generate the UI interface used across most of the scripts, which contains buttons for selecting different prompt types (e.g. hover vs. box vs foreground points) as well previewing mask results.
 
+#### text_input.py
+
+This script contians helpers for dealing with terminal-based text input from users. Though it overlaps somewhat with some of the loading.py functionality, it's more meant for input that isn't related to loading.
+
 #### video_data_storage.py
 
 Contains helper objects that are used exclusively with SAMv2 to help with storing and re-using the 'memory' results needed for video segmentation.
-
 
 #### video_frame_select_ui.py
 

@@ -101,7 +101,13 @@ The tables below include direct download links to all of the supported models. *
 </details>
 
 ### Basic Example
-Here's an [example](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples/image_segmentation.py) of using the model to generate masks from an image:
+
+The following examples show how to use the SAM models for image, video or detection tasks. More detailed implementations can be found in the [simple_examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) folder:
+
+<details open>
+
+<summary>Image-segmentation example</summary>
+
 ```python
 import cv2
 from muggled_sam.make_sam import make_sam_from_state_dict
@@ -117,13 +123,72 @@ image_bgr = cv2.imread("/path/to/image.jpg")
 sam_core = make_sam_from_state_dict("/path/to/model.pth")
 interact_model = sam_core.get_interactive_context()
 
-# Process data
+# Predict segmentation mask
 enc_img = interact_model.encode_image(image_bgr)
 enc_prompts = interact_model.encode_prompts(box_xy1xy2s, fg_xys, bg_xys)
 mask_preds, iou_preds = interact_model.generate_masks(enc_img, enc_prompts)
 ```
+</details>
 
-More examples can be found in the [simple_examples](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples) folder.
+<details>
+
+<summary>Video-segmentation example</summary>
+
+```python
+import cv2
+from muggled_sam.make_sam import make_sam_from_state_dict
+
+# Define initial prompt using 0-to-1 xy coordinates
+box_xy1xy2s = []  # Example [((0.25, 0.25), (0.75, 0.75))]
+fg_xys = [(0.5, 0.5)]
+bg_xys = []
+video_frames_list = ["/path/to/frame_1.jpg", "/path/to/frame_2.jpg", ...]
+
+# Load & setup model
+sam_core = make_sam_from_state_dict("/path/to/model.pth")
+track_model = sam_core.get_tracking_context()
+
+# Set up 'memory bank' for tracking, based on prompt
+first_frame = cv2.imread(video_frames_list[0])
+init_encimg = track_model.encode_image(first_frame)
+_, init_mem = track_model.encode_prompt_memory(init_encimg, box_xy1xy2s, fg_xys, bg_xys)
+p_mems, f_mems = [init_mem], []
+
+# Update tracking on each video frame
+for frame_path in video_frames_list:
+    frame = cv2.imread(frame_path)
+    enc_img = track_model.encode_image(frame)
+    mask, iou, ptr, score = track_model.step_video_masking(enc_img, p_mems, f_mems)
+
+    # Build up memory bank if tracking score is 'good'
+    if score > 0:
+        enc_mem = track_model.encode_frame_memory(enc_img, mask, ptr, score)
+        f_mems.append(enc_mem)
+```
+
+This example uses a prompt to begin tracking, however it's also possible to track from an initial mask (see the [segmentation from mask](https://github.com/heyoeyo/muggled_sam/tree/main/simple_examples#video-segmentation-from-mask) example). This example also assumes that frames are given as a list of paths to image files to make it easier to see how they're used, but any source that can provide images in a loop will work (e.g. a video file or stream or a webcam).
+
+</details>
+
+<details>
+
+<summary>Text-detection example</summary>
+
+```python
+import cv2
+from muggled_sam.make_sam import make_sam_from_state_dict
+
+# Load image & model
+image_bgr = cv2.imread("/path/to/image.jpg")
+sam_core = make_sam_from_state_dict("/path/to/model.pth")
+detect_model = sam_core.get_detector_context()
+
+# Perform object detection
+enc_img = detect_model.encode_image(image_bgr)
+enc_exm = detect_model.encode_exemplars(enc_img, text="person")
+mask_preds, box_preds, det_scores, pres_score = detect_model.generate_detections(enc_img, enc_exm)
+```
+</details>
 
 ## Run Image
 
@@ -187,7 +252,7 @@ For a more hackable version of cross-image detection (i.e. using an object from 
 
 # Changelog
 
-Over time there have been several breaking changes to the SAM implementations in MuggledSAM, these are documented in the [changelog](https://github.com/heyoeyo/muggled_sam/blob/main/.readme_assets/CHANGELOG.md).
+Over time there have been several breaking changes to the SAM implementations in MuggledSAM, these are documented in the [changelog](https://github.com/heyoeyo/muggled_sam/blob/main/CHANGELOG.md).
 
 
 # Acknowledgements

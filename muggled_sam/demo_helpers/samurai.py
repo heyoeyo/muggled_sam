@@ -27,20 +27,16 @@ class MuggledSAMURAI:
         @ https://arxiv.org/abs/2411.11922
 
     The basic idea is to include an additional tracking model (a kalman filter) which estimates the
-    bounding box of mask predictions from the SAMv2 model. These box predictions are then used to
-    influence which of the SAM mask predictions should be used at each time step. The original SAMv2
-    model used it's own internal IoU prediction (called 'affinity' in the SAMURAI paper), while SAMURAI
+    bounding box of mask predictions from the SAM model. These box predictions are then used to
+    influence which of the SAM mask predictions should be used at each time step. The original SAM
+    model uses it's own internal IoU prediction (called 'affinity' in the SAMURAI paper), while SAMURAI
     uses a weighted combination of the SAM IoU along with the IoU between the kalman filter box prediction
     and candidate masks. SAMURAI also ignores memory encodings based on additional scoring thresholds.
-
-    The basic usage is to initialize this class using the initial mask prediction for a tracked object,
-    then during tracking, call 'step_video_masking' from this class, rather than using the
-    same function on the original SAM2 class.
 
     This implementation is closer to the implementation described in the paper itself, rather
     than the code associated with the paper, though it does not match either exactly.
     One major difference is that this implementation tracks bounding box values: [x,y,w,h]
-    as described in the paper, while the original code tracks: [x,y,ar,h].
+    as described in the paper, while the original code tracks: [x,y,aspect-ratio,h].
     There are also significant differences in process & measurement noise models.
     The original code can be found here:
     https://github.com/yangchris11/samurai/blob/76ba195984892b0d1e3db5d9c9f90bb62175680a/sam2/sam2/utils/kalman_filter.py
