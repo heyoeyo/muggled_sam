@@ -6,6 +6,8 @@
 # %% Imports
 
 import json
+from time import sleep
+
 import torch
 
 from .sam_v3p1_model import SAMV3p1Core
@@ -27,9 +29,38 @@ from .exemplar_segmentation_model import SAMV3p1ExemplarSegmentation
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
 from .state_dict_conversion.convert_original_state_dict_keys import SAM3ModuleType, convert_state_dict_keys
 
+# For type hints
+from pathlib import Path
+from torch import Tensor
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
+
+
+def make_samv3p1_from_state_dict(
+    state_dict_or_path: dict[str, Tensor] | str | Path,
+    strict_load: bool = True,
+    weights_only: bool = True,
+) -> SAMV3p1Core:
+    """
+    Helper used to load SAMv3.1 using either an 'original state dict'
+    (e.g. original SAM model weights) or 'muggled state dict'
+    (e.g. weights saved from a MuggledSAM instance).
+    Returns:
+        sam_v3p1_core
+    """
+
+    # Load state dict data & figure out how to handle model instantiation
+    loaded_state_dict = _load_state_dict(state_dict_or_path, strict_load, weights_only)
+    is_mugsam_sd = "config_muggled_samv3p1" in loaded_state_dict.keys()
+    if is_mugsam_sd:
+        sam_core = make_samv3p1_from_muggled_state_dict(loaded_state_dict, strict_load, weights_only)
+    else:
+        sam_core = make_samv3p1_from_original_state_dict(loaded_state_dict, strict_load, weights_only)
+
+    return sam_core
+
 
 # .....................................................................................................................
 
@@ -46,79 +77,41 @@ def make_samv3p1_from_original_state_dict(
     a string can be given, in which case it will be assumed to be a path to load the state dict
 
     Returns:
-        sam_v3_core
+        sam_v3p1_core
     """
 
-    # If we're given a string, assume it's a path to the state dict
-    need_to_load = isinstance(original_state_dict, str)
-    if need_to_load:
-        path_to_state_dict = original_state_dict
-        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
-        try:
-            original_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
-        except RuntimeError:
-            original_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
-
-    # Feedback on using non-strict loading
-    if not strict_load:
-        print(
-            "",
-            "WARNING:",
-            "  Loading model weights without 'strict' mode enabled!",
-            "  Some weights may be missing or unused!",
-            sep="\n",
-            flush=True,
-        )
-
-    # Feedback for not using weights_only
-    if not weights_only:
-        print(
-            "",
-            "*" * 16,
-            "*" * 16,
-            "*" * 16,
-            "WARNING (dangerous):",
-            "  Loading model weights without 'weights_only' enabled!",
-            "  This can allow for arbitrary executable code to be loaded.",
-            "  Be sure that the loaded weights are from a trusted source!",
-            "",
-            "  !!! This should not normally be disabled !!!",
-            "*" * 16,
-            "*" * 16,
-            "*" * 16,
-            sep="\n",
-            flush=True,
-        )
+    # Load state dict data
+    original_state_dict = _load_state_dict(original_state_dict, strict_load, weights_only)
 
     # Get model config from weights (i.e. sam large vs sam base) & convert to new keys/state dict
     model_config_dict = get_model_config_from_state_dict(original_state_dict)
     new_state_dict, _ = convert_state_dict_keys(model_config_dict, original_state_dict)
 
     # Load model & set model weights
-    sam_model = make_sam_v3p1(**model_config_dict)
+    sam_core = make_sam_v3p1(**model_config_dict)
 
     # Image encoding & masking
-    sam_model.image_encoder.load_state_dict(new_state_dict[SAM3ModuleType.image_encoder], strict_load)
-    sam_model.image_projection.load_state_dict(new_state_dict[SAM3ModuleType.image_projection], strict_load)
-    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM3ModuleType.coordinate_encoder], strict_load)
-    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM3ModuleType.prompt_encoder], strict_load)
-    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.mask_decoder], strict_load)
-    sam_model.multiplex_video_masking.load_state_dict(
+    sam_core.image_encoder.load_state_dict(new_state_dict[SAM3ModuleType.image_encoder], strict_load)
+    sam_core.image_projection.load_state_dict(new_state_dict[SAM3ModuleType.image_projection], strict_load)
+    sam_core.coordinate_encoder.load_state_dict(new_state_dict[SAM3ModuleType.coordinate_encoder], strict_load)
+    sam_core.prompt_encoder.load_state_dict(new_state_dict[SAM3ModuleType.prompt_encoder], strict_load)
+    sam_core.mask_decoder.load_state_dict(new_state_dict[SAM3ModuleType.mask_decoder], strict_load)
+    sam_core.multiplex_video_masking.load_state_dict(
         new_state_dict[SAM3ModuleType.multiplex_video_masking], strict_load
     )
 
     # Video components
-    sam_model.memory_encoder.load_state_dict(new_state_dict[SAM3ModuleType.memory_encoder], strict_load)
-    sam_model.memory_image_fusion.load_state_dict(new_state_dict[SAM3ModuleType.memory_image_fusion], strict_load)
+    sam_core.memory_encoder.load_state_dict(new_state_dict[SAM3ModuleType.memory_encoder], strict_load)
+    sam_core.memory_image_fusion.load_state_dict(new_state_dict[SAM3ModuleType.memory_image_fusion], strict_load)
 
     # Detector components
-    sam_model.text_encoder.load_state_dict(new_state_dict[SAM3ModuleType.text_encoder], strict_load)
-    sam_model.sampling_encoder.load_state_dict(new_state_dict[SAM3ModuleType.sampling_encoder], strict_load)
-    sam_model.image_exemplar_fusion.load_state_dict(new_state_dict[SAM3ModuleType.image_exemplar_fusion], strict_load)
-    sam_model.exemplar_detector.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_detector], strict_load)
-    sam_model.exemplar_segmentation.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_segmentation], strict_load)
+    sam_core.text_encoder.load_state_dict(new_state_dict[SAM3ModuleType.text_encoder], strict_load)
+    sam_core.sampling_encoder.load_state_dict(new_state_dict[SAM3ModuleType.sampling_encoder], strict_load)
+    sam_core.image_exemplar_fusion.load_state_dict(new_state_dict[SAM3ModuleType.image_exemplar_fusion], strict_load)
+    sam_core.exemplar_detector.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_detector], strict_load)
+    sam_core.exemplar_segmentation.load_state_dict(new_state_dict[SAM3ModuleType.exemplar_segmentation], strict_load)
 
-    return sam_model
+    return sam_core
 
 
 # .....................................................................................................................
@@ -144,15 +137,8 @@ def make_samv3p1_from_muggled_state_dict(
         sam_v3p1_core
     """
 
-    # If we're given a string, assume it's a path to the state dict
-    need_to_load = isinstance(muggled_state_dict, str)
-    if need_to_load:
-        path_to_state_dict = muggled_state_dict
-        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
-        try:
-            muggled_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
-        except RuntimeError:
-            muggled_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
+    # Load state dict data
+    muggled_state_dict = _load_state_dict(muggled_state_dict, strict_load, weights_only)
 
     # Try to get config from state dict
     config_key = "config_muggled_samv3p1"
@@ -166,10 +152,10 @@ def make_samv3p1_from_muggled_state_dict(
     config_dict = json.loads(config_as_str)
 
     # Load model & set model weights
-    sam_model = make_sam_v3p1(**config_dict)
-    sam_model.load_state_dict(muggled_state_dict, strict_load)
+    sam_core = make_sam_v3p1(**config_dict)
+    sam_core.load_state_dict(muggled_state_dict, strict_load)
 
-    return sam_model
+    return sam_core
 
 
 # .....................................................................................................................
@@ -304,3 +290,62 @@ def make_sam_v3p1(
         exmseg_model,
         config_bytes,
     )
+
+
+# .....................................................................................................................
+
+
+def _load_state_dict(
+    state_dict_or_path: dict[str, Tensor] | str | Path,
+    strict_load: bool = True,
+    weights_only: bool = True,
+) -> dict[str, Tensor]:
+    """
+    Helper used to handling load of model weights, which may
+    be given directly (as a dictionary) or as a file path
+    Returns: loaded_state_dict
+    """
+
+    # Feedback for not using weights_only
+    if not weights_only:
+        print(
+            "",
+            "*" * 16,
+            "*" * 16,
+            "*" * 16,
+            "WARNING (dangerous):",
+            "  Loading model weights without 'weights_only' enabled!",
+            "  This can allow for arbitrary executable code to be loaded.",
+            "  Be sure that the loaded weights are from a trusted source!",
+            "",
+            "  !!! This should not normally be disabled !!!",
+            "*" * 16,
+            "*" * 16,
+            "*" * 16,
+            sep="\n",
+            flush=True,
+        )
+        sleep(5)
+
+    # If we're given a string, assume it's a path to the state dict
+    out_state_dict = state_dict_or_path
+    need_to_load = isinstance(state_dict_or_path, (str, Path))
+    if need_to_load:
+        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
+        try:
+            out_state_dict = torch.load(state_dict_or_path, weights_only=weights_only)
+        except RuntimeError:
+            out_state_dict = torch.load(state_dict_or_path, map_location="cpu", weights_only=weights_only)
+
+    # Feedback on using non-strict loading
+    if not strict_load:
+        print(
+            "",
+            "WARNING:",
+            "  Loading model weights without 'strict' mode enabled!",
+            "  Some weights may be missing or unused!",
+            sep="\n",
+            flush=True,
+        )
+
+    return out_state_dict

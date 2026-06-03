@@ -8,8 +8,9 @@
 import torch
 
 # For type hints
-from .model_typing import SAMCore
+from pathlib import Path
 from typing import Callable
+from .model_typing import SAMCore
 from torch import Tensor
 
 # Note: There are additional dynamic imports inside the function: `import_model_functions`
@@ -21,7 +22,7 @@ from torch import Tensor
 
 
 def make_sam_from_state_dict(
-    path_to_state_dict: str | dict[str, Tensor],
+    path_to_state_dict: str | Path | dict[str, Tensor],
     strict_load: bool = True,
     weights_only: bool = True,
 ) -> SAMCore:
@@ -37,7 +38,7 @@ def make_sam_from_state_dict(
     """
 
     # Load weights if needed (otherwise assume we were given weights directly)
-    need_to_load = isinstance(path_to_state_dict, str)
+    need_to_load = isinstance(path_to_state_dict, (str, Path))
     if need_to_load:
         # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
         try:
@@ -83,24 +84,27 @@ def import_model_functions(state_dict: dict[str, Tensor]) -> Callable | None:
     samv1_target_key = "image_encoder.pos_embed"
     make_sam_func = None
     if samv3p1_target_key in sd_keys:
-        from .v3p1_sam.make_sam_v3p1 import make_samv3p1_from_original_state_dict as make_sam_func
+        from .v3p1_sam.make_sam_v3p1 import make_samv3p1_from_state_dict as make_sam_func
     elif samv3p0_target_key in sd_keys:
-        from .v3_sam.make_sam_v3 import make_samv3_from_original_state_dict as make_sam_func
+        from .v3_sam.make_sam_v3 import make_samv3_from_state_dict as make_sam_func
     elif samv2_target_key in sd_keys:
-        from .v2_sam.make_sam_v2 import make_samv2_from_original_state_dict as make_sam_func
+        from .v2_sam.make_sam_v2 import make_samv2_from_state_dict as make_sam_func
     elif samv1_target_key in sd_keys:
-        from .v1_sam.make_sam_v1 import make_samv1_from_original_state_dict as make_sam_func
+        from .v1_sam.make_sam_v1 import make_samv1_from_state_dict as make_sam_func
 
     # If we haven't found a match, check if we're loading from muggled-sam weights directly
     if make_sam_func is None:
+        mugsamv3p1_target_key = "config_muggled_samv3p1"
         mugsamv3_target_key = "config_muggled_samv3"
         mugsamv2_target_key = "config_muggled_samv2"
         mugsamv1_target_key = "config_muggled_samv1"
+        if mugsamv3p1_target_key in sd_keys:
+            from .v3p1_sam.make_sam_v3p1 import make_samv3p1_from_state_dict as make_sam_func
         if mugsamv3_target_key in sd_keys:
-            from .v3_sam.make_sam_v3 import make_samv3_from_muggled_state_dict as make_sam_func
+            from .v3_sam.make_sam_v3 import make_samv3_from_state_dict as make_sam_func
         elif mugsamv2_target_key in sd_keys:
-            from .v2_sam.make_sam_v2 import make_samv2_from_muggled_state_dict as make_sam_func
+            from .v2_sam.make_sam_v2 import make_samv2_from_state_dict as make_sam_func
         elif mugsamv1_target_key in sd_keys:
-            from .v1_sam.make_sam_v1 import make_samv1_from_muggled_state_dict as make_sam_func
+            from .v1_sam.make_sam_v1 import make_samv1_from_state_dict as make_sam_func
 
     return make_sam_func

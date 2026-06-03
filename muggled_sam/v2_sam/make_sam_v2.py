@@ -6,6 +6,8 @@
 # %% Imports
 
 import json
+from time import sleep
+
 import torch
 
 from .sam_v2_model import SAMV2Core
@@ -20,15 +22,44 @@ from .memory_image_fusion_model import SAMV2MemoryImageFusion
 from .state_dict_conversion.config_from_original_state_dict import get_model_config_from_state_dict
 from .state_dict_conversion.convert_original_state_dict_keys import SAM2ModuleType, convert_state_dict_keys
 
+# For type hints
+from pathlib import Path
+from torch import Tensor
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
+
+
+def make_samv2_from_state_dict(
+    state_dict_or_path: dict[str, Tensor] | str | Path,
+    strict_load: bool = True,
+    weights_only: bool = True,
+) -> SAMV2Core:
+    """
+    Helper used to load SAMv2 using either an 'original state dict'
+    (e.g. original SAM model weights) or 'muggled state dict'
+    (e.g. weights saved from a MuggledSAM instance).
+    Returns:
+        sam_v2_core
+    """
+
+    # Load state dict data & figure out how to handle model instantiation
+    loaded_state_dict = _load_state_dict(state_dict_or_path, strict_load, weights_only)
+    is_mugsam_sd = "config_muggled_samv2" in loaded_state_dict.keys()
+    if is_mugsam_sd:
+        sam_core = make_samv2_from_muggled_state_dict(loaded_state_dict, strict_load, weights_only)
+    else:
+        sam_core = make_samv2_from_original_state_dict(loaded_state_dict, strict_load, weights_only)
+
+    return sam_core
+
 
 # .....................................................................................................................
 
 
 def make_samv2_from_original_state_dict(
-    original_state_dict: dict | str, strict_load=True, weights_only=True
+    original_state_dict: dict | str | Path, strict_load: bool = True, weights_only: bool = True
 ) -> SAMV2Core:
     """
     Function used to initialize a SAMV2 model from a state dictionary (i.e. model weights) file.
@@ -42,26 +73,8 @@ def make_samv2_from_original_state_dict(
         sam_v2_core
     """
 
-    # If we're given a string, assume it's a path to the state dict
-    need_to_load = isinstance(original_state_dict, str)
-    if need_to_load:
-        path_to_state_dict = original_state_dict
-        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
-        try:
-            original_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
-        except RuntimeError:
-            original_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
-
-    # Feedback on using non-strict loading
-    if not strict_load:
-        print(
-            "",
-            "WARNING:",
-            "  Loading model weights without 'strict' mode enabled!",
-            "  Some weights may be missing or unused!",
-            sep="\n",
-            flush=True,
-        )
+    # Load state dict data
+    original_state_dict = _load_state_dict(original_state_dict, strict_load, weights_only)
 
     # Remove first layer 'model' key, if present
     if "model" in original_state_dict.keys():
@@ -72,22 +85,22 @@ def make_samv2_from_original_state_dict(
     new_state_dict, _ = convert_state_dict_keys(model_config_dict, original_state_dict)
 
     # Load model & set model weights
-    sam_model = make_sam_v2(**model_config_dict)
-    sam_model.image_encoder.load_state_dict(new_state_dict[SAM2ModuleType.image_encoder], strict_load)
-    sam_model.coordinate_encoder.load_state_dict(new_state_dict[SAM2ModuleType.coordinate_encoder], strict_load)
-    sam_model.prompt_encoder.load_state_dict(new_state_dict[SAM2ModuleType.prompt_encoder], strict_load)
-    sam_model.mask_decoder.load_state_dict(new_state_dict[SAM2ModuleType.mask_decoder], strict_load)
-    sam_model.memory_encoder.load_state_dict(new_state_dict[SAM2ModuleType.memory_encoder], strict_load)
-    sam_model.memory_image_fusion.load_state_dict(new_state_dict[SAM2ModuleType.memory_image_fusion], strict_load)
+    sam_core = make_sam_v2(**model_config_dict)
+    sam_core.image_encoder.load_state_dict(new_state_dict[SAM2ModuleType.image_encoder], strict_load)
+    sam_core.coordinate_encoder.load_state_dict(new_state_dict[SAM2ModuleType.coordinate_encoder], strict_load)
+    sam_core.prompt_encoder.load_state_dict(new_state_dict[SAM2ModuleType.prompt_encoder], strict_load)
+    sam_core.mask_decoder.load_state_dict(new_state_dict[SAM2ModuleType.mask_decoder], strict_load)
+    sam_core.memory_encoder.load_state_dict(new_state_dict[SAM2ModuleType.memory_encoder], strict_load)
+    sam_core.memory_image_fusion.load_state_dict(new_state_dict[SAM2ModuleType.memory_image_fusion], strict_load)
 
-    return sam_model
+    return sam_core
 
 
 # .....................................................................................................................
 
 
 def make_samv2_from_muggled_state_dict(
-    muggled_state_dict: dict | str,
+    muggled_state_dict: dict | str | Path,
     strict_load: bool = True,
     weights_only: bool = True,
 ) -> SAMV2Core:
@@ -106,15 +119,8 @@ def make_samv2_from_muggled_state_dict(
         sam_v2_core
     """
 
-    # If we're given a string, assume it's a path to the state dict
-    need_to_load = isinstance(muggled_state_dict, str)
-    if need_to_load:
-        path_to_state_dict = muggled_state_dict
-        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
-        try:
-            muggled_state_dict = torch.load(path_to_state_dict, weights_only=weights_only)
-        except RuntimeError:
-            muggled_state_dict = torch.load(path_to_state_dict, map_location="cpu", weights_only=weights_only)
+    # Load state dict data
+    muggled_state_dict = _load_state_dict(muggled_state_dict, strict_load, weights_only)
 
     # Try to get config from state dict
     config_key = "config_muggled_samv2"
@@ -128,10 +134,10 @@ def make_samv2_from_muggled_state_dict(
     config_dict = json.loads(config_as_str)
 
     # Load model & set model weights
-    sam_model = make_sam_v2(**config_dict)
-    sam_model.load_state_dict(muggled_state_dict, strict_load)
+    sam_core = make_sam_v2(**config_dict)
+    sam_core.load_state_dict(muggled_state_dict, strict_load)
 
-    return sam_model
+    return sam_core
 
 
 # .....................................................................................................................
@@ -259,3 +265,62 @@ def make_sam_v2(
     return SAMV2Core(
         imgenc_model, coordenc_model, promptenc_model, maskdec_model, memenc_model, memfuse_model, config_bytes
     )
+
+
+# .....................................................................................................................
+
+
+def _load_state_dict(
+    state_dict_or_path: dict[str, Tensor] | str | Path,
+    strict_load: bool = True,
+    weights_only: bool = True,
+) -> dict[str, Tensor]:
+    """
+    Helper used to handling load of model weights, which may
+    be given directly (as a dictionary) or as a file path
+    Returns: loaded_state_dict
+    """
+
+    # Feedback for not using weights_only
+    if not weights_only:
+        print(
+            "",
+            "*" * 16,
+            "*" * 16,
+            "*" * 16,
+            "WARNING (dangerous):",
+            "  Loading model weights without 'weights_only' enabled!",
+            "  This can allow for arbitrary executable code to be loaded.",
+            "  Be sure that the loaded weights are from a trusted source!",
+            "",
+            "  !!! This should not normally be disabled !!!",
+            "*" * 16,
+            "*" * 16,
+            "*" * 16,
+            sep="\n",
+            flush=True,
+        )
+        sleep(5)
+
+    # If we're given a string, assume it's a path to the state dict
+    out_state_dict = state_dict_or_path
+    need_to_load = isinstance(state_dict_or_path, (str, Path))
+    if need_to_load:
+        # Load model weights with fail check in case weights are in cuda format and user doesn't have cuda
+        try:
+            out_state_dict = torch.load(state_dict_or_path, weights_only=weights_only)
+        except RuntimeError:
+            out_state_dict = torch.load(state_dict_or_path, map_location="cpu", weights_only=weights_only)
+
+    # Feedback on using non-strict loading
+    if not strict_load:
+        print(
+            "",
+            "WARNING:",
+            "  Loading model weights without 'strict' mode enabled!",
+            "  Some weights may be missing or unused!",
+            sep="\n",
+            flush=True,
+        )
+
+    return out_state_dict
