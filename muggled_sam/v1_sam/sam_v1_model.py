@@ -216,7 +216,7 @@ class SAMV1InteractiveModel(nn.Module):
     def encode_image(
         self,
         image_bgr: ndarray,
-        max_side_length: int = 1024,
+        max_side_length: int | None = 1024,
         use_square_sizing: bool = True,
     ) -> list[Tensor]:
         """

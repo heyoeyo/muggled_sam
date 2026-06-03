@@ -620,7 +620,7 @@ class SAMV2TrackingModel(nn.Module):
 
     def encode_prompt_memory_from_mask(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: list[Tensor],
         mask_image: ndarray | Tensor,
     ) -> tuple[Tensor, Tensor]:
         """

@@ -8,6 +8,7 @@
 import torch
 
 # For type hints
+from .model_typing import SAMCore
 from typing import Callable
 from torch import Tensor
 
@@ -23,7 +24,7 @@ def make_sam_from_state_dict(
     path_to_state_dict: str | dict[str, Tensor],
     strict_load: bool = True,
     weights_only: bool = True,
-) -> torch.nn.Module:
+) -> SAMCore:
     """
     Function used to load a SAM v1, v2 or v3 model from a state dict (e.g. model weights).
     The model version and sizing is automatically inferred from the weights.
