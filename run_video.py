@@ -661,9 +661,8 @@ try:
 
             # If there are no user prompts but there are tracking prompts, run the tracker to get a segmentation
             if have_track_prompts and not have_user_prompts and is_changed_track_idx:
-                selected_memory_dict = memory_list[buffer_select_idx].to_dict()
                 paused_mask_preds, iou_preds, _, paused_obj_score = track_model.step_video_masking(
-                    encoded_img, **selected_memory_dict, return_best_only=False
+                    encoded_img, **memory_list[buffer_select_idx], return_best_only=False
                 )
                 paused_obj_score = float(paused_obj_score.squeeze().float().cpu().numpy())
                 track_idx_keeper.record(frame_idx)
@@ -695,7 +694,7 @@ try:
 
                     # Only run model if we have stored prompts
                     mask_preds, iou_preds, obj_ptr, obj_score = track_model.step_video_masking(
-                        encoded_img, **memory_list[objidx].to_dict(), return_best_only=False
+                        encoded_img, **memory_list[objidx], return_best_only=False
                     )
                     best_mask_idx = iou_preds.argmax(dim=-1)
                     obj_score_float = float(obj_score)

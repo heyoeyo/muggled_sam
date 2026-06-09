@@ -484,7 +484,7 @@ try:
         if enable_segmentation and is_new_frame and (not playback_slider.is_adjusting()):
             encoded_img = track_model.encode_image(frame, **imgenc_config_dict)
             video_masks, video_ious, ptrs, obj_score = track_model.step_video_masking(
-                encoded_img, **memory_bank.to_dict(), return_best_only=False
+                encoded_img, **memory_bank, return_best_only=False
             )
 
             # Only store memory for high-scoring predictions

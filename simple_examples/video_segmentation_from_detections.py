@@ -116,9 +116,7 @@ try:
         objs_to_remove_list = []
         masks_on_frame_list = []
         for idx_obj, obj_memory in memory_per_obj_dict.items():
-            mask_pred, iou_pred, obj_ptr, obj_score = track_model.step_video_masking(
-                encoded_img, **obj_memory.to_dict()
-            )
+            mask_pred, iou_pred, obj_ptr, obj_score = track_model.step_video_masking(encoded_img, **obj_memory)
 
             # Skip storage for bad results
             if obj_score[0] < 0:

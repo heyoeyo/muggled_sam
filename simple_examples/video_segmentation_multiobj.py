@@ -134,9 +134,7 @@ try:
         # Update tracking using newest frame
         combined_mask_result = np.zeros(scaled_frame.shape[0:2], dtype=bool)
         for obj_key_name, obj_memory in memory_per_obj_dict.items():
-            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(
-                encoded_img, **obj_memory.to_dict()
-            )
+            masks_bnhw, ious_bn, ptrs_bnc, obj_score_b = track_model.step_video_masking(encoded_img, **obj_memory)
 
             # Skip storage for bad results (often due to occlusion)
             obj_score_float = float(obj_score_b)

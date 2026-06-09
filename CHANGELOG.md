@@ -6,6 +6,7 @@ Major breaking changes will be documented here. Smaller changes/feature updates 
 ## Upcoming changes
 
 - Legacy implementations of model functionality (currently on the 'SAM Core' classes) will be removed in June 2026
+- The `to_dict()` function on the `SAMVideoMemoryBank` class will be removed in July 2026. The class now directly acts like a dictionary, so this function is no longer needed
 - The 'step_video_masking' function will be updated to support tensor memory inputs, along with an indexing vector. This should allow for slightly more efficient (less memory thrashing) tracking setups as well as restoring potential for exact numerical consistency with the original SAM implementations (currently broken by 2026-05-19 update)
 
 ## Breaking changes
