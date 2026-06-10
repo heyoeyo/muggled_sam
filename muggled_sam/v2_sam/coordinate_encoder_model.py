@@ -7,10 +7,18 @@
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 # For type hints
+from typing import TypeAlias
 from torch import Tensor
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Custom types
+
+# Coordinate formats
+XYPoint: TypeAlias = tuple[float, float]
+XY1XY2: TypeAlias = tuple[XYPoint, XYPoint]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -160,29 +168,70 @@ class SAMV2CoordinateEncoder(nn.Module):
 
     # .................................................................................................................
 
-    def prepare_boxes(self, box_xy1xy2_norm_list: list[list] | None) -> Tensor:
-        """Helper used to convert box inputs into a format usable by the model"""
+    def prepare_boxes(self, box_xy1xy2_norm_list: XY1XY2 | list[XY1XY2] | Tensor | None) -> Tensor:
+        """
+        Helper used to convert box inputs into a format usable by the model
+        Accepts:
+            a single xy1xy2 box - format like: [(x1,y1), (x2,y2)]
+            list of xy1xy2 points - format like: [[(x1,y1),(x2,y2)], ...]
+            tensor, with shape: Nx2x2 or (for batching) BxNx2x2
+            empty list or None, which is considered an N=0 input
+        Where N is the number of box prompts and B is the batch size
 
-        # Fill in a blank box entry if none is given
+        Returns:
+            box_tensor (shape: BxNx2x2)
+        """
+
+        # Fill in a blank box entry if missing
         if box_xy1xy2_norm_list is None or len(box_xy1xy2_norm_list) == 0:
-            box_xy1xy2_norm_list = np.empty((0, 2, 2))
+            box_xy1xy2_norm_list = torch.empty((1, 0, 2, 2))
 
-        return torch.tensor(box_xy1xy2_norm_list, device=self.twopi.device, dtype=self.twopi.dtype).unsqueeze(0)
+        # Make sure we're dealing with a tensor on device
+        if isinstance(box_xy1xy2_norm_list, Tensor):
+            box_tensor = box_xy1xy2_norm_list.to(device=self.twopi.device, dtype=self.twopi.dtype)
+        else:
+            box_tensor = torch.tensor(box_xy1xy2_norm_list, device=self.twopi.device, dtype=self.twopi.dtype)
+
+        # Add batch dimension if needed (want shape: BxNx2x2)
+        if box_tensor.ndim == 3:
+            box_tensor = box_tensor.unsqueeze(0)
+        elif box_tensor.ndim == 2:
+            box_tensor = box_tensor.unsqueeze(0).unsqueeze(0)
+
+        return box_tensor
 
     # .................................................................................................................
 
-    def prepare_points(self, fg_xy_norm_list: list | None, bg_xy_norm_list: list | None) -> tuple[Tensor, Tensor]:
-        """Helper used to convert point inputs into a format usable by the model"""
+    def prepare_points(self, point_xy_norm_list: XYPoint | list[XYPoint] | Tensor | None) -> Tensor:
+        """
+        Helper used to convert point inputs into a format usable by the model
+        Accepts:
+            a single xy point - format like: (x,y)
+            list of xy points - format like: [(x,y), ...]
+            tensor, with shape: Nx2 or (for batching) BxNx2
+            empty list or None, which is considered an N=0 input
+        Where N is the number of point prompts and B is the batch size
 
-        # Fill in (blank) missing entries
-        if fg_xy_norm_list is None or len(fg_xy_norm_list) == 0:
-            fg_xy_norm_list = np.empty((0, 2))
-        if bg_xy_norm_list is None or len(bg_xy_norm_list) == 0:
-            bg_xy_norm_list = np.empty((0, 2))
+        Returns:
+            points_tensor (shape: BxNx2)
+        """
 
-        device, dtype = self.twopi.device, self.twopi.dtype
-        fg_tensor = torch.tensor(fg_xy_norm_list, device=device, dtype=dtype).unsqueeze(0)
-        bg_tensor = torch.tensor(bg_xy_norm_list, device=device, dtype=dtype).unsqueeze(0)
-        return fg_tensor, bg_tensor
+        # Fill in black entry
+        if point_xy_norm_list is None or len(point_xy_norm_list) == 0:
+            point_xy_norm_list = torch.empty((1, 0, 2))
+
+        # Make sure we're dealing with a tensor on device
+        if isinstance(point_xy_norm_list, Tensor):
+            point_tensor = point_xy_norm_list.to(device=self.twopi.device, dtype=self.twopi.dtype)
+        else:
+            point_tensor = torch.tensor(point_xy_norm_list, device=self.twopi.device, dtype=self.twopi.dtype)
+
+        # Add batch dimension if needed (want shape: BxNx2)
+        if point_tensor.ndim == 2:
+            point_tensor = point_tensor.unsqueeze(0)
+        elif point_tensor.ndim == 1:
+            point_tensor = point_tensor.unsqueeze(0).unsqueeze(0)
+
+        return point_tensor
 
     # .................................................................................................................

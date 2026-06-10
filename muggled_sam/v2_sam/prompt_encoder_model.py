@@ -67,6 +67,11 @@ class SAMV2PromptEncoder(nn.Module):
                (+1 is due to padding point added whenever a prompt is given)
         """
 
+        # For clarity
+        box_b, num_boxes = posenc_boxes.shape[0:2]
+        fgpt_b, num_fg_pts = posenc_fg_pts.shape[0:2]
+        bgpt_b, num_bg_pts = posenc_bg_pts.shape[0:2]
+
         # The original implementation adds an extra padding point when no boxes are given:
         # https://github.com/facebookresearch/segment-anything-2/blob/0e78a118995e66bb27d78518c4bd9a3e95b4e266/sam2/modeling/sam/prompt_encoder.py#L169
         # But at the same time, never passes boxes as inputs! (it always treats them as points):
@@ -76,11 +81,19 @@ class SAMV2PromptEncoder(nn.Module):
         # -> From brief testing, this isn't strictly required, but does
         #    seem to give slightly nicer results, at least qualitatively.
         #    The behavior has been replicated here for consistency
-        no_points = posenc_fg_pts.shape[1] == 0 and posenc_bg_pts.shape[1] == 0
-        no_boxes = posenc_boxes.shape[1] == 0
+        no_points = num_fg_pts == 0 and num_bg_pts == 0
+        no_boxes = num_boxes == 0
         num_padding_points = 0 if (no_boxes and no_points) else 1
         fg_pt, bg_pt, pad_pt = self.point_encoder(posenc_fg_pts, posenc_bg_pts, num_padding_points)
         boxes_as_pts = self.box_encoder(posenc_boxes)
+
+        # Handling mismatched batch sizes if needed
+        max_b = max(box_b, fgpt_b, bgpt_b)
+        if max_b:
+            fg_pt = fg_pt.expand(max_b, -1, -1)
+            bg_pt = bg_pt.expand(max_b, -1, -1)
+            pad_pt = pad_pt.expand(max_b, -1, -1)
+            boxes_as_pts = boxes_as_pts.expand(max_b, -1, -1)
 
         # Merge all encodings together
         return torch.cat((boxes_as_pts, fg_pt, bg_pt, pad_pt), dim=1)

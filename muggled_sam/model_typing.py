@@ -44,7 +44,12 @@ class SAMInteractive(Protocol):
         use_square_sizing: bool,
     ) -> SAMv1ImageEncoding | SAMv2ImageEncoding | SAMv3ImageEncoding | SAMv3p1ImageEncoding: ...
 
-    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor: ...
+    def encode_prompts(
+        self,
+        box_xy1xy2_norm_list: list[XY1XY2] | Tensor | None,
+        fg_xy_norm_list: list[XYPoint] | Tensor | None,
+        bg_xy_norm_list: list[XYPoint] | Tensor | None,
+    ) -> Tensor: ...
 
     def generate_masks(
         self,
@@ -89,9 +94,9 @@ class SAMTracking(Protocol):
     def encode_prompt_memory(
         self,
         encoded_image: SAMv2ImageEncoding | SAMv3ImageEncoding | SAMv3p1ImageEncoding,
-        box_xy1xy2_norm_list: list[XY1XY2],
-        fg_xy_norm_list: list[XYPoint],
-        bg_xy_norm_list: list[XYPoint],
+        box_xy1xy2_norm_list: list[XY1XY2] | Tensor | None,
+        fg_xy_norm_list: list[XYPoint] | Tensor | None,
+        bg_xy_norm_list: list[XYPoint] | Tensor | None,
         mask_hint: Tensor | None,
         mask_index: int | None,
     ) -> tuple[Tensor, SAMMemoryEncoding]: ...

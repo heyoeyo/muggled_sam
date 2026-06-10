@@ -69,17 +69,30 @@ class SAMV3PromptEncoder(nn.Module):
                (+1 is due to padding point added whenever a prompt is given)
         """
 
+        # For clarity
+        box_b, num_boxes = posenc_boxes.shape[0:2]
+        fgpt_b, num_fg_pts = posenc_fg_pts.shape[0:2]
+        bgpt_b, num_bg_pts = posenc_bg_pts.shape[0:2]
+
         # The original implementation adds an extra padding point when no boxes are given:
         # https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/sam/prompt_encoder.py#L184
         # But at the same time, never passes boxes as inputs! (it always treats them as points):
         # https://github.com/facebookresearch/sam3/blob/757bbb0206a0b68bee81b17d7eb4877177025b2f/sam3/model/sam1_task_predictor.py#L400
         # So use 1 padding point (if any points or boxes are given) or 0 otherwise
         device = self._cached_no_prompt.device
-        num_total_prompts = posenc_fg_pts.shape[1] + posenc_bg_pts.shape[1] + posenc_boxes.shape[1]
+        num_total_prompts = num_boxes + num_fg_pts + num_bg_pts
         num_padding_points = torch.min(torch.tensor(num_total_prompts), torch.tensor(1)).to(device)
 
         fg_pt, bg_pt, pad_pt = self.point_encoder(posenc_fg_pts, posenc_bg_pts, num_padding_points)
         boxes_as_pts = self.box_encoder(posenc_boxes)
+
+        # Handling mismatched batch sizes if needed
+        max_b = max(box_b, fgpt_b, bgpt_b)
+        if max_b:
+            fg_pt = fg_pt.expand(max_b, -1, -1)
+            bg_pt = bg_pt.expand(max_b, -1, -1)
+            pad_pt = pad_pt.expand(max_b, -1, -1)
+            boxes_as_pts = boxes_as_pts.expand(max_b, -1, -1)
 
         # Merge all encodings together
         return torch.cat((boxes_as_pts, fg_pt, bg_pt, pad_pt), dim=1)

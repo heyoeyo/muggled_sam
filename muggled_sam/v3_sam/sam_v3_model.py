@@ -20,6 +20,7 @@ import torch.nn as nn
 from .compilation import enable_compilation as _enable_compilation
 
 # For type hints
+from typing import TypeAlias
 from torch import Tensor
 from numpy import ndarray
 from .image_encoder_model import SAMV3ImageEncoder
@@ -34,6 +35,15 @@ from .sampling_encoder import SAMV3SamplingEncoder
 from .image_exemplar_fusion_model import SAMV3ImageExemplarFusion
 from .exemplar_detector_model import SAMV3ExemplarDetector
 from .exemplar_segmentation_model import SAMV3ExemplarSegmentation
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# %% Custom data types
+
+SAMv3ImageEncoding: TypeAlias = tuple[list[Tensor], list[Tensor]]
+SAMv3MemoryEncoding: TypeAlias = tuple[Tensor, Tensor]
+XYPoint: TypeAlias = tuple[float, float]
+XY1XY2: TypeAlias = tuple[XYPoint, XYPoint]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -364,7 +374,7 @@ class SAMV3InteractiveModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[list[Tensor], list[Tensor]]:
+    ) -> SAMv3ImageEncoding:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The max_side_length setting is used to set the size at which the image is processed, if
@@ -392,7 +402,12 @@ class SAMV3InteractiveModel(nn.Module):
 
     # .................................................................................................................
 
-    def encode_prompts(self, box_xy1xy2_norm_list: list, fg_xy_norm_list: list, bg_xy_norm_list: list) -> Tensor:
+    def encode_prompts(
+        self,
+        box_xy1xy2_norm_list: list[XY1XY2] | Tensor | None,
+        fg_xy_norm_list: list[XYPoint] | Tensor | None,
+        bg_xy_norm_list: list[XYPoint] | Tensor | None,
+    ) -> Tensor:
         """
         Function used to encode prompt coordinates. Inputs should be given as lists
         of prompts. The length of each list does not need to match. Enter either
@@ -418,6 +433,12 @@ class SAMV3InteractiveModel(nn.Module):
                     ... etc ..
                 ]
 
+        Alternatively, boxes or points can be given directly as tensors.
+        In this case, boxes must have shape: Nx2x2 or (for batching) BxNx2x2,
+        while points must have shape: Nx2 or BxNx2,
+        where B is the batch size and N is the number of prompts.
+        If using a batch size > 1, all non-empty prompts must have the same batch size!
+
         Returns:
             encoded_prompts_bnc
             -> shape: BxNxC, B batch size, N number of prompt points, C is channels/feature count
@@ -425,7 +446,8 @@ class SAMV3InteractiveModel(nn.Module):
 
         with _inference_mode(self._infmode):
             boxes_tensor = self.coordinate_encoder.prepare_boxes(box_xy1xy2_norm_list)
-            fg_tensor, bg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list, bg_xy_norm_list)
+            fg_tensor = self.coordinate_encoder.prepare_points(fg_xy_norm_list)
+            bg_tensor = self.coordinate_encoder.prepare_points(bg_xy_norm_list)
             box_posenc, fg_posenc, bg_posenc = self.coordinate_encoder(boxes_tensor, fg_tensor, bg_tensor)
             encoded_prompts_bnc = self.prompt_encoder(box_posenc, fg_posenc, bg_posenc)
 
@@ -435,7 +457,7 @@ class SAMV3InteractiveModel(nn.Module):
 
     def generate_masks(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: SAMv3ImageEncoding,
         encoded_prompts: Tensor,
         mask_hint: Tensor | int | None = None,
         blank_promptless_output: bool = True,
@@ -597,7 +619,7 @@ class SAMV3TrackingModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[list[Tensor], list[Tensor]]:
+    ) -> SAMv3ImageEncoding:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
@@ -611,13 +633,13 @@ class SAMV3TrackingModel(nn.Module):
 
     def encode_prompt_memory(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
-        box_xy1xy2_norm_list: list,
-        fg_xy_norm_list: list,
-        bg_xy_norm_list: list,
+        encoded_image: SAMv3ImageEncoding,
+        box_xy1xy2_norm_list: list[XY1XY2] | Tensor | None,
+        fg_xy_norm_list: list[XYPoint] | Tensor | None,
+        bg_xy_norm_list: list[XYPoint] | Tensor | None,
         mask_hint: Tensor | int | None = None,
         mask_index: int | None = None,
-    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
+    ) -> tuple[Tensor, SAMv3MemoryEncoding]:
         """
         This function acts similarly to encoding prompts on the interactive
         usage of the model. However, this instead creates a 'memory encoding',
@@ -667,8 +689,9 @@ class SAMV3TrackingModel(nn.Module):
                 mask_index = ious_bn.argmax(-1)
             elif isinstance(mask_index, int):
                 mask_index = torch.tensor([mask_index], dtype=torch.int64, device=masks_bnhw.device)
-            best_mask_b1hw = masks_bnhw[:, mask_index, :, :]
-            best_ptr_b1c = ptrs_bnc[:, mask_index]
+            b_idx = torch.arange(masks_bnhw.shape[0], device=masks_bnhw.device)
+            best_mask_b1hw = masks_bnhw[b_idx, mask_index, :, :].unsqueeze(1)
+            best_ptr_b1c = ptrs_bnc[b_idx, mask_index].unsqueeze(1)
 
         # Encode 'best' mask for memory
         encoded_memory = self.encode_frame_memory(
@@ -681,9 +704,9 @@ class SAMV3TrackingModel(nn.Module):
 
     def encode_prompt_memory_from_mask(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: SAMv3ImageEncoding,
         mask_image: ndarray | Tensor,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> SAMv3MemoryEncoding:
         """
         Alternate option for creating a prompt memory encoding, in the case
         where a segmentation mask is directly available. This is in contrast
@@ -749,13 +772,13 @@ class SAMV3TrackingModel(nn.Module):
 
     def encode_frame_memory(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: SAMv3ImageEncoding,
         mask_predictions: Tensor,
         object_pointers: Tensor | None,
         object_score: Tensor | None,
         mask_index: Tensor | int | None = None,
         is_prompt_encoding: bool = False,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> SAMv3MemoryEncoding:
         """
         Function which computes 'frame memory' encodings. These act like a
         prompt encoding (from interactive model usage), but without requiring
@@ -828,9 +851,9 @@ class SAMV3TrackingModel(nn.Module):
 
     def step_video_masking(
         self,
-        encoded_image: list[Tensor],
-        prompt_memory_encodings: list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor],
-        frame_memory_encodings: list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor],
+        encoded_image: SAMv3ImageEncoding,
+        prompt_memory_encodings: list[SAMv3MemoryEncoding] | SAMv3MemoryEncoding,
+        frame_memory_encodings: list[SAMv3MemoryEncoding] | SAMv3MemoryEncoding,
         return_best_only: bool = True,
         is_recent_first: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -1015,7 +1038,7 @@ class SAMV3DetectorModel(nn.Module):
         image_bgr: ndarray,
         max_side_length: int | None = 1008,
         use_square_sizing: bool = True,
-    ) -> tuple[list[Tensor], list[Tensor]]:
+    ) -> SAMv3ImageEncoding:
         """
         Function used to compute image encodings from a bgr formatted image (e.g. loaded from opencv)
         The 'max_side_length' and 'use_square_sizing' inputs control the resolution and aspect ratio
@@ -1029,12 +1052,12 @@ class SAMV3DetectorModel(nn.Module):
 
     def encode_exemplars(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: SAMv3ImageEncoding,
         text: str | None = None,
-        box_xy1xy2_norm_list: list[tuple[tuple[float, float], tuple[float, float]]] | None = None,
-        point_xy_norm_list: list[tuple[float, float]] | None = None,
-        negative_boxes_list: list[tuple[tuple[float, float], tuple[float, float]]] | None = None,
-        negative_points_list: list[tuple[float, float]] | None = None,
+        box_xy1xy2_norm_list: list[XY1XY2] | None = None,
+        point_xy_norm_list: list[XYPoint] | None = None,
+        negative_boxes_list: list[XY1XY2] | None = None,
+        negative_points_list: list[XYPoint] | None = None,
         include_coordinate_encodings: bool = True,
     ) -> Tensor:
         """
@@ -1102,7 +1125,7 @@ class SAMV3DetectorModel(nn.Module):
 
     def generate_detections(
         self,
-        encoded_image: tuple[list[Tensor], list[Tensor]],
+        encoded_image: SAMv3ImageEncoding,
         encoded_exemplars_bnc: Tensor,
         detection_filter_threshold: float = 0.0,
         exemplar_padding_mask_bn: Tensor | None = None,
