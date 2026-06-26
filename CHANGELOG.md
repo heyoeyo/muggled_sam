@@ -5,11 +5,14 @@ Major breaking changes will be documented here. Smaller changes/feature updates 
 
 ## Upcoming changes
 
-- Legacy implementations of model functionality (currently on the 'SAM Core' classes) will be removed in June 2026
 - The `to_dict()` function on the `SAMVideoMemoryBank` class will be removed in July 2026. The class now directly acts like a dictionary, so this function is no longer needed
-- The 'step_video_masking' function will be updated to support tensor memory inputs, along with an indexing vector. This should allow for slightly more efficient (less memory thrashing) tracking setups as well as restoring potential for exact numerical consistency with the original SAM implementations (currently broken by 2026-05-19 update)
 
 ## Breaking changes
+
+### 2026-06-26
+
+- Removed legacy functions from 'core' model classes. Functionality is now handled by (interactive, video or detection) 'contexts'
+- See changelog entries [2026-05-04](#2026-05-04), [2026-05-15](#2026-05-15) and [2026-05-20](#2026-05-20) for more details
 
 ### 2026-05-20
 
@@ -22,6 +25,7 @@ Major breaking changes will be documented here. Smaller changes/feature updates 
 - This change (very slightly) breaks numerical consistency with the original SAM implementations, which use different numbers of tokens & pointers
 - This change simplifies model usage considerably and is planned to be updated to support tensor inputs to allow for mismatched sizings in the future
 - If needed, the last commit that supports numerical consistency is: [5ff1547](https://github.com/heyoeyo/muggled_sam/tree/5ff15477294d9bed26bdccd2373130f15b5348d1)
+- (Update) Support for direct memory/pointer tensor inputs was added in commit [d218b2f](https://github.com/heyoeyo/muggled_sam/commit/d218b2f143ddd9404ba13c546e23e14fdef7b48d). This allows for mismatched memory/pointer sizing, which is needed to get exact numerical consistency with the original SAM code
 
 For example, old code looked like:
 ```python
