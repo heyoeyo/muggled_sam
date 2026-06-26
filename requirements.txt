@@ -1,3 +1,5 @@
 opencv-python   >=4.5, <4.14
-numpy           >=1.21, <2.5
-torch           >=2.1, <2.11
+numpy           >=1.21, <2.6
+torch           >=2.1, <2.13
+
+# Note: Upper version bounds are 'known to work'. Newer versions may also work, they're just un-tested.
