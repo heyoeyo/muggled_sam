@@ -17,7 +17,6 @@ import numpy as np
 from typing import Any
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

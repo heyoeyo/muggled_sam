@@ -11,7 +11,6 @@ import numpy as np
 # For type hints
 from numpy import ndarray
 
-
 # %% Data types
 
 

@@ -11,7 +11,6 @@ import torch.nn as nn
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Memory encoder classes
 

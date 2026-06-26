@@ -10,7 +10,6 @@ import cv2
 from .base import BaseCallback, BaseImageCallback
 from .helpers.images import blank_image
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

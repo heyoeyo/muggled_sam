@@ -18,7 +18,6 @@ from .ui.static import StaticMessageBar
 # For type hints
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
 

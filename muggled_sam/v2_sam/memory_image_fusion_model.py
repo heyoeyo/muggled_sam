@@ -15,7 +15,6 @@ from .components.version_2_vs_2p1_variants import ObjectPointerPosEnc_v2p0, Obje
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

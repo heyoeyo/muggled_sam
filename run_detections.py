@@ -40,7 +40,6 @@ from muggled_sam.demo_helpers.misc import (
 )
 from muggled_sam.demo_helpers.text_input import read_user_text_input
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

@@ -16,7 +16,6 @@ from .components.image_encoder_attention import GlobalAttentionBlock, WindowedAt
 from torch import Tensor
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

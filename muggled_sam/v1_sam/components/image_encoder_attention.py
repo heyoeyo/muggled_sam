@@ -12,7 +12,6 @@ from .decomposed_relative_position_encoder import DecomposedRelativePositionEnco
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

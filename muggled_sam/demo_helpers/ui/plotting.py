@@ -15,7 +15,6 @@ from .helpers.images import blank_image, draw_box_outline
 # Typing
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

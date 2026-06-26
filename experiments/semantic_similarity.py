@@ -45,7 +45,6 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_model_path_if_missing, load_init_prompts
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
 

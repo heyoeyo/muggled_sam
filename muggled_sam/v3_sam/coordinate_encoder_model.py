@@ -12,7 +12,6 @@ import torch.nn as nn
 from typing import TypeAlias
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Custom types
 

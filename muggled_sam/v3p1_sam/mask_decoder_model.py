@@ -14,7 +14,6 @@ from .components.shared import LayerNorm2d, UpscaleCT2x2Layer
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

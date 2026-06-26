@@ -24,7 +24,6 @@ from .mask_decoder_model import SAMV2MaskDecoder
 from .memory_encoder_model import SAMV2MemoryEncoder
 from .memory_image_fusion_model import SAMV2MemoryImageFusion
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Custom data types
 

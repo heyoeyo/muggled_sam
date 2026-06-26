@@ -16,7 +16,6 @@ from .components.shared import MLP2LayersPreNorm, imagelike_to_rows_of_tokens, r
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

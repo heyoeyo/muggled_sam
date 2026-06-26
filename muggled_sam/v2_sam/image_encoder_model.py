@@ -18,7 +18,6 @@ from .components.image_encoder_components import HalfStepPatchEmbed, WindowTiled
 from torch import Tensor
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

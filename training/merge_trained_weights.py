@@ -43,7 +43,6 @@ from muggled_sam.v3p1_sam.state_dict_conversion.config_from_original_state_dict 
     get_model_config_from_state_dict as v3p1_get_config_from_state_dict,
 )
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Script args
 

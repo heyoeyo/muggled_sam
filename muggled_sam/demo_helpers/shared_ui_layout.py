@@ -25,7 +25,6 @@ from numpy import ndarray
 from torch import Tensor
 from .ui.window import DisplayWindow
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Data types
 

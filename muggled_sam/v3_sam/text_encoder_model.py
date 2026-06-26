@@ -13,7 +13,6 @@ from .components.text_tokenizer import TextTokenizer
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

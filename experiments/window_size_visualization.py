@@ -45,7 +45,6 @@ from muggled_sam.demo_helpers.loading import ask_for_path_if_missing, ask_for_mo
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
 from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

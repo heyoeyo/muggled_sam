@@ -19,7 +19,6 @@ from .contours import MaskContourData
 # For type hints
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Main saving functions
 

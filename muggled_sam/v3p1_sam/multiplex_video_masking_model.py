@@ -14,7 +14,6 @@ from .coordinate_encoder_model import SAMV3p1CoordinateEncoder
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

@@ -11,7 +11,6 @@ from .base import BaseCallback
 from .helpers.text import TextDrawer
 from .helpers.images import blank_image, convert_color, draw_box_outline, get_image_hw_to_fill
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

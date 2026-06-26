@@ -10,7 +10,6 @@ from typing import Protocol, TypeAlias
 from torch import Tensor
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Model-specific data types
 

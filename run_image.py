@@ -34,7 +34,6 @@ from muggled_sam.demo_helpers.saving import save_image_segmentation, get_save_na
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, get_total_cuda_vram_usage_mb
 from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

@@ -13,7 +13,6 @@ from .exemplar_detector_attention import MLP2LayersPostNorm
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

@@ -32,7 +32,6 @@ from .image_exemplar_fusion_model import SAMV3p1ImageExemplarFusion
 from .exemplar_detector_model import SAMV3p1ExemplarDetector
 from .exemplar_segmentation_model import SAMV3p1ExemplarSegmentation
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Custom data types
 

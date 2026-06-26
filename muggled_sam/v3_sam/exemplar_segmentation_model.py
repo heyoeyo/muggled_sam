@@ -19,7 +19,6 @@ from .components.shared import (
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

@@ -12,7 +12,6 @@ from .images import ExpandingImage
 from .helpers.text import TextDrawer
 from .helpers.images import blank_image, draw_box_outline, convert_color
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Base classes
 

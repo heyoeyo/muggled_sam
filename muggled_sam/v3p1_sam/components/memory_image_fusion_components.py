@@ -13,7 +13,6 @@ from .position_encoding import SinusoidalPE2D
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

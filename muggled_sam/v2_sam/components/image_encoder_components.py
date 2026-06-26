@@ -13,7 +13,6 @@ from .shared import Conv1x1Layer
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

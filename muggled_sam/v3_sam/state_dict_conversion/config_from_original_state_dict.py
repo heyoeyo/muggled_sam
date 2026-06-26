@@ -9,7 +9,6 @@ from collections import Counter
 
 from .key_regex import get_nth_integer
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Main function
 

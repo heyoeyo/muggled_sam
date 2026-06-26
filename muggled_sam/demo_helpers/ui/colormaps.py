@@ -13,7 +13,6 @@ from .helpers.images import draw_box_outline
 
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

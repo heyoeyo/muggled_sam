@@ -54,7 +54,6 @@ from muggled_sam.demo_helpers.misc import get_default_device_string, make_device
 from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 from muggled_sam.demo_helpers.saving import save_image_segmentation, get_save_name, make_prompt_save_data
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

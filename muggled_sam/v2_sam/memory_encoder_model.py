@@ -14,7 +14,6 @@ from .components.version_2_vs_2p1_variants import NoObjectEncoder_v2p0, NoObject
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 
@@ -72,7 +71,7 @@ class SAMV2MemoryEncoder(nn.Module):
         lowres_image_encoding: Tensor,
         mask_prediction: Tensor,
         object_score: Tensor | None,
-        is_prompt_encoding: bool=False,
+        is_prompt_encoding: bool = False,
     ) -> Tensor:
         """
         Takes the lowest-resolution image encoding of SAMv2 and combines it

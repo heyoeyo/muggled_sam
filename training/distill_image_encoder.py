@@ -70,7 +70,6 @@ from muggled_sam.demo_helpers.training.layer_replacement import (
     checkpoint_image_encoder_stages,
 )
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

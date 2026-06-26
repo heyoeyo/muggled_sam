@@ -12,7 +12,6 @@ from .components.shared import Conv1x1Layer, Conv3x3Layer, UpscaleCT2x2Layer
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

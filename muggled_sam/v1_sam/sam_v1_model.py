@@ -22,7 +22,6 @@ from .coordinate_encoder_model import SAMV1CoordinateEncoder
 from .prompt_encoder_model import SAMV1PromptEncoder
 from .mask_decoder_model import SAMV1MaskDecoder
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Custom data types
 

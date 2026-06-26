@@ -20,7 +20,6 @@ import torch
 from muggled_sam.make_sam import make_sam_from_state_dict
 from muggled_sam.demo_helpers.video_data_storage import SAMVideoMemoryBank
 
-
 # Define pathing & device usage
 video_path = "/path/to/video.mp4"
 model_path = "/path/to/sam_model.pt"

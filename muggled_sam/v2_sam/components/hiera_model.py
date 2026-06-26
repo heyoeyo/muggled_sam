@@ -12,7 +12,6 @@ from .hiera_blocks import PooledWindowedBlock, WindowedBlock, GlobalBlock
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

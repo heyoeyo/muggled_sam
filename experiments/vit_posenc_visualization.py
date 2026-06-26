@@ -38,7 +38,6 @@ from muggled_sam.demo_helpers.history_keeper import HistoryKeeper
 from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing
 from muggled_sam.demo_helpers.misc import get_default_device_string, make_device_config, normalize_to_npuint8
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 
@@ -142,11 +141,9 @@ class PosencExtractor:
             posencoder = sam_model.image_encoder.posenc
             self._posenc_func = posencoder._scale_to_patch_grid
         except AttributeError:
-            raise NameError(
-                """Unable to find positional encoding function!
+            raise NameError("""Unable to find positional encoding function!
                 This likely means the functions were renamed and this script is out-of-date...
-                """
-            )
+                """)
 
         # Special handling of V2 window tiling, which we may disable
         self._window_tile_copy = None

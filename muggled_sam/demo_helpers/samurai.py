@@ -14,7 +14,6 @@ from .bounding_boxes import get_one_mask_bounding_box, box_xy1xy2_to_xywh, box_x
 from torch import Tensor
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

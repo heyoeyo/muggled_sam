@@ -29,7 +29,6 @@ from muggled_sam.demo_helpers.loading import ask_for_model_path_if_missing, sele
 from muggled_sam.demo_helpers.text_input import confirm_prompt
 from muggled_sam.demo_helpers.training.default_data import make_default_text_encoder_block_mapping, save_unnested_json
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Script args
 

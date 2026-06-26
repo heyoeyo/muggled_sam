@@ -11,7 +11,6 @@ from .base import BaseCallback
 from .helpers.text import TextDrawer
 from .helpers.images import blank_image, draw_box_outline
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

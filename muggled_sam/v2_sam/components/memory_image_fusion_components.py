@@ -13,7 +13,6 @@ from .memory_image_fusion_attention import RoPESelfAttention, RoPECrossAttention
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

@@ -32,7 +32,6 @@ from .state_dict_conversion.convert_original_state_dict_keys import SAM3ModuleTy
 from pathlib import Path
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
 

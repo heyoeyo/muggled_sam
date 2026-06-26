@@ -11,7 +11,6 @@ from pathlib import Path
 import json
 from time import sleep
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
 
@@ -257,7 +256,7 @@ def ask_for_model_from_menu(model_files_paths, default_path=None, message: str =
                 selected_model_path = model_files_paths[idx_select]
                 print_selected_model(idx_select)
                 break
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 # Happens is user didn't input an integer selecting an item in the menu
                 # -> We'll just assume they entered something else otherwise
                 pass

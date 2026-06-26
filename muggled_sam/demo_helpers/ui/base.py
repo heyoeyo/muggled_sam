@@ -10,7 +10,6 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Data types
 

@@ -15,7 +15,6 @@ from .contours import MaskContourData
 from numpy import ndarray
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

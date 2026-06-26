@@ -22,7 +22,6 @@ from .ui.helpers.images import scale_and_pad_to_fit_hw
 # For type hints
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Functions
 

@@ -12,7 +12,6 @@ from .position_encoding import RPEComplex, RPEReal
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

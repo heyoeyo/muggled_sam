@@ -12,7 +12,6 @@ from .mask_decoder_attention import CrossAttentionNormed, SelfAttentionNoPosenc,
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

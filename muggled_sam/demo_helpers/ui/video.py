@@ -13,7 +13,6 @@ from .helpers.images import blank_image, get_image_hw_for_max_side_length
 # For type hints
 from numpy import ndarray
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 

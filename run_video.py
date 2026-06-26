@@ -44,7 +44,6 @@ from muggled_sam.demo_helpers.ffmpeg import get_default_ffmpeg_command, verify_f
 from muggled_sam.demo_helpers.misc import PeriodicVRAMReport, make_device_config, get_default_device_string
 from muggled_sam.demo_helpers.model_info import get_token_hw, get_preencoding_hw
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Set up script args
 

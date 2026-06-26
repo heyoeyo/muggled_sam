@@ -21,7 +21,6 @@ from .components.exemplar_detector_attention import (
 # For type hints
 from torch import Tensor
 
-
 # ---------------------------------------------------------------------------------------------------------------------
 # %% Classes
 
