@@ -158,7 +158,7 @@ p_mems, f_mems = [init_mem], []
 for frame_path in video_frames_list:
     frame = cv2.imread(frame_path)
     enc_img = track_model.encode_image(frame)
-    mask, iou, ptr, score = track_model.step_video_masking(enc_img, p_mems, f_mems)
+    mask, iou, ptr, score = track_model.step_video_masking(enc_img, p_mems, f_mems[-6:])
 
     # Build up memory bank if tracking score is 'good'
     if score > 0:

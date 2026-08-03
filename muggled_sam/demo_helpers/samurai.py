@@ -39,6 +39,9 @@ class MuggledSAMURAI:
     There are also significant differences in process & measurement noise models.
     The original code can be found here:
     https://github.com/yangchris11/samurai/blob/76ba195984892b0d1e3db5d9c9f90bb62175680a/sam2/sam2/utils/kalman_filter.py
+
+    For an example of how to use this class, see the SAMURAI example script:
+    https://github.com/heyoeyo/muggled_sam/blob/main/simple_examples/video_segmentation_samurai.py
     """
 
     # Weights & thresholds used in samurai algorithm
