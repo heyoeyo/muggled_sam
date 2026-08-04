@@ -107,9 +107,6 @@ try:
         if keypress in close_keycodes:
             break
 
-except Exception as err:
-    raise err
-
 except KeyboardInterrupt:
     print("Closed by ctrl+c!")
 

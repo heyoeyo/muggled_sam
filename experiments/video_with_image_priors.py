@@ -376,9 +376,6 @@ try:
 except KeyboardInterrupt:
     print("", "Closed with Ctrl+C", sep="\n")
 
-except Exception as err:
-    raise err
-
 finally:
     cv2.destroyAllWindows()
 
@@ -531,9 +528,6 @@ try:
 
 except KeyboardInterrupt:
     print("", "Closed with Ctrl+C", sep="\n")
-
-except Exception as err:
-    raise err
 
 finally:
     cv2.destroyAllWindows()

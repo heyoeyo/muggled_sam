@@ -116,9 +116,6 @@ try:
 except KeyboardInterrupt:
     print("Closed by ctrl+c!")
 
-except Exception as err:
-    raise err
-
 finally:
     vcap.release()
     cv2.destroyAllWindows()

@@ -236,9 +236,6 @@ def run_crop_ui(
         crop_x1, crop_y1 = 0, 0
         crop_x2, crop_y2 = full_w, full_h
 
-    except Exception as err:
-        raise err
-
     finally:
         window.close()
 
