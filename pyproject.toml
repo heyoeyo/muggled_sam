@@ -8,9 +8,9 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-	"opencv-python   >=4.5, <4.14",
+	"opencv-python   >=4.5, <5.1",
 	"numpy           >=1.21, <2.6",
-	"torch           >=2.1, <2.13",
+	"torch           >=2.1, <2.14",
 ]
 
 [build-system]
